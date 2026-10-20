@@ -1,0 +1,36 @@
+{
+  "broadening": {
+    "size": "isotropic",
+    "strain": "isotropic",
+    "sizeAxis": [
+      0,
+      0,
+      1
+    ],
+    "strainAxis": [
+      0,
+      0,
+      1
+    ]
+  },
+  "format": "powder6-profile",
+  "version": 2,
+  "profileType": "simple_pvoigt",
+  "separatedProfile": false,
+  "sizeUnit": "nm",
+  "label": "Simple pseudo-Voigt, default",
+  "parameters": {
+    "param-gu": "2.0000",
+    "fit-gu": false,
+    "param-gv": "-2.0000",
+    "fit-gv": false,
+    "param-gw": "5.0000",
+    "fit-gw": false,
+    "param-gp": "0.0000",
+    "fit-gp": false,
+    "param-lx": "1.0000",
+    "fit-lx": false,
+    "param-eta": "0.5000",
+    "fit-eta": false
+  }
+}

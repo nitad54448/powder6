@@ -1,0 +1,7 @@
+{
+  "preferred": "xray_wk1995_ions.json",
+  "files": [
+    { "name": "xray_wk1995_ions.json" },
+    { "name": "neutron.json" }
+  ]
+}

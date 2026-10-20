@@ -1,0 +1,38 @@
+{
+  "broadening": {
+    "size": "isotropic",
+    "strain": "isotropic",
+    "sizeAxis": [
+      0,
+      0,
+      1
+    ],
+    "strainAxis": [
+      0,
+      0,
+      1
+    ]
+  },
+  "format": "powder6-profile",
+  "version": 2,
+  "profileType": "tch_aniso",
+  "separatedProfile": false,
+  "sizeUnit": "nm",
+  "label": "Thompson-Cox-Hastings, default",
+  "parameters": {
+    "param-u": "17.4000",
+    "fit-u": false,
+    "param-v": "-45.2000",
+    "fit-v": false,
+    "param-w": "16.5000",
+    "fit-w": false,
+    "param-x": "3.0000",
+    "fit-x": false,
+    "param-y": "6.7000",
+    "fit-y": false,
+    "param-sl": "0.1000",
+    "fit-sl": false,
+    "param-hl": "-0.2500",
+    "fit-hl": false
+  }
+}

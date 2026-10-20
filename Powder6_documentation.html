@@ -1,0 +1,995 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Powder 6 documentation</title>
+<style>
+:root {
+  --bg: #F6F7F8; --panel: #FFFFFF; --ink: #1B1F23; --ink-2: #3F464D; --ink-3: #5A636B; --rule: #D5DADE; --rule-2: #E6E9EB;
+  --blue: #1F5E9C; --blue-tint: #E4ECF4; --code-bg: #EEF1F3; --warn: #8B5D16; --warn-tint: #F6EEDC; --ok: #2F6B45;
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: "Cascadia Mono", ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+:root[data-theme="dark"] {
+  --bg: #16181B; --panel: #1E2124; --ink: #E9ECEF; --ink-2: #C9CED3; --ink-3: #A3AAB1; --rule: #3A4045; --rule-2: #2D3236;
+  --blue: #8FB6E0; --blue-tint: #26323F; --code-bg: #272B2F; --warn: #DEBB7B; --warn-tint: #3A3223; --ok: #9BC6A4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16181B; --panel: #1E2124; --ink: #E9ECEF; --ink-2: #C9CED3; --ink-3: #A3AAB1; --rule: #3A4045; --rule-2: #2D3236;
+    --blue: #8FB6E0; --blue-tint: #26323F; --code-bg: #272B2F; --warn: #DEBB7B; --warn-tint: #3A3223; --ok: #9BC6A4;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 20px; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.62 var(--font); -webkit-font-smoothing: antialiased; }
+a { color: var(--blue); text-underline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 3px; }
+.layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 100vh; }
+nav.toc { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto; padding: 24px 18px 32px 24px; border-right: 1px solid var(--rule); background: var(--panel); }
+nav.toc .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; font-size: 17px; margin: 0 0 4px; color: var(--ink); text-decoration: none; }
+nav.toc .brand svg { width: 26px; height: 20px; color: var(--blue); }
+nav.toc .ver { color: var(--ink-3); font-size: 13px; margin: 0 0 18px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+nav.toc > ol > li { counter-increment: s; margin: 0; }
+nav.toc a { display: block; padding: 4px 8px; border-radius: 4px; color: var(--ink-2); text-decoration: none; font-size: 14px; line-height: 1.35; }
+nav.toc a:hover { background: var(--blue-tint); color: var(--ink); }
+nav.toc a.on { background: var(--blue-tint); color: var(--blue); font-weight: 600; }
+nav.toc ol ol a { padding-left: 22px; font-size: 13px; color: var(--ink-3); }
+.theme { margin-top: 18px; padding: 6px 10px; border: 1px solid var(--rule); background: transparent; color: var(--ink-2); border-radius: 4px; font: inherit; font-size: 13px; cursor: pointer; }
+.theme:hover { border-color: var(--blue); color: var(--blue); }
+main { min-width: 0; padding: 44px clamp(20px, 5vw, 72px) 96px; max-width: 980px; }
+h1 { font-size: 34px; line-height: 1.15; margin: 0 0 10px; letter-spacing: -0.01em; }
+h2 { font-size: 24px; margin: 56px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); letter-spacing: -0.005em; }
+h3 { font-size: 18px; margin: 30px 0 6px; }
+h4 { font-size: 15px; margin: 22px 0 4px; color: var(--ink-2); }
+p, ul, ol { max-width: 72ch; }
+p.lead { font-size: 19px; line-height: 1.55; color: var(--ink-2); max-width: 62ch; margin: 0 0 14px; }
+li { margin: 4px 0; }
+code, kbd { font-family: var(--mono); font-size: 0.88em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+kbd { border: 1px solid var(--rule); border-bottom-width: 2px; background: var(--panel); }
+pre { background: var(--code-bg); padding: 12px 16px; border-radius: 6px; overflow-x: auto; font: 13.5px/1.55 var(--mono); border: 1px solid var(--rule-2); max-width: 80ch; }
+pre code { background: none; padding: 0; font-size: inherit; }
+table { border-collapse: collapse; width: 100%; max-width: 100%; margin: 12px 0 18px; font-size: 14.5px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; }
+th, td { text-align: left; vertical-align: top; padding: 7px 12px; border-bottom: 1px solid var(--rule-2); }
+th { font-weight: 650; background: var(--code-bg); color: var(--ink-2); font-size: 13.5px; }
+tr:last-child td { border-bottom: 0; }
+td:first-child { white-space: nowrap; }
+td.wrap:first-child, table.wrapfirst td:first-child { white-space: normal; }
+.tablewrap { overflow-x: auto; }
+.note, .warn { padding: 10px 14px; border-left: 3px solid var(--blue); background: var(--blue-tint); border-radius: 0 4px 4px 0; max-width: 72ch; margin: 14px 0; font-size: 15px; }
+.warn { border-left-color: var(--warn); background: var(--warn-tint); }
+.note b, .warn b { color: var(--ink); }
+.tree { font: 13.5px/1.55 var(--mono); }
+.tag { display: inline-block; font-size: 12px; padding: 0 7px; border-radius: 9px; border: 1px solid var(--rule); color: var(--ink-3); vertical-align: 1px; margin-left: 6px; }
+.tag.opt { color: var(--warn); border-color: var(--warn); }
+dl.defs { display: grid; grid-template-columns: minmax(140px, max-content) minmax(0, 1fr); gap: 6px 22px; max-width: 80ch; }
+dl.defs dt { font-weight: 600; } dl.defs dd { margin: 0; color: var(--ink-2); }
+.menu-btn { display: none; }
+@media (max-width: 860px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  nav.toc { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--rule); }
+  nav.toc ol ol { display: none; }
+  main { padding-top: 28px; }
+}
+@media print { nav.toc, .theme { display: none; } .layout { display: block; } main { max-width: none; padding: 0; } h2 { break-after: avoid; } pre, table { break-inside: avoid; } }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+.eq { font: 14.5px/1.6 var(--mono); background: var(--code-bg); border: 1px solid var(--rule-2); border-radius: 6px; padding: 8px 14px; margin: 10px 0 14px; max-width: 80ch; overflow-x: auto; white-space: pre; }
+.eq + p, .eq + ul { margin-top: 0; }
+table.tight td, table.tight th { padding: 5px 10px; }
+td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.badge { display: inline-block; font-size: 12px; padding: 0 7px; border-radius: 9px; border: 1px solid var(--rule); color: var(--ink-3); }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <a class="brand" href="#top"><svg viewBox="0 0 26 20" aria-hidden="true"><path d="M1 17.5h5.2l1.6-2.2 1.2 2.2h3.4l1.3-14.2 1.5 14.2h2.6l1.3-6.6 1.1 6.6H25" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Powder 6</a>
+  <p class="ver">Documentation</p>
+  <ol>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#start">Getting started</a>
+      <ol><li><a href="#serve">Run it</a></li><li><a href="#files">Files it needs</a></li><li><a href="#first">A first fit</a></li></ol></li>
+    <li><a href="#tour">The window</a></li>
+    <li><a href="#concepts">Concepts</a>
+      <ol><li><a href="#methods">Rietveld, Le Bail, WPPF</a></li><li><a href="#params">Parameters and sharing</a></li></ol></li>
+    <li><a href="#datasets">Datasets</a>
+      <ol><li><a href="#formats">File formats</a></li><li><a href="#instrument">Instrument</a></li><li><a href="#lp">Lorentz-polarisation</a></li><li><a href="#background">Background and exclusions</a></li><li><a href="#resolution">Resolution</a></li><li><a href="#absorption">Absorption</a></li></ol></li>
+    <li><a href="#phases">Phases</a>
+      <ol><li><a href="#sg">Space group</a></li><li><a href="#refl">Reflections</a></li><li><a href="#atoms">Atoms</a></li><li><a href="#shape">Peak shape</a></li><li><a href="#po">Preferred orientation</a></li></ol></li>
+    <li><a href="#constraints">Constraints</a>
+      <ol><li><a href="#c-cell">Cell and crystal system</a></li><li><a href="#c-site">Special positions</a></li><li><a href="#c-atomic">Atomic constraints</a></li><li><a href="#c-limits">Limits and step caps</a></li><li><a href="#c-share">Sharing in global fits</a></li><li><a href="#c-profile">Profile symmetry</a></li><li><a href="#c-solve">Constraints in structure solution</a></li></ol></li>
+    <li><a href="#fitting">Fitting</a>
+      <ol><li><a href="#algos">Algorithms</a></li><li><a href="#weights">Weights</a></li><li><a href="#strategy">Strategy</a></li></ol></li>
+    <li><a href="#results">Results and export</a>
+      <ol><li><a href="#merit">Agreement factors</a></li><li><a href="#esd">Uncertainties</a></li><li><a href="#chi2">χ² and the weights</a></li><li><a href="#overlap">Overlapping reflections</a></li><li><a href="#export">Export</a></li></ol></li>
+    <li><a href="#solve">Structure solution</a>
+      <ol><li><a href="#s-extract">Extract</a></li><li><a href="#s-sg">Space-group test</a></li><li><a href="#s-cf">Charge flipping</a></li><li><a href="#s-wy">Wyckoff search</a></li><li><a href="#s-bv">Contacts and bond valence</a></li></ol></li>
+    <li><a href="#commands">Command line</a></li>
+    <li><a href="#keys">Mouse and keys</a></li>
+    <li><a href="#settings">Settings</a></li>
+    <li><a href="#storage">Saved data</a></li>
+    <li><a href="#arch">Code layout</a></li>
+    <li><a href="#trouble">Troubleshooting</a></li>
+    <li><a href="#refs">References</a></li>
+    <li><a href="#about">About</a></li>
+  </ol>
+  <button class="theme" type="button" id="theme">Switch theme</button>
+</nav>
+
+<main id="top">
+<h1>Powder 6</h1>
+<p class="lead">Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by Rietveld, Le Bail or WPPF, individually or in one global fit, with structure solution from the extracted intensities.</p>
+
+<section id="overview">
+<h2>Overview</h2>
+<p>Powder 6 is a single page, <code>powder6.html</code>, that runs entirely on your machine. Nothing is uploaded. It descends from PowderV2 (Dragoe 2001). It does file reading, space groups, scattering factors, peak shapes, charge flipping and the Wyckoff search, together with Rietveld refinement, several phases and several patterns in one session, and global fits.</p>
+<ul>
+  <li><b>Many patterns, many phases.</b> Every dataset holds its own value of every parameter of its phases. A phase can be in some datasets and not in others.</li>
+  <li><b>Three ways to get the intensities.</b> Rietveld (from atoms), Le Bail (partitioned from the data) and WPPF (free non-negative intensities solved exactly at each step). Phases using different methods can share a dataset.</li>
+  <li><b>Individual or global fits.</b> Fit each selected pattern on its own, or fit them together and decide per parameter whether it is shared or local.</li>
+  <li><b>Constrained models.</b> Special positions, crystal-system cell metrics, GSAS-II style atomic constraints and symmetry-restricted anisotropic broadening are built into the parameter set rather than corrected afterwards (see <a href="#constraints">Constraints</a>).</li>
+  <li><b>Constant-wavelength X-ray and neutron data</b>, with Kα<sub>2</sub>, polarisation, sample displacement and transparency.</li>
+  <li><b>Structure solution.</b> Space-group test, charge flipping and a Wyckoff-site search, handing the atoms back to the phase for a Rietveld fit.</li>
+  <li><b>Local and private.</b> Fits run in Web Workers. Settings and the Solve options are kept in the browser's local storage. Projects are saved as JSON files.</li>
+</ul>
+<div class="note"><b>Scope.</b> Powder 6 is for educational and research use. It implements standard algorithms but is not a substitute for fully validated, peer-reviewed packages such as GSAS-II, FullProf or TOPAS for analyses intended for publication.</div>
+</section>
+
+<section id="start">
+<h2>Getting started</h2>
+
+<h3 id="serve">Run it</h3>
+<p>Open <code>powder6.html</code> through a web server, not by double-clicking it. The page loads workers, shader files and databases with <code>fetch</code>, which browsers block on <code>file://</code>. From the folder that holds <code>powder6.html</code>:</p>
+<pre><code>python -m http.server 8000</code></pre>
+<p>then open <code>http://localhost:8000/powder6.html</code>. Any static server works. Use a current Chrome, Edge or Firefox. The Wyckoff search needs WebGPU (Chrome or Edge); everything else, including charge flipping, runs without it.</p>
+
+<h3 id="files">Files it needs</h3>
+<p>The page is made of the files below. The ones marked <span class="tag opt">data</span> are data files that are not code; Powder 6 starts without them but loses the features noted.</p>
+<div class="tablewrap"><table>
+<tr><th>Path</th><th>Role</th><th>Without it</th></tr>
+<tr><td><code>powder6.html</code>, <code>powder6.css</code></td><td>The program and its stylesheet.</td><td>Nothing works.</td></tr>
+<tr><td><code>js/</code>, <code>js/rietveld/</code></td><td>All code, workers included.</td><td>Nothing works.</td></tr>
+<tr><td><code>charge_flipping.wgsl</code>, <code>swarm_reflection.wgsl</code></td><td>GPU kernels for charge flipping and the Wyckoff search.</td><td>Charge flipping falls back to the CPU; the Wyckoff search stops with a message.</td></tr>
+<tr><td><code>sg/all.json</code> <span class="tag opt">data</span></td><td>The 530-odd space-group settings, with operators and Wyckoff positions.</td><td>No space groups: no new phases, no CIF import, no Solve.</td></tr>
+<tr><td><code>scatters/index.json</code> and the element files <span class="tag opt">data</span></td><td>X-ray and neutron scattering factors.</td><td>Atoms scatter nothing, and the demo cannot load.</td></tr>
+<tr><td><code>lib/jszip.min.js</code> <span class="tag opt">data</span></td><td>JSZip, to open the ZIP-based <code>.brml</code> and <code>.rasx</code> files.</td><td>Those two formats are refused with a message; all others work.</td></tr>
+<tr><td><code>absorption.json</code> <span class="tag opt">data</span></td><td>Mass attenuation coefficients for the transparency estimate.</td><td>Load your own table in Datasets → Absorption.</td></tr>
+<tr><td><code>Voigt_default.json</code>, <code>TCH_default.json</code>, <code>Split_default.json</code></td><td>Starting peak-shape presets, offered by <em>Load a peak-shape preset</em>.</td><td>Load a preset of your own, or start from the built-in defaults.</td></tr>
+</table></div>
+<p>When a file is missing the status bar says which one and why; the rest of the program keeps working. All numerical work (the banded and skyline solvers behind the covariance matrix and the uncertainties, the non-negative least squares, the Levenberg–Marquardt and parallel-tempering minimisers) is implemented in the program itself, so a fit never depends on a network library. Space-group symmetry data is derived from the Computational Crystallography Toolbox (cctbx; Grosse-Kunstleve et al. 2002), which is also the source of the systematic-absence rules.</p>
+
+<h3 id="first">A first fit</h3>
+<ol>
+  <li>Click <b>load the demo</b> in the Datasets panel when it is empty, or type <code>demo</code> in the command line (NaCl and Si, simulated with Cu and Co radiation), or read your own pattern with <b>File → Read powder patterns</b> or by dropping it on the window.</li>
+  <li>Check <b>Datasets → Instrument</b>: wavelength, radiation, polarisation and the 2θ range to fit.</li>
+  <li>In <b>Phases</b>, read a structure CIF or make a new phase from a space group and cell.</li>
+  <li>In <b>Solve</b>, pick a method. Start with Le Bail or WPPF to settle the zero, cell and peak shape.</li>
+  <li>Tick the groups to refine (background, zero and lattice, peak shape) and press <b>Fit selected datasets</b> or <kbd>F9</kbd>.</li>
+  <li>Read the agreement factors in the results. Then, with atoms in the phase, switch it to Rietveld and tick positions, B and occupancies. The order that works is described in <a href="#strategy">Strategy</a>.</li>
+</ol>
+</section>
+
+<section id="tour">
+<h2>The window</h2>
+<p>One window, a stage on the left and a side panel on the right. The side panel is resizable: drag its left edge, double-click the edge to reset.</p>
+<dl class="defs">
+  <dt>Header</dt><dd>The six tabs, the <b>File</b>, <b>Data</b> and <b>Refine</b> menus, <b>Report</b> (PDF), <b>Solve…</b> (opens the calculation setup), <b>Settings</b> and the dark-mode switch.</dd>
+  <dt>Patterns</dt><dd>Observed and calculated patterns, phase contributions, reflection ticks, background and the difference curve. Intensity scale: linear, √I or log I. <b>No backgrnd</b> subtracts the calculated background for display only.</dd>
+  <dt>Datasets</dt><dd>Dataset setup: read, simulate, phase assignment, resolution, instrument, absorption, background, exclusions, delete, and the batch table.</dd>
+  <dt>Phases</dt><dd>Name, colour, space group, peak shape, cell and atoms of the active phase, and its atomic constraints.</dd>
+  <dt>Solve</dt><dd>The Le Bail, WPPF and Rietveld calculations: fit setup, results, and for WPPF the structure solution.</dd>
+  <dt>Log</dt><dd>Every action with its time. Each action has a <b>Restore</b> button to go back to the state before it.</dd>
+  <dt>About</dt><dd>A short in-program guide.</dd>
+  <dt>Side panel</dt><dd><b>Datasets</b> (select what to plot and fit; drag to reorder; double-click to rename), <b>Phases</b> (the phases, their method, the datasets that hold them) and <b>Parameters</b> (values, refine flags, locks, standard uncertainties of the first selected dataset).</dd>
+  <dt>Status bar</dt><dd>The command line, the last message and the progress of a fit. See <a href="#commands">Command line</a>.</dd>
+</dl>
+<p>The theme follows the system and can be switched at any time. A busy calculation locks editing and shows a <b>Stop</b> button. The difference plot is scaled relative to the main pattern for visibility.</p>
+</section>
+
+<section id="concepts">
+<h2>Concepts</h2>
+
+<h3 id="methods">Rietveld, Le Bail, WPPF</h3>
+<p>Every dataset is modelled as</p>
+<div class="eq">y_calc(2θ) = background + Σ_phases Σ_hkl  height · profile(2θ − 2θ_hkl)</div>
+<p>The peak shape is the same whatever the method. The method decides where the intensity of each reflection comes from. Whatever the method, the reported intensities are integrated <em>areas</em> (peak height times the area of the unit-height profile), not heights: a height under-weights high-angle reflections by the full profile broadening.</p>
+<div class="tablewrap"><table class="wrapfirst">
+<tr><th>Method</th><th>Intensity</th><th>Use it to</th></tr>
+<tr><td>Rietveld</td><td><code>S · m · Lp · P · |F|²</code> from the atoms: scale S, multiplicity m, Lorentz-polarisation Lp, March–Dollase factor P.</td><td>Refine a known structure: positions, occupancies, B, scale, weight fractions.</td></tr>
+<tr><td>Le Bail</td><td>Partitioned from the observed pattern (Le Bail, Duroy and Fourquet 1988), starting from a flat set each time, so the intensities depend only on the parameters.</td><td>Fit cell and peak shape without a structure.</td></tr>
+<tr><td>WPPF</td><td>Free intensities, solved exactly and non-negatively at each step by variable projection (Pawley 1981; Toraya 1986; Golub and Pereyra 1973). Standard uncertainties are those of a full Pawley fit.</td><td>Extract intensities with uncertainties for space-group testing and structure solution.</td></tr>
+</table></div>
+<p>Phases with different methods can share a dataset. A phase without atoms can only be Le Bail or WPPF. A phase whose last atom is deleted switches to Le Bail.</p>
+
+<h4>Le Bail in detail</h4>
+<p>The net observed intensity (observed minus background) at each point is shared between the reflections that contribute to it, in proportion to each reflection's calculated profile at that point; summing the shares gives an intensity for each reflection. Powder 6 applies this in a way that keeps the result a function of the parameters alone:</p>
+<ol>
+  <li><b>Start.</b> A Le Bail fit begins as a WPPF fit. Variable projection is exact and does not need a good starting point, whereas the partition does: from a poor cell or profile it extracts intensities at the wrong places and the cycles can settle on a profile that only fits those intensities.</li>
+  <li><b>Cycles.</b> The classic algorithm then takes over. At the top of each iteration the intensities are re-extracted from a <em>flat</em> start (every reflection given the same height) and iterated until the relative change falls below 10<sup>-4</sup>, with a floor of 6 passes and a cap of 24. They are then held fixed for the whole iteration: for the baseline residual, for every column of the Jacobian and for the trial step. Only cell and profile parameters move.</li>
+  <li><b>Why not re-extract at every evaluation inside the step.</b> The extraction would quietly compensate for any change in width, flattening the χ² surface and making the widths indeterminate. Alternating extraction with least squares, rather than fusing them, is the actual Le Bail method.</li>
+  <li><b>Background.</b> The background is held at the values the first stage found while the cycles run. The partition gives every count under a reflection to that reflection, so a background refined in the same cycles can sink while the peaks broaden to take up the difference, a little more at every cycle.</li>
+  <li><b>Stop.</b> The cycles stop when χ² stops falling or every shift is below a tenth of its uncertainty, since a re-partition moves χ² a little by itself.</li>
+</ol>
+<p>Le Bail intensities are partitioned, not fitted, so they carry no covariance matrix: their uncertainties are the counting statistics of the observed points propagated through the partition fractions. This is why the space-group test and charge flipping use WPPF intensities.</p>
+
+<h4>WPPF in detail</h4>
+<p>The pattern is linear in every intensity, <code>y(x) = Σ_j I_j φ_j(x; θ) + b(x)</code>, so for given non-linear parameters θ (cell, zero, profile widths) the optimal intensities are the solution of a linear least-squares problem, not something to iterate towards. Powder 6 solves it at every step and lets the minimiser search only θ (variable projection; the Jacobian of each non-linear parameter is projected on the complement of the intensity columns, Kaufman 1975). Two consequences matter: the intensities are exactly optimal at every iteration, and the search space is the dozen or so truly non-linear parameters instead of several thousand, which is what makes parallel tempering usable.</p>
+<ul>
+  <li><b>Pawley or WPPF?</b> The model is the one Pawley introduced: every intensity a free least-squares variable. What differs is the surroundings. Pawley worked with constant-wavelength neutron data and a Gaussian peak; Toraya's whole-powder-pattern fitting was developed for laboratory X-ray data (Kα<sub>1</sub>/Kα<sub>2</sub> doublet, asymmetric peaks, Lorentzian character), which is what Powder 6 is built for. Pawley's slack constraints on near-coincident reflections are not used: exact coincidences are reported as groups instead (see <a href="#overlap">Overlapping reflections</a>). All WPPF reflections of a dataset, whatever their phase, are solved together, so overlaps between phases are handled like overlaps within one.</li>
+  <li><b>Speed.</b> The normal matrix of the linear step is banded (two reflections interact only where their profile windows overlap and the list is sorted by 2θ), so the solve costs O(n·b²) in the bandwidth b, not O(n³).</li>
+  <li><b>Non-negativity.</b> An intensity is physically non-negative, but unconstrained least squares can split two overlapping reflections into a large positive and a large negative value that sum correctly. An active-set non-negative least-squares solve removes that region. The uncertainties are nevertheless taken from the <em>unconstrained</em> normal equations, so a reflection pinned at zero still reports how poorly it is determined. This is what lets the French–Wilson treatment in charge flipping avoid the upward bias that clipping to zero would cause.</li>
+  <li><b>Limits.</b> The information in the data is unchanged: strongly overlapping reflections stay correlated, exactly coincident ones determine only their sum, and a poor starting cell is still a poor starting cell. The separable form makes the surface in θ better behaved, not convex.</li>
+</ul>
+
+<h3 id="params">Parameters and sharing</h3>
+<p>Every value has a name and every dataset holds its own value of every name of its phases.</p>
+<div class="tablewrap"><table>
+<tr><th>Name</th><th>Meaning</th></tr>
+<tr><td><code>zero</code>, <code>disp</code>, <code>transp</code></td><td>2θ zero shift (°), sample displacement, transparency (dataset). <code>disp</code> is the dimensionless coefficient of the shift −(disp/1000)·cos θ (in radians, converted to degrees); with the goniometer radius R known, the displacement is s = R·disp/2000. <code>transp</code> multiplies sin 2θ.</td></tr>
+<tr><td><code>bkg0 … bkgN-1</code></td><td>Chebyshev background terms (dataset).</td></tr>
+<tr><td><code>bga0 … bgaN-1</code></td><td>Spline anchor heights (dataset).</td></tr>
+<tr><td><code>p1.scale</code></td><td>Scale of phase p1 in the dataset (Rietveld).</td></tr>
+<tr><td><code>p1.a … p1.gamma</code></td><td>The free cell edges and angles of the phase (those its crystal system leaves free).</td></tr>
+<tr><td><code>p1.GU</code>, <code>p1.GV</code> …</td><td>Peak-shape coefficients, which depend on the profile type (see <a href="#shape">Peak shape</a>).</td></tr>
+<tr><td><code>p1.po</code></td><td>March–Dollase r.</td></tr>
+<tr><td><code>p1.Na1.x</code>, <code>.y</code>, <code>.z</code>, <code>.occ</code>, <code>.B</code></td><td>Atom parameters (Rietveld). B is the isotropic displacement parameter, B = 8π² U<sub>iso</sub>.</td></tr>
+</table></div>
+<p>Le Bail and WPPF intensities are not named parameters; they come back with every fit, with uncertainties. Parameters that are fixed by a constraint (a cell edge equal to another, a coordinate fixed by site symmetry, a dependent occupancy) are not parameters at all: they are computed from the independent ones. See <a href="#constraints">Constraints</a>.</p>
+<h4>Individual and global fits</h4>
+<p><b>Individual</b> fits each selected dataset on its own, in parallel, starting from the topmost selected dataset's values. <b>Global</b> fits all selected datasets in one least-squares problem. In Global mode each refined parameter has a padlock: closed means <em>shared</em> (one value for all datasets that hold it), open means <em>local</em> (one per dataset). A dot on the padlock means shared by some of the selected datasets only. <b>Refine → Sharing in the global fit</b> edits this as a table. Scales and backgrounds stay local.</p>
+</section>
+
+<section id="datasets">
+<h2>Datasets</h2>
+<h3 id="formats">File formats</h3>
+<p>Drop files on the window or use <b>File → Read powder patterns</b>. The reader detects the format from the name and the content.</p>
+<div class="tablewrap"><table class="wrapfirst">
+<tr><th>Format</th><th>Notes</th></tr>
+<tr><td>Two-column text (<code>.xy .csv .txt .dat .asc</code>)</td><td>The fallback for anything that is not recognised.</td></tr>
+<tr><td>PANalytical <code>.xrdml</code></td><td>Wavelength read from the file.</td></tr>
+<tr><td>Bruker <code>.brml</code>, Rigaku <code>.rasx</code></td><td>ZIP archives; need <code>lib/jszip.min.js</code>.</td></tr>
+<tr><td>Bruker <code>.uxd</code>, Rigaku <code>.ras</code>, Philips <code>.udf .rd .sd</code></td><td>Legacy text and binary formats.</td></tr>
+<tr><td>GSAS <code>.xra</code>, <code>.esd</code> (BANK lines)</td><td>Standard and ESD banks.</td></tr>
+<tr><td>Jade <code>.mdi</code></td><td>Read as two columns.</td></tr>
+<tr><td>pdCIF / CIF with a powder profile</td><td>Brings back wavelength, cell, space group, peak-shape parameters and, for a calculated profile, reflections and background. A structure CIF is not a pattern and is refused with a message.</td></tr>
+<tr><td>Powder 6 project <code>.json</code></td><td>Opens the whole session.</td></tr>
+</table></div>
+<p>Several files can be read at once. New datasets appear at the top of the list.</p>
+
+<h3 id="instrument">Instrument</h3>
+<p><b>Datasets → Instrument…</b> (also in the Data menu) sets, for the selected datasets:</p>
+<ul>
+  <li><b>Radiation</b>: X-rays or neutrons (constant wavelength). Polarisation does not apply to neutrons.</li>
+  <li><b>Source</b>: Cu, Co, Fe, Cr, Mo, Ag with the tabulated Kα<sub>1</sub>, Kα<sub>2</sub> and intensity ratio, or your own λ<sub>1</sub>, λ<sub>2</sub> and ratio I(λ<sub>2</sub>)/I(λ<sub>1</sub>). The ratio runs from 0 to 1; set it to 0 for a monochromatic beam or synchrotron (no Kα<sub>2</sub>).</li>
+  <li><b>Polarisation</b>: tube without monochromator (K = 1), monochromator (with its 2θ<sub>M</sub>), synchrotron (with the polarised fraction f), or none (K = 0). See <a href="#lp">Lorentz-polarisation</a>.</li>
+  <li><b>Goniometer radius</b> (for displacement in mm and for transparency) and the <b>fitted 2θ range</b>. Narrowing the range removes spline anchors that fall outside it; widening it again does not bring them back.</li>
+  <li><b>Zero</b> is a refinable 2θ shift. It is highly correlated with the lattice parameters: refine it with care, and preferably against a standard.</li>
+</ul>
+
+<h3 id="lp">Lorentz-polarisation</h3>
+<p>The integrated intensity of a powder reflection is not |F|² alone:</p>
+<div class="eq">I(hkl) = s · m · Lp(2θ) · |F(hkl)|²        Lp = L · P</div>
+<p><code>m</code> is the multiplicity and <code>s</code> an arbitrary overall scale. The Lorentz factor for a θ–2θ scan is <code>L = 1/(sin²θ cos θ)</code> (the usual extra factor 4 is constant and is absorbed in s); it has no parameters and applies to every polarisation setting. The polarisation factor is the same expression for all models, normalised so that P(0) = 1:</p>
+<div class="eq">P(2θ) = (1 + K cos² 2θ) / (1 + K)</div>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>Setting</th><th>K</th><th>Use it when</th></tr>
+<tr><td>Tube, no monochromator</td><td>1</td><td>Sealed tube or rotating anode with a filter, a multilayer mirror or no optic: P = ½(1 + cos² 2θ), the classical unpolarised expression. A Kβ filter absorbs but does not diffract, so it does not polarise.</td></tr>
+<tr><td>Monochromator</td><td>cos² 2θ<sub>M</sub></td><td>A crystal monochromator is in the beam. Enter its take-off angle 2θ<sub>M</sub>.</td></tr>
+<tr><td>Synchrotron</td><td>(1 − f)/f</td><td>A polarised source; f is the fraction polarised perpendicular to the diffraction plane. f = 1 gives K = 0, the same arithmetic as None.</td></tr>
+<tr><td>None</td><td>0</td><td>Neutron data, intensities already corrected elsewhere, or a deliberate test of the correction.</td></tr>
+</table></div>
+<h4>Choosing 2θ<sub>M</sub></h4>
+<p>2θ<sub>M</sub> is not free: it follows from Bragg's law at the monochromator, <code>2θ_M = 2 arcsin(λ / 2d_M)</code>, so the same crystal gives a different angle on every anode (graphite 002 sits at 26.6° on Cu and 12.2° on Mo). Entries are 2θ<sub>M</sub> in degrees with K = cos² 2θ<sub>M</sub> in brackets, for Kα weighted-mean wavelengths. Enter the angle, not K.</p>
+<div class="tablewrap"><table class="tight">
+<tr><th>Optic (d<sub>M</sub>, Å)</th><th class="n">Cr 2.2910</th><th class="n">Fe 1.9374</th><th class="n">Co 1.7903</th><th class="n">Cu 1.5418</th><th class="n">Mo 0.7107</th><th class="n">Ag 0.5608</th></tr>
+<tr><td>Graphite (002) (3.354)</td><td class="n">39.9 (0.588)</td><td class="n">33.6 (0.694)</td><td class="n">31.0 (0.735)</td><td class="n">26.6 (0.800)</td><td class="n">12.2 (0.956)</td><td class="n">9.6 (0.972)</td></tr>
+<tr><td>Quartz (10-11) (3.343)</td><td class="n">40.1 (0.585)</td><td class="n">33.7 (0.692)</td><td class="n">31.1 (0.734)</td><td class="n">26.7 (0.799)</td><td class="n">12.2 (0.955)</td><td class="n">9.6 (0.972)</td></tr>
+<tr><td>Ge (111) (3.266)</td><td class="n">41.1 (0.569)</td><td class="n">34.5 (0.679)</td><td class="n">31.8 (0.722)</td><td class="n">27.3 (0.790)</td><td class="n">12.5 (0.953)</td><td class="n">9.8 (0.971)</td></tr>
+<tr><td>Si (111) (3.136)</td><td class="n">42.9 (0.537)</td><td class="n">36.0 (0.655)</td><td class="n">33.2 (0.701)</td><td class="n">28.5 (0.773)</td><td class="n">13.0 (0.949)</td><td class="n">10.3 (0.968)</td></tr>
+<tr><td>LiF (200) (2.014)</td><td class="n">69.3 (0.124)</td><td class="n">57.5 (0.288)</td><td class="n">52.8 (0.366)</td><td class="n">45.0 (0.500)</td><td class="n">20.3 (0.879)</td><td class="n">16.0 (0.924)</td></tr>
+<tr><td>Ge (220) (2.000)</td><td class="n">69.9 (0.118)</td><td class="n">57.9 (0.282)</td><td class="n">53.2 (0.359)</td><td class="n">45.3 (0.494)</td><td class="n">20.5 (0.878)</td><td class="n">16.1 (0.923)</td></tr>
+<tr><td>Si (220) (1.920)</td><td class="n">73.3 (0.083)</td><td class="n">60.6 (0.241)</td><td class="n">55.6 (0.320)</td><td class="n">47.3 (0.459)</td><td class="n">21.3 (0.868)</td><td class="n">16.8 (0.917)</td></tr>
+</table></div>
+<p>For a graded multilayer mirror (Göbel and similar) choose the tube setting: the beam meets the multilayer at grazing incidence, 2θ<sub>M</sub> is a couple of degrees and K &gt; 0.997. For an optic that is not listed, d<sub>hkl</sub> = a/√(h²+k²+l²) with a(Ge) = 5.6575 Å and a(Si) = 5.4310 Å; graphite's d<sub>002</sub> is half its c axis.</p>
+<ul>
+  <li><b>Geometry.</b> The formula is the parallel case: the monochromator diffracts in the equatorial plane, as for a Johansson Ge (111) incident-beam crystal or a diffracted-beam graphite crystal on essentially every laboratory instrument. A monochromator mounted with its diffraction plane perpendicular to the equatorial plane gives P = (K + cos² 2θ)/(1 + K), a different function that no value of 2θ<sub>M</sub> can imitate.</li>
+  <li><b>Mosaic or perfect crystal.</b> K = cos² 2θ<sub>M</sub> is the ideally mosaic result, right for graphite. A perfect crystal needs K = |cos 2θ<sub>M</sub>|; to use it, enter the equivalent angle arccos √K (19.1° instead of 26.6° for graphite geometry, K = 0.894 instead of 0.800). The two differ by well under 2 % in P.</li>
+</ul>
+<h4>Choosing f for a synchrotron</h4>
+<p>Bending-magnet and undulator radiation is polarised in the horizontal plane, f typically 0.90 to 0.98 there. What matters is the orientation of the diffractometer: with a <b>vertical</b> scattering plane (usual for high-resolution work) the field is perpendicular to it, f ≈ 0.95–1.0 and P is nearly flat; with a <b>horizontal</b> scattering plane the field lies in it, f ≈ 0.05–0.1 and P → cos² 2θ, a severe correction that vanishes at 2θ = 90°. Getting this backwards is a much worse error than misjudging f by a few per cent.</p>
+<h4>Where Lp matters</h4>
+<ul>
+  <li><b>Rietveld phases.</b> Lp is part of the model: <code>height = S·m·Lp·P·|F|²/A</code>. Changing the polarisation changes the calculated pattern, so it can move the refined atomic parameters, B and scale. Set it correctly before refining a structure.</li>
+  <li><b>Le Bail and WPPF phases.</b> Every intensity is a free quantity and absorbs Lp completely. The polarisation model cannot move a cell parameter, a profile coefficient, R<sub>wp</sub> or χ². It changes the <em>meaning</em> of the refined intensities: the |F<sub>o</sub>| derived from them, the input to charge flipping, the Wilson prior behind the French–Wilson correction and the space-group test.</li>
+  <li><b>|F<sub>o</sub>|.</b> An observed structure-factor modulus is |F<sub>o</sub>| = √(I<sub>hkl</sub>/(m·Lp)) on an arbitrary scale, where I<sub>hkl</sub> is the integrated Kα<sub>1</sub> area of the reflection (the convention of the Rietveld model, I = S·m·Lp·P·|F|²) and Lp is evaluated at the corrected peak position with the polarisation model declared for the dataset.</li>
+</ul>
+
+<h3 id="background">Background and exclusions</h3>
+<ul>
+  <li><b>Chebyshev</b> polynomial over the fitted range, 0 to 24 terms. The terms enter the model linearly, so their derivatives are exact.</li>
+  <li><b>Spline</b> through anchors at fixed 2θ whose heights are the parameters (monotone cubic Hermite, Fritsch and Carlson 1980), 2 to 200 anchors. The monotone form gives a smooth, physically realistic baseline without overshoot between anchors. <b>Place anchors now</b> and <code>anchors&gt;&gt;n</code> put them at the two ends of the fitted range and at the lowest point of equal stretches between them, never in an excluded region. Ctrl+click on the pattern adds an anchor (on an anchor it removes it) and turns the background into a spline. Heights of new anchors start at the data; anchors that stay keep their values.</li>
+  <li><b>Excluded regions</b> are left out of the fit, the extraction and the statistics, but the pattern is still calculated there. Ctrl+Shift+drag marks one; Ctrl+Shift+click inside removes it. Regions and anchors go to the first selected dataset.</li>
+</ul>
+<h4>Fixed or fitted background: what it does to the numbers</h4>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th></th><th>Background fitted</th><th>Background fixed</th></tr>
+<tr><td>Uncertainties</td><td>Include the background: each anchor or term adds a column to the Jacobian, so the covariance knows that a free baseline absorbs part of what the peaks would otherwise explain.</td><td>Every σ is conditional on the anchors being exactly right.</td></tr>
+<tr><td>Parameter count and χ²</td><td>Counted, so the degrees of freedom are honest.</td><td>Not counted: χ², and every σ scaled by it, is optimistic by roughly the number of anchors.</td></tr>
+<tr><td>Extracted intensities</td><td>The baseline adjusts with the fit, so a slightly misplaced anchor corrects itself.</td><td>Any error in the anchors goes straight into the intensities, because the decomposition works on y<sub>obs</sub> − y<sub>bkg</sub>.</td></tr>
+</table></div>
+<p>Fitting the background does not excuse poorly placed anchors. A refined anchor moves in height only, so a point put in the middle of a peak is pulled up under it and the peak loses intensity to the baseline. With few reflections, or a steeply sloping background sampled by too few anchors, a fitted background and a broad low-angle peak describe the data equally well and the fit cannot tell them apart. Fit the background when the anchors are already close; leave it fixed while the cell and the profile are still moving. In Le Bail cycles the background is held (see <a href="#methods">Le Bail in detail</a>).</p>
+
+<h3 id="resolution">Resolution</h3>
+<p><b>Datasets → Resolution…</b> holds the instrument contribution to peak width as a calibration, separate from the sample broadening of each phase (U, V, W for the Gaussian part, X/cos θ, Y tan θ and Z for the Lorentzian part, plus the axial-divergence asymmetry SL and HL, as used by the separated profile; see <a href="#shape">Peak shape</a>). Use <b>Save calibration</b> to write it as a JSON file after fitting a standard (a well-crystallised, strain-free powder), and load it for other datasets. A peak-shape preset saved from Phases can also be loaded as a calibration (its U, V, W, X, Y, SL and HL are taken as they are).</p>
+
+<h3 id="absorption">Absorption</h3>
+<p><b>Datasets → Absorption…</b> loads elemental mass attenuation coefficients. With them, and the composition and density of the phases, Powder 6 estimates the physical transparency of the sample. Atoms, or a formula with an integer Z, are needed for composition and crystallographic density.</p>
+</section>
+
+<section id="phases">
+<h2>Phases</h2>
+<p>Create a phase with <b>New phase…</b> (a space group and a cell), <b>From CIF / pdCIF…</b> (cell, space group and atoms) or <b>Simulate…</b> to calculate a pattern from phases that have atoms. Each phase has a name and a colour used for its contribution and its reflection ticks. Assign phases to datasets with <b>Datasets → Phases…</b> (or <code>phases&gt;&gt;p1&amp;p2</code>); a phase taken out keeps its values for when it comes back.</p>
+
+<h3 id="sg">Space group</h3>
+<p>Type a symbol, a number or a Hall symbol, or press <b>Browse</b> for the space-group browser: filter by crystal system, centring and axis choice, search by number or symbol, and read the reflection conditions of the selected setting before pressing <b>Apply</b>. Every setting of a group is offered separately, because the reflection conditions differ between them (No. 62 appears as <i>Pnma</i>, <i>Pmnb</i>, <i>Pbnm</i>, <i>Pcmn</i>, <i>Pmcn</i> and <i>Pnam</i>). Applying a space group re-derives the sites of the atoms, the free cell parameters and the constraints that still hold (see <a href="#constraints">Constraints</a>).</p>
+<p><b>Monoclinic settings.</b> All three unique-axis choices are supported. The unique axis is read from the symmetry operators of the setting, and the cell then offers the one angle that is free: β for unique axis b (<i>P</i>12<sub>1</sub>/<i>c</i>1), γ for unique axis c, α for unique axis a. The other two are fixed at 90° and are not parameters. Reflection orbits and multiplicities follow the same axis, so the three settings of one lattice give identical peak positions and intensities.</p>
+
+<h3 id="refl">Reflections</h3>
+<p>The reflection list is built from the symmetry operators of the selected setting. Every <i>hkl</i> inside the resolution sphere is mapped onto its orbit under the Laue group; the orbit is kept once, labelled by a canonical member, and its size is the multiplicity <i>m</i> in <i>I</i> ∝ <i>m</i>·Lp·|F|². Systematic absences are tested on that representative, which decides the whole orbit: <i>h</i> is extinct if some operator (R, t) satisfies <i>h</i>R = <i>h</i> with <i>h</i>·t not an integer. Working from the operators, rather than from a fixed index range per crystal system, matters wherever two Laue classes share a crystal system and have genuinely different sets of independent reflections:</p>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>System</th><th>Laue classes</th><th>What separates them</th></tr>
+<tr><td>Cubic</td><td>m-3m / m-3</td><td>m-3 permutes the axes cyclically only, so (210) and (201) are independent; in m-3m they are equivalent.</td></tr>
+<tr><td>Tetragonal</td><td>4/mmm / 4/m</td><td>4/m has no mirror exchanging a and b, so (<i>hkl</i>) and (<i>khl</i>) are independent. <i>P</i>4 has Laue class 4/m: a general reflection has 8 equivalents, not the 16 of 4/mmm.</td></tr>
+<tr><td>Hexagonal</td><td>6/mmm / 6/m</td><td>As for tetragonal.</td></tr>
+<tr><td>Trigonal</td><td>-3m / -3</td><td>In -3 the orbit is generated by the 3-fold axis and inversion alone and is half the size.</td></tr>
+<tr><td>Trigonal</td><td>-3m1 / -31m</td><td>The two settings differ in which form is special: -3m1 gives <i>h</i>0<i>l</i> multiplicity 6 and <i>hhl</i> 12, -31m the reverse.</td></tr>
+</table></div>
+<p>In hexagonal and trigonal cells the special forms depend on the Bravais–Miller index <i>i</i> = −(<i>h</i>+<i>k</i>) as much as on <i>h</i> and <i>k</i>: a reflection lies on a mirror whenever any two of <i>h</i>, <i>k</i>, <i>i</i> are equal in magnitude, so (1 -2 <i>l</i>) and (2 -4 <i>l</i>) are special although |<i>h</i>| ≠ |<i>k</i>|. This follows automatically from the operators. The Laue class matters in two further places: the Stephens anisotropic-broadening terms allowed (see <a href="#c-profile">Profile symmetry</a>) and the orbit sizes used by charge flipping (see <a href="#c-solve">Constraints in structure solution</a>).</p>
+
+<h3 id="atoms">Atoms</h3>
+<p><b>Add atom…</b> takes a label, an element or ion type, fractional coordinates, occupancy and B. Each atom shows its Wyckoff site; coordinates on special positions are constrained automatically. Relationships between atoms are made with <b>Atomic constraints…</b>, described in <a href="#c-atomic">Atomic constraints</a>. A CIF read with <b>From CIF</b> brings its atoms in the same way, and the sites are re-derived from the space group. Hydrogen scatters weakly for X-rays and is usually not located by powder data; the Wyckoff search does not place it.</p>
+
+<h3 id="shape">Peak shape</h3>
+<p>A phase carries one of four profile types. The full width at half maximum of the Gaussian (H<sub>G</sub>) and Lorentzian (H<sub>L</sub>) parts is modelled empirically as a function of θ; the profile is a pseudo-Voigt, pV(x) = η L(x) + (1 − η) G(x).</p>
+<div class="tablewrap"><table class="wrapfirst">
+<tr><th>Profile type</th><th>Parameters and widths</th></tr>
+<tr><td>Simple pseudo-Voigt</td><td><code>H_G² = GU tan²θ + GV tan θ + GW + GP/cos²θ</code>, <code>H_L = LX/cos θ</code>, with an independent mixing parameter η (0 pure Gaussian, 1 pure Lorentzian). GU, GW and GP should be non-negative; LX is mainly size broadening.</td></tr>
+<tr><td>Thompson–Cox–Hastings</td><td><code>H_G² = U tan²θ + V tan θ + W</code>, <code>H_L = X/cos θ + Y tan θ</code> (X is the size term and Y the strain term: the GSAS and GSAS-II coefficients LX and LY; U, V, W in cdeg², X and Y in cdeg, see below), combined into one width and one mixing parameter by the TCH polynomial approximations (Thompson, Cox and Hastings 1987). SL and HL describe the axial-divergence asymmetry at low angle. This type models no displacement or transparency shift of its own; those are the dataset parameters <code>disp</code> and <code>transp</code>.</td></tr>
+<tr><td>Split pseudo-Voigt</td><td>Separate GU, GV, GW and LX for the left and right flank (<code>GU_L … LX_R</code>) and one η (<code>eta_split</code>), for asymmetric peaks. There is no GP term.</td></tr>
+<tr><td>TCH, separated instrument + sample (CW)</td><td>The instrument contribution lives in the dataset (Resolution): Gaussian variance <code>U tan²θ + V tan θ + W</code> and Lorentzian width <code>X/cos θ + Y tan θ + Z</code> (centidegrees). Each phase carries only its sample broadening: crystallite <code>size</code> (µm) and <code>strain</code> (µε, in the GSAS-II convention), with the size and strain mixing parameters <code>sizeMix</code>, <code>strainMix</code> (1 = all Lorentzian). Size can be isotropic, uniaxial (an axis, <code>sizeAxial</code>) or ellipsoidal (three sizes and three Euler angles); strain can be isotropic, uniaxial or Stephens (below).</td></tr>
+</table></div>
+<h4>Units and conventions of X and Y</h4>
+<p>All Lorentzian coefficients follow the GSAS convention, in centidegrees (1 cdeg = 0.01° 2θ): <code>H<sub>L</sub> [°] = (X/cos θ + Y tan θ + Z)/100</code>. X is the 1/cos θ (size) term and Y the tan θ (strain) term in the Thompson–Cox–Hastings phase type and, with the same meaning, in the instrument coefficients of the separated profile (Datasets → Resolution; Z is the constant term, which only the instrument has). The simple and split pseudo-Voigt types have only the size term, called LX. The Gaussian coefficients are GSAS variances: <code>H<sub>G</sub> [°] = √(8 ln 2·(U tan²θ + V tan θ + W))/100</code>, with U, V, W in cdeg².</p>
+<p>For orientation, with K = 1 and λ and D in the same unit, a crystallite size D gives X = 18000 λ/(π D) cdeg (λ = 1.5406 Å and D = 100 nm give X = 8.8), and a microstrain S in µε gives Y = 0.018 S/π cdeg (1000 µε give Y = 5.7). These are the relations the separated profile uses internally between <code>size</code>, <code>strain</code> and the Lorentzian widths.</p>
+<div class="warn"><b>Other programs.</b> GSAS and GSAS-II use these names. FullProf uses the opposite ones, in degrees: their X multiplies tan θ (strain) and their Y multiplies 1/cos θ (size). To carry values over, exchange the two and multiply by 100: X = 100·Y<sub>FullProf</sub>, Y = 100·X<sub>FullProf</sub>.</div>
+<h4>Anisotropic strain (Stephens)</h4>
+<p>Anisotropic microstrain, where broadening depends on the direction in the crystal, is modelled by a fourth-order polynomial in the Miller indices (Stephens 1999). The refinable coefficients S<sub>400</sub>, S<sub>040</sub> … are the symmetry-unique ones for the Laue class of the phase (see <a href="#c-profile">Profile symmetry</a>). In the separated profile the coefficients are quartic reciprocal-metric variances (ppm²·Å<sup>-4</sup>) and the strain width follows from √ΣS·<i>d</i>²; the Thompson–Cox–Hastings phase type has no anisotropic terms, so use the separated profile for anisotropic strain.</p>
+<h4>Position, asymmetry and truncation</h4>
+<p>Peak positions include the Kα<sub>2</sub> doublet, zero shift, displacement and transparency. Save the peak shape of the current phase from the File menu to reuse it. Each reflection is evaluated only within a finite window around its centre, from 8 FWHM for a Gaussian to 25 FWHM for a Lorentzian (interpolated with η) and never wider than 10° 2θ. The profile value at the window edge is subtracted from the whole peak as a small pedestal, so the profile reaches zero continuously rather than stepping off a cliff (a step would put a discontinuity in the pattern and in the derivatives). The exact area of the untruncated shape is carried along so that reported intensities are free of the truncation bias. The pattern is always calculated on the CPU, in double precision, by one implementation shared by the on-screen preview and the fit worker; WebGPU is used only for charge flipping and the Wyckoff search, whose outputs are not refined numbers with uncertainties attached.</p>
+
+<h3 id="po">Preferred orientation</h3>
+<p><b>Solve → Preferred orientation…</b> sets the March–Dollase axis (h k l, not all zero) and r. r = 1 means random orientation; r must lie between 0.1 and 5. The factor is averaged over each reflection's equivalents. Rietveld phases only.</p>
+</section>
+
+<section id="constraints">
+<h2>Constraints</h2>
+<p>A powder model has many more apparent degrees of freedom than the sample has. Powder 6 removes the redundant ones <em>exactly</em>, by eliminating dependent parameters from the least-squares problem, rather than by penalties or by correcting values afterwards. A constrained parameter has no Jacobian column of its own, takes no part in the count of refined parameters, and has the uncertainty that follows from its independent parameters. This section lists every kind of constraint, what it does, and where its limits are.</p>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>Kind</th><th>Set by</th><th>Applies to</th><th>Editable</th></tr>
+<tr><td><a href="#c-cell">Cell metric</a></td><td>Crystal system of the space group</td><td>a, b, c, α, β, γ</td><td>Through the space group</td></tr>
+<tr><td><a href="#c-site">Special positions</a></td><td>Site symmetry of each atom</td><td>x, y, z</td><td>Through the space group and the coordinates</td></tr>
+<tr><td><a href="#c-atomic">Atomic constraints</a></td><td>You (GSAS-II rules)</td><td>x, y, z, occupancy, B</td><td>Yes</td></tr>
+<tr><td><a href="#c-limits">Limits and step caps</a></td><td>Defaults and Settings</td><td>Every parameter</td><td>Limits yes; step caps no</td></tr>
+<tr><td><a href="#c-share">Sharing</a></td><td>You (padlocks)</td><td>Parameters across datasets</td><td>Yes</td></tr>
+<tr><td><a href="#c-profile">Profile symmetry</a></td><td>Laue class</td><td>Stephens S<sub>hkl</sub></td><td>Through the space group</td></tr>
+<tr><td><a href="#c-solve">Structure solution</a></td><td>Space group, you</td><td>Charge flipping, Wyckoff search</td><td>Partly</td></tr>
+</table></div>
+
+<h3 id="c-cell">Cell and crystal system</h3>
+<p>The crystal system decides which cell parameters exist at all. Only the free ones are parameters; the others are fixed numbers (90°, 120°) or equal to another parameter, and cannot be ticked.</p>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>System</th><th>Free parameters</th><th>Implied</th></tr>
+<tr><td>Cubic</td><td>a</td><td>b = c = a; α = β = γ = 90°</td></tr>
+<tr><td>Tetragonal</td><td>a, c</td><td>b = a; angles 90°</td></tr>
+<tr><td>Hexagonal, trigonal, rhombohedral</td><td>a, c</td><td>b = a; α = β = 90°, γ = 120° (rhombohedral groups are on hexagonal axes)</td></tr>
+<tr><td>Orthorhombic</td><td>a, b, c</td><td>angles 90°</td></tr>
+<tr><td>Monoclinic</td><td>a, b, c and the angle of the unique axis (β, γ or α)</td><td>the other two angles 90°</td></tr>
+<tr><td>Triclinic</td><td>a, b, c, α, β, γ</td><td>none</td></tr>
+</table></div>
+<p>Because an implied parameter is computed from its master, it has the master's uncertainty exactly: in a hexagonal cell <i>b</i> is not an assumption, it is determined as precisely as <i>a</i>. Changing the space group to another system re-derives the free set and carries over the values that still apply. Cell edges have default limits of half to twice the starting value, angles 30° to 150°.</p>
+
+<h3 id="c-site">Special positions</h3>
+<p>An atom on a symmetry element has fewer free coordinates than three. Powder 6 finds each atom's site from the operators of the space group: the stabiliser of the position (the operators that map it onto itself within a small distance tolerance, using the minimum-image distance), the multiplicity N/|stabiliser|, the position projected exactly onto the site, and the <em>free directions</em>. The free directions are the null space of the stacked (R − I) of the stabiliser, in reduced row-echelon form with the columns taken z, y, x, so that x stays free whenever it can. Examples:</p>
+<ul>
+  <li>(x, x, x): one free coordinate, x. y and z are computed from it, and the Jacobian has one column, not three of which two are copies.</li>
+  <li>(x, 0, 0): x is free, y and z are fixed numbers.</li>
+  <li>(0, 0, 0), (½, ½, ½): no free coordinate. The three coordinates cannot be ticked.</li>
+</ul>
+<p>The position is always <code>r = r₀ + Σ u_f · basis_f</code>, with u<sub>f</sub> the values of the free coordinates and r<sub>0</sub> what the site fixes. This is why a special position is <em>constrained</em>, not corrected after each step: a refinement can never walk an atom off its site, and the standard uncertainty of a dependent coordinate is that of its master. Each atom shows its Wyckoff letter and site expression in the Phases tab. Adding or editing an atom, or changing the space group, re-derives the site; relationships that became impossible are trimmed (see below).</p>
+
+<h3 id="c-atomic">Atomic constraints</h3>
+<p>The rules follow GSAS-II. They relate parameters of <em>atoms of one phase</em> and are linear. They apply to Rietveld phases only (Le Bail and WPPF phases have no atoms to constrain) and to every dataset that holds the phase. The editor is the same wherever it appears: Phases tab (below the atoms), the Constraints block of Solve → Rietveld (one editor per phase), and the <b>Atomic constraints…</b> dialog. Every change is validated and applied at once, and can be undone.</p>
+<h4>The three kinds</h4>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>Kind</th><th>Meaning</th><th>Which flags count</th></tr>
+<tr><td>Equivalence</td><td><code>B = m<sub>B</sub> · A</code>, <code>C = m<sub>C</sub> · A</code> … for the same parameter (x, y, z, occupancy or B) of several atoms. The <em>first</em> atom you pick is the independent parameter A; the others follow it, with the multipliers you set (default 1).</td><td>Only the refine flag of the independent parameter. The dependents follow it whether or not they are ticked.</td></tr>
+<tr><td>Constraint equation</td><td><code>m<sub>A</sub>·A + m<sub>B</sub>·B + … = c</code> for the same parameter of several atoms, with multipliers m and a total c.</td><td>The <em>last refined term</em> becomes the dependent one, computed from the others; terms that are not refined are constants. With no term refined the equation only aligns the starting values.</td></tr>
+<tr><td>Hold</td><td>The listed parameters are not refined.</td><td>Whatever their refine flag says.</td></tr>
+</table></div>
+<p>In the Parameters list, constrained parameters are marked: <b>H</b> held, <b>•</b> independent parameter of an equivalence, <b>≡</b> dependent (its refine flag is ignored), <b>Σ</b> a term of an equation. A tooltip gives the relationship in words, for example “= 0.5 × A.x (equivalence); its refine flag is ignored”.</p>
+<h4>Rules the editor enforces</h4>
+<ul>
+  <li>A parameter belongs to <b>one relationship only</b>: it is held, or it is in one equivalence or equation. (GSAS-II: a parameter is dependent in at most one constraint, and a held parameter in none.)</li>
+  <li>An atom appears at most once in a relationship. Equivalences and equations need at least two atoms, a hold at least one.</li>
+  <li>Multipliers are finite and non-zero (the first multiplier of an equivalence is always 1); the total of an equation is a finite number.</li>
+  <li><b>Coordinates fixed or dependent by site symmetry cannot be used.</b> Only a free direction of a site can be constrained: (x, x, x) offers x; (0, 0, 0) offers nothing. The atom chips for such coordinates are disabled with the reason in the tooltip.</li>
+  <li>Constraints apply per component. To tie x, y and z, add one relationship for each, or use the mixed-site shortcut.</li>
+</ul>
+<h4>Mixed site shortcut</h4>
+<p>For two or more atoms that share one position (a solid solution, a site with a vacancy), the type <b>Mixed site</b> adds, in one step, equivalences for x, y, z (only those the site leaves free) and B, plus the equation <code>occ<sub>1</sub> + occ<sub>2</sub> + … = 1</code>. The atoms must have the same site symmetry (same expression and multiplicity). Refine the occupancy of all but one atom, and the last refined one is computed from the others.</p>
+<h4>Worked examples</h4>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>Intention</th><th>Relationship</th></tr>
+<tr><td>Same B for two oxygens</td><td>Equivalence on <i>B</i>: O1 (independent), O2.</td></tr>
+<tr><td>B of O2 = 1.5 × B of O1</td><td>Equivalence on <i>B</i>, then edit the multiplier of O2 to 1.5.</td></tr>
+<tr><td>Fe and Ni mixed on one site</td><td>Mixed site: Fe1, Ni1. Occupancies sum to 1; same x, y, z and B.</td></tr>
+<tr><td>Na and Li partial occupancy summing to 0.8</td><td>Constraint equation on <i>occupancy</i>: Na1 + Li1 = 0.8.</td></tr>
+<tr><td>Stoichiometry: 2·occ(A) + occ(B) = 2</td><td>Constraint equation on occupancy with multipliers 2 and 1, total 2.</td></tr>
+<tr><td>Keep B of a heavy atom fixed while others refine</td><td>Hold on <i>B</i> for that atom (or simply leave it unticked: Hold also overrides a ticked flag).</td></tr>
+</table></div>
+<h4>What happens when you apply one</h4>
+<ol>
+  <li><b>Starting values are aligned.</b> For an equation, the current values are projected onto <code>Σ m<sub>i</sub> v<sub>i</sub> = c</code> inside the parameter limits (each value is moved along the multiplier direction and clamped to its limits; the monotone dependence of the sum on the shift is solved by bisection). If the equation cannot be met within the limits (for example a total of 3 for two occupancies limited to 0–1), the editor says so and nothing changes. For an equivalence, the dependents are computed from the independent parameter. Atoms are then put back on their sites.</li>
+  <li><b>Previous fits are cleared.</b> The statistics, uncertainties and intensities of the Rietveld calculation of the phase's datasets are invalidated, because the model changed. The change is one undo step.</li>
+  <li><b>The fit eliminates the dependents.</b> At each evaluation the dependent value is the affine function <code>offset + Σ t<sub>k</sub> · x<sub>k</sub></code> of the free parameters, so derivatives are exact (chain rule), and the number of refined parameters is that of the independent ones. A dependent of fixed parameters is simply a constant, set once.</li>
+</ol>
+<h4>Bounds and uncertainties</h4>
+<ul>
+  <li>Limits apply to <em>dependents</em> too. Occupancies are always clipped to 0–1 under a constraint. If a dependent has a single independent term, its bounds are translated into bounds on the independent parameter (divided by the multiplier) so the minimiser cannot cross them; incompatible bounds are reported (“Incompatible constraint bounds for …”). With several terms the combination is checked at the starting values and at each step (“Starting values conflict with a constraint or the parameter limits”).</li>
+  <li>The uncertainty of a dependent is propagated from the covariance of its independent terms, <code>var = Σ<sub>jk</sub> t<sub>j</sub> t<sub>k</sub> cov<sub>jk</sub></code>, including their correlation. It is not shown when a term is at a bound or the matrix is ill-conditioned, and the Parameters list says why. A coordinate whose uncertainty reaches half a cell edge is flagged as not constrained by the data.</li>
+</ul>
+<h4>When the model changes under a constraint</h4>
+<p>Deleting an atom, changing a site or the space group, or renaming a label can invalidate a relationship. Powder 6 trims it rather than refusing the edit: the atom (or a coordinate that became fixed by symmetry) is removed from the relationship; if the independent atom of an equivalence goes, the next atom becomes the independent one with multipliers rescaled; relationships left too small are dropped. Every trimming is written to the Log (“A1.x removed from: …”). Projects saved with the older plain “equal” groups are read as equivalences with multipliers 1.</p>
+<h4>Dos and don'ts</h4>
+<ul>
+  <li>Constrain what chemistry demands (a shared site, a charge or stoichiometry sum, a common displacement parameter for chemically similar atoms), not what makes the fit look better.</li>
+  <li>Refine a mixed-site <em>total</em> only if scattering contrast allows it: Fe and Ni (Z = 26, 28) are nearly indistinguishable for Cu X-rays, and the occupancy ratio is then undetermined whatever the constraint.</li>
+  <li>Occupancy and B are strongly correlated; constrain one of them (or refine them in separate steps) when the data are poor.</li>
+  <li>Constraints are linear. A non-linear relationship (such as a fixed bond length) is not available; use the structure-solution distance constraints or fix the coordinates.</li>
+</ul>
+
+<h3 id="c-limits">Limits and step caps</h3>
+<p>Every parameter has a lower and an upper limit, and every iteration has a maximum step per kind of parameter. Limits are set in <b>Settings → Parameter limits</b> (type <code>inf</code> for none); the defaults below apply to any parameter without an entry. A step that would cross a limit is clipped to it, and the gain ratio of Levenberg–Marquardt is evaluated for the step actually taken, so parameters parked at a limit (weak reflections at zero in WPPF) do not throttle the rest. If an entire step is blocked (the model sits in a corner of the limit box with the gradient pointing out of it) the fit stops and says so, rather than raising the damping against a wall. A parameter whose Jacobian column is identically zero is left out of the solve and reported once by name.</p>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>Parameter</th><th>Default limits</th><th>Largest step per iteration</th></tr>
+<tr><td>Scale</td><td>0 … ∞</td><td>none</td></tr>
+<tr><td>Cell edges a, b, c</td><td>0.5 … 2 × starting value</td><td>2 % of the value</td></tr>
+<tr><td>Cell angles</td><td>30° … 150°</td><td>1°</td></tr>
+<tr><td>Atom x, y, z</td><td>none</td><td>0.05</td></tr>
+<tr><td>Occupancy</td><td>0 … 2 (0 … 1 under an atomic constraint)</td><td>0.2</td></tr>
+<tr><td>B</td><td>−2 … 30 Å²</td><td>2</td></tr>
+<tr><td>March–Dollase r</td><td>0.1 … 5</td><td>0.25</td></tr>
+<tr><td>Zero shift</td><td>−2° … 2°</td><td>0.1°</td></tr>
+<tr><td>Displacement / transparency</td><td>none</td><td>100 / 0.01</td></tr>
+<tr><td>η, mixing parameters</td><td>0 … 1</td><td>0.25 (size and strain mixing 0.2)</td></tr>
+<tr><td>Lorentzian widths (X, Y, Z, SL, LX …)</td><td>≥ 0</td><td>0.5 × max(|value|, 1) (SL, HL: 0.01 to 0.05)</td></tr>
+<tr><td>Size (µm)</td><td>0.001 … 10</td><td>20 % of the value</td></tr>
+<tr><td>Strain (µε)</td><td>0 … 10<sup>6</sup></td><td>0.5 × max(|value|, 5)</td></tr>
+<tr><td>Stephens S<sub>400</sub>, S<sub>040</sub>, S<sub>004</sub></td><td>≥ 0</td><td>0.5 × max(|value|, 5)</td></tr>
+<tr><td>Everything else</td><td>none</td><td>none</td></tr>
+</table></div>
+<p>Physically, GU, GW, GP, U and W should be non-negative, and a Lorentzian width below zero has no effect at all (the profile code floors it), so the fit would wander off there and lose the parameter. If a limit is reached, check the starting model before widening it.</p>
+
+<h3 id="c-share">Sharing in global fits</h3>
+<p>In a global fit, sharing is itself a constraint: a shared parameter is one unknown for all datasets that hold it. Scales and backgrounds stay local. Atomic constraints and sharing combine, with two rules: the terms of one constraint equation must have the <em>same</em> sharing (all shared by the same set of datasets, or all local), otherwise the fit stops with “Constraint sharing conflict: use the same global/local sharing for …”; and a globally shared dependent parameter must have the same equation in every dataset that holds it.</p>
+
+<h3 id="c-profile">Profile symmetry</h3>
+<p>Anisotropic strain is described by the symmetry-allowed terms of a quartic form in <i>hkl</i> (Stephens 1999). Which coefficients exist follows from the Laue class, so symmetry-equivalent terms are not separate parameters:</p>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>System</th><th>Independent coefficients</th></tr>
+<tr><td>Cubic</td><td>S<sub>400</sub> (= S<sub>040</sub> = S<sub>004</sub>), S<sub>220</sub> (= S<sub>202</sub> = S<sub>022</sub>)</td></tr>
+<tr><td>Tetragonal</td><td>S<sub>400</sub> (= S<sub>040</sub>), S<sub>004</sub>, S<sub>220</sub>, S<sub>202</sub> (= S<sub>022</sub>)</td></tr>
+<tr><td>Hexagonal, trigonal</td><td>S<sub>400</sub>, S<sub>004</sub>, S<sub>202</sub></td></tr>
+<tr><td>Lower</td><td>The terms the point group allows, derived from the symmetry operators</td></tr>
+</table></div>
+<p>The dependent terms are not shown and have the uncertainty of their master, exactly. Uniaxial size and strain models take their axis as <i>hkl</i> and weight each reflection by its angle to it.</p>
+
+<h3 id="c-solve">Constraints in structure solution</h3>
+<p>Structure solution uses its own constraints, summarised here and detailed in <a href="#solve">Structure solution</a>:</p>
+<ul>
+  <li><b>Charge flipping</b> works from the operators of the selected space group: reflections in one orbit share one amplitude, overlapping distinct reflections share only their total, systematic absences are held at zero, phases are symmetrised with a strength λ, and a fraction of the weakest reflections is freed (<a href="#s-cf">Charge flipping</a>).</li>
+  <li><b>Wyckoff search</b> places atoms only on Wyckoff positions, enforces the formula and Z, applies the contact floor and your distance rules, and checks the space-group arithmetic on Z (<a href="#s-wy">Wyckoff search</a>).</li>
+  <li><b>Space-group test</b> works only with reflections that were free parameters in the WPPF fit: run it from the condition-free group of the Laue class (<a href="#s-sg">Space-group test</a>).</li>
+</ul>
+</section>
+
+<section id="fitting">
+<h2>Fitting</h2>
+<h3>What gets refined</h3>
+<p>Tick parameters in the <b>Parameters</b> panel, or tick groups in Solve: background, zero and lattice, sample and peak shape, and for Rietveld also atomic positions, B and occupancies. A dash in a group box means some of its parameters are ticked. <b>Refine → Tick scales and background</b> and the next entries tick the parameters of a step <em>and of the steps before it</em>. Parameters that a <a href="#constraints">constraint</a> makes dependent cannot be ticked independently; their flag is ignored.</p>
+<p><b>Refine scales only</b> and <code>scales</code> estimate the scales and a constant background to get started. Every fit also begins with one linear step on the scales and background (the model is linear in them), taken before the full fit.</p>
+
+<h3 id="algos">Algorithms</h3>
+<h4>Levenberg–Marquardt (LM)</h4>
+<p>LM is a gradient-based method for non-linear least squares that interpolates between Gauss–Newton and steepest descent. It converges quadratically near the minimum and is the method that gives the standard uncertainties. Powder 6 uses Marquardt scaling, solves the damped normal equations by Cholesky factorisation (an indefinite matrix means the normal equations are corrupt, and Cholesky fails exactly there, which makes the loop raise the damping and retry), holds limits by an active set, and caps the step per kind of parameter (<a href="#c-limits">Limits and step caps</a>).</p>
+<p>Derivatives are exact for background terms, scales and atom parameters (<i>x</i>, <i>y</i>, <i>z</i>, occupancy, B, through the unit profiles of the reflections), differences of the heights for the March–Dollase parameter, differences of the spline for anchors, and forward differences for cell, profile, zero, displacement and transparency. With WPPF phases in the dataset, the Jacobian is projected on the complement of the intensity columns; with Le Bail phases, see <a href="#methods">Le Bail in detail</a>.</p>
+<h4>Parallel tempering (PT), then LM</h4>
+<p>PT, also called replica-exchange Monte Carlo (Swendsen and Wang 1986), runs several copies (replicas) of the model at fixed temperatures T = T<sub>max</sub><sup>r/(R−1)</sup>, from 1 to the highest temperature. Each sweep every replica proposes a Gaussian change of one parameter (step scale from the local curvature and the parameter's step cap, widened by √T, reflected at the limits) and accepts it with probability min(1, exp(−Δχ²/2T)). Adjacent replicas then attempt to swap configurations, alternating even and odd pairs. A good solution found by a hot replica in a distant valley thereby percolates down to the cold ones. The best configuration is handed to LM, which converges locally and produces the uncertainties. A seed makes a run repeatable. PT costs many more model evaluations; use it when the starting cell or profile is uncertain.</p>
+<ul>
+  <li><b>WPPF under PT.</b> The intensities are not searched; they are solved exactly at each evaluation, so a replica walks the same non-linear parameters it would in Le Bail mode, and its cost is the <em>reduced</em> objective, the residual after the intensities have been optimised. That is the function whose minimum in θ is the true minimum, so the Metropolis test and the swaps mean what they are supposed to mean.</li>
+  <li><b>Le Bail under PT.</b> The PT stage and the first LM stage treat the Le Bail phases as WPPF (exact intensities at each evaluation); only the closing cycles are classical Le Bail. A cost that re-extracted partitioned intensities for every proposal would be non-stationary.</li>
+  <li><b>Which algorithm?</b> LM alone when the model is already close; PT with the LM finish when it is not (typically a cell known only roughly).</li>
+</ul>
+<h4>Stopping</h4>
+<p>The fit stops when the relative change of χ² is below the tolerance twice in a row, when every refined parameter is at a limit or has no effect, or at the maximum number of iterations. <b>Stop</b> (or <code>stop</code>) ends a run; a stopped fit keeps nothing from the half-finished stage.</p>
+
+<h3 id="weights">Weights</h3>
+<p>Each point has weight 1/σ², with σ² the counts (Poisson) or the σ read from the file; a unit weight can be chosen in Settings. This is the right model for measured counts and for nothing else; see <a href="#chi2">χ² and the weights</a> for what happens when the intensities are not counts. The <em>structure fitting</em> steps (Wyckoff search and final coordinate refinement) use a different weight: 1/σ² of each extracted intensity from the WPPF decomposition, because the uncertainty of an extracted intensity comes from the decomposition and not from photon counting (see <a href="#s-wy">Wyckoff search</a>).</p>
+
+<h3 id="strategy">Strategy</h3>
+<p>A sequential refinement is far more reliable than releasing everything from a poor starting model. The usual order, which the <b>Refine</b> menu steps follow:</p>
+<ol>
+  <li><b>Set the model.</b> Load the data, check the instrument (wavelength, doublet, polarisation, range), assign the phases, choose the space group and a starting cell. Exclude regions with artefacts or an unmodelled phase.</li>
+  <li><b>Scales and background.</b> Place the background (Chebyshev terms, or spline anchors close to the baseline) and let <code>scales</code> or the first step estimate them. Keep spline anchors out of peaks.</li>
+  <li><b>Zero and cell</b> (Le Bail or WPPF). Refine the lattice parameters and, if needed, the zero shift, so the calculated ticks fall on the observed maxima. If LM drifts to a poor solution from a rough cell, run PT once, then LM for the precise minimisation.</li>
+  <li><b>Isotropic peak shape.</b> Once positions are right, refine the primary width parameters (W, U, V, then the Lorentzian X (size) and Y (strain); GW and LX in the simple and split types), which absorb the dominant size and strain contributions. In the separated profile, fit the instrument against a standard first and refine only <code>size</code> and <code>strain</code> per phase.</li>
+  <li><b>Asymmetry and shape.</b> Introduce asymmetry (SL/HL, or the left/right widths) if there is a clear misfit at low angles, and η where it is free.</li>
+  <li><b>Anisotropic broadening</b> (last, and only if systematic misfits remain: some reflections consistently broader than the model). Refine only the symmetry-independent Stephens terms.</li>
+  <li><b>WPPF for intensities.</b> With a stable model, a final WPPF fit gives the most statistically sound intensities and uncertainties for the space-group test and structure solution. LM is generally the recommended algorithm for this step.</li>
+  <li><b>Rietveld.</b> Switch a phase with atoms to Rietveld. Release the scale first, then positions, then B, then occupancies, checking the difference curve after each. Use <a href="#c-atomic">atomic constraints</a> for shared sites and chemically similar atoms. Release the orientation parameter last, and only for a reason (visible texture).</li>
+</ol>
+<div class="note"><b>Visual inspection comes first.</b> Numerical indicators can mislead. A good fit has a difference curve of random noise centred on zero. Structured residuals (“M-shaped” features at peaks, broad humps where the background is inadequate, un-indexed peaks) mean a systematic error: wrong peak shape, unmodelled anisotropy or asymmetry, poor background, or an impurity phase.</div>
+</section>
+
+<section id="results">
+<h2>Results and export</h2>
+<p>The results of the active calculation are in <b>Solve</b>, in folding blocks: <em>Results and quantitative analysis</em> (agreement factors, scale, weight fraction, R<sub>Bragg</sub> and cell of each phase in each dataset that holds it), <em>Atoms</em>, <em>Reflections</em> (or <em>Intensities</em> for Le Bail and WPPF, with their uncertainties). Weight fractions follow Hill and Howard: <code>W_p = S_p M_p V_p / Σ S_i M_i V_i</code>, valid when every crystalline phase of the sample is in the model.</p>
+
+<h3 id="merit">Agreement factors</h3>
+<div class="eq">R_p   = Σ|y_obs − y_calc| / Σ|y_obs|
+R_wp  = [ Σ w (y_obs − y_calc)² / Σ w y_obs² ]^½
+R_exp = [ (N − P) / Σ w y_obs² ]^½
+χ²    = (R_wp / R_exp)²   (reduced);   GOF = √χ²
+R_Bragg = Σ|I_obs − I_calc| / Σ I_obs   (Rietveld phases)</div>
+<p>R<sub>p</sub> is computed on the gross intensities (background included) and is sensitive mainly to the strong reflections. R<sub>wp</sub> is the primary figure of merit because its weights follow the counting statistics across the whole pattern. N is the number of fitted points and P the number of refined parameters, <em>including the determined intensities of Le Bail and WPPF phases</em>, so the degrees of freedom are honest. R<sub>Bragg</sub> uses I<sub>obs</sub> obtained by sharing the observed net counts among overlapping reflections in proportion to the calculated profiles. χ² ≈ 1 is the target only when the weights are the true variances. A global fit also reports overall factors computed from the combined weighted residual sums, not the mean of the dataset percentages.</p>
+<h4>What does R<sub>Bragg</sub> mean?</h4>
+<p>R<sub>Bragg</sub> = 100 × Σ|I<sub>obs</sub> − I<sub>calc</sub>| / Σ|I<sub>obs</sub>| compares integrated reflection intensities. The observed intensities are not measured directly: they are estimated from the profile by sharing the observed net counts among overlapping reflections, so they depend on the model, especially for overlapping peaks. A value of 0.04 % means a residual ratio of 0.0004; it alone does not establish a correct structure. R<sub>F</sub> is the same comparison on √I. Le Bail and WPPF phases refine free intensities, so their structural R<sub>Bragg</sub> and R<sub>F</sub> are not defined and are omitted. Judge a structure by R<sub>wp</sub>, the difference curve and physical plausibility too.</p>
+<p>Powder 6 has no Williamson–Hall plot. With the separated profile the crystallite <code>size</code> (µm) and <code>strain</code> (µε) of each phase are refined parameters and are read directly; with the TCH type, X (1/cos θ) is the size term and Y (tan θ) the strain term, and the relations under <a href="#shape">Peak shape</a> give D and the microstrain.</p>
+
+<h3 id="esd">Uncertainties</h3>
+<p>A refined value is printed in the crystallographic compact form, <code>a = 5.4639(3) Å</code>: the parenthesis is the standard uncertainty in units of the last digit shown, so this reads 5.4639 ± 0.0003. The value is rounded to the digit its uncertainty reaches and no further; the uncertainty is quoted to one significant figure, except where its leading digit is 1, which gets two (rounding 0.00012 to 0.0001 would misstate it by 17 %).</p>
+<p>The uncertainties are the diagonal of the covariance matrix from the final normal equations, scaled by the reduced χ²: σ<sub>j</sub> = √(χ²<sub>red</sub> C<sub>jj</sub>), with χ²<sub>red</sub> = χ²/(N − P). They are the <em>precision</em> of the fit, not the accuracy of the measurement: they exclude sample displacement not modelled, any systematic error in the wavelength, and (with a fixed background) the background itself. A cell edge good to 3 × 10<sup>-4</sup> Å by this measure can still be wrong in the third decimal for reasons the refinement cannot see. Parameters on a limit have no uncertainty. A parameter that a constraint makes dependent has the uncertainty of its independent parameters, with their correlation (<a href="#c-atomic">Bounds and uncertainties</a>).</p>
+
+<h3 id="chi2">χ² and the weights</h3>
+<p>χ² ≈ 1 is the right target only when w<sub>i</sub> is the real variance of y<sub>i</sub>. The Poisson weight assumes σ² = y, which is exact for raw counts and for nothing else. Three ways a dataset stops being counts:</p>
+<ul>
+  <li><b>Normalisation.</b> Synchrotron data are often divided by a monitor, the ring current or the exposure time. A pattern whose strongest peak reads 100 “a.u.” would, as counts, scatter by ±10 at the peak and by about a quarter of its own height in the background. If the trace is visibly smoother, the numbers are not counts.</li>
+  <li><b>Averaging.</b> Multi-analyser crystals, strip and area detectors and repeated scans average many measurements into each point. That cuts the noise by √n and leaves the scale alone, so √y overstates σ.</li>
+  <li><b>Smoothing or rebinning.</b> Both correlate neighbours, which removes scatter without touching y. This cannot be undone afterwards: fit the unsmoothed data.</li>
+</ul>
+<p>The relationship is linear: with w = 1/y, multiplying every intensity by k multiplies χ² by exactly k. A run reporting χ² = 0.05 says its data sit about twenty times below a count scale; scale the intensities up by twenty before loading and χ² arrives near 1. If a σ column comes with the file, Powder 6 uses it and the problem does not arise.</p>
+<ul>
+  <li><b>Unaffected by a wrong weight scale:</b> the refined parameters (a constant factor on all weights does not move the minimum), R<sub>wp</sub> and R<sub>p</sub> (ratios in which the scale cancels) and the standard uncertainties (the covariance is scaled by χ², which cancels the error exactly). Intensity uncertainties scale with the intensities, so the relative ones are invariant. A low χ² is therefore not a reason to distrust the table.</li>
+  <li><b>Broken:</b> χ² as a figure of merit, R<sub>exp</sub> = R<sub>wp</sub>/√χ², and any judgement “χ² is near 1, so the model is adequate”. Read R<sub>wp</sub> and the difference curve instead.</li>
+</ul>
+<p>The failure is asymmetric. A χ² far below 1 is almost always this scale problem and leaves the model intact. A χ² far above 1 can come from an over-optimistic σ, but much more often it is a real deficiency (a missing phase, a wrong peak shape, an unmodelled background) and should not be scaled away.</p>
+
+<h3 id="overlap">Overlapping reflections</h3>
+<p>Two reflections closer together than their profile width have nearly parallel derivatives. Intensity can move from one to the other with almost no change to the calculated pattern, so the data cannot say how it divides between them: the normal matrix is near-singular in that direction and the diagonal of its inverse blows up. A large σ there is the fit reporting, correctly, that the reflection's <em>share</em> is undetermined; it is not a failed fit, and the peak may look perfect on screen. What is determined is the <em>total</em> of the cluster. Its uncertainty needs the full covariance (<code>var = Σ<sub>ij</sub> cov<sub>ij</sub></code>), because the off-diagonal terms are large and negative and it is their cancellation that makes the sum well determined; adding the individual variances in quadrature gives a hugely pessimistic total. Kα<sub>2</sub> belongs in the decision of what overlaps: at high angle the satellite lands on unrelated reflections. Use cluster totals, not individual values, for anything downstream.</p>
+<h4>Exactly coincident reflections</h4>
+<p>Some sets cannot be separated at all. In a cubic <i>F</i> cell 333 and 511 have the same <i>h</i>²+<i>k</i>²+<i>l</i>² and therefore the same 2θ, the same profile and identical columns in the normal matrix; so do 700 and 522, and a dozen more pairs; accidental coincidences in low-symmetry cells do the same. The linear system is then exactly singular in those directions, and the solver (a modified Cholesky that repairs only the pivots that fail, Gill and Murray 1974) puts the whole group intensity on one member and leaves the others near zero, so that the several hundred intensities that <em>are</em> determined are not biased by a damping term large enough to cope with every coincidence. <b>The split within such a group is arbitrary; the sum is not.</b> Without a warning a coincident pair would read as one strong reflection and one absent one, a conclusion the data never supported. Powder 6 flags these rows <span class="badge">overlap</span> in the Intensities table and in the saved reflection files, and the intensity of a weak reflection held at zero by the non-negativity is flagged <span class="badge">at 0</span>; its σ is still that of the unconstrained solution. Read the group, not the rows, for a space-group test or a structure solution.</p>
+
+<h3 id="export">Export</h3>
+<div class="tablewrap"><table class="wrapfirst">
+<tr><th>Where</th><th>What it writes</th></tr>
+<tr><td>File → Save project (<kbd>Ctrl</kbd>+<kbd>S</kbd>)</td><td><code>rietveld_project_&lt;timestamp&gt;.json</code>: datasets, phases, values, flags and settings. Open it later with File → Open project, or drop it on the window.</td></tr>
+<tr><td>File → Save results of selected</td><td><code>&lt;calculation&gt;_results_&lt;timestamp&gt;.txt</code>: agreement factors, phases and atoms.</td></tr>
+<tr><td>File → Save reflections and intensities</td><td><code>…_reflections_….txt</code>: the reflection list, with extracted intensities and uncertainties for Le Bail and WPPF phases, and the flags above.</td></tr>
+<tr><td>File → Save calculated patterns</td><td><code>…_patterns_….txt</code>: observed and calculated patterns of each selected dataset.</td></tr>
+<tr><td>Save buttons in the results blocks</td><td>A CIF and a pdCIF of the active calculation, and for WPPF the extracted F² = I/(m·Lp) and σ as a SHELX HKLF 4 file.</td></tr>
+<tr><td>Report (PDF)</td><td>A PDF of the selected datasets: results, plots (drawn in the light theme for paper) and, if present, the structure solution. Written by a small built-in PDF writer: no library, A4 pages.</td></tr>
+<tr><td>File → Export to GSAS-II</td><td><code>powder6_gsas2_&lt;timestamp&gt;.zip</code> (also the command <code>gsas2</code>): see below.</td></tr>
+<tr><td>Save PNG</td><td>The pattern plot as an image.</td></tr>
+</table></div>
+<h4 id="gsas2">Export to GSAS-II</h4>
+<p>File → Export to GSAS-II writes plain files for the selected datasets, readable by GSAS-II without a script. It is built in the page (the ZIP is written in JavaScript), so it needs no Python.</p>
+<div class="tablewrap"><table class="wrapfirst">
+<tr><th>File</th><th>Content</th></tr>
+<tr><td><code>phases/&lt;phase&gt;.cif</code></td><td>Cell, space group (H-M symbol, Hall symbol and the operators of the setting used here), atoms with positions, occupancy and U<sub>iso</sub> = B/(8π²). One file per phase; when the datasets hold different values of a phase there is one per set of values. A phase without atoms gets one placeholder H atom, because GSAS-II needs an atom list.</td></tr>
+<tr><td><code>data/&lt;dataset&gt;.xye</code></td><td>2θ, counts, standard uncertainty for every point.</td></tr>
+<tr><td><code>data/&lt;dataset&gt;.instprm</code></td><td>Same name as the .xye, so that GSAS-II uses it when the pattern is imported: wavelength(s) and ratio, Zero, Polariz. = 1/(1+K), U V W X Y Z (same units and the same X/cos θ + Y tan θ form), SH/L = 0.002, geometry and goniometer radius. With the separated profile these are the instrument values of the dataset; otherwise the profile of the first phase.</td></tr>
+<tr><td><code>README.txt</code></td><td>The steps in GSAS-II, and per dataset the values to type there: Limits and excluded regions, the Chebyshev background coefficients, Shift and Transparency (computed from the displacement and transparency here and the goniometer radius), and the size and mustrain of each phase with the separated profile.</td></tr>
+</table></div>
+<p>Not transferred: the scale factors (another normalisation), preferred orientation, the SL and HL axial asymmetry, a spline background, and the split pseudo-Voigt asymmetry. The README lists each one that applies. For an effective profile (the broadening is inside U V W X Y) set the size very large and the mustrain to 0 in GSAS-II so that the broadening is not counted twice.</p>
+<h4>The reflection table</h4>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>Column</th><th>Meaning</th></tr>
+<tr><td>h k l, m</td><td>Canonical member of the reflection orbit and the multiplicity (the size of the orbit under the Laue group). One row per orbit.</td></tr>
+<tr><td>d, 2θ</td><td>Interplanar spacing (Å) and the peak position after zero, displacement and transparency.</td></tr>
+<tr><td>I, σ(I)</td><td>Le Bail and WPPF: the integrated Kα<sub>1</sub> area and its standard uncertainty. For WPPF σ comes from the full Pawley normal matrix with the cell, profile and background integrated out (when the fit is current; otherwise it is conditional on the present values and the table says so). For Le Bail it propagates the counting statistics through the partition.</td></tr>
+<tr><td>I/(m·Lp)</td><td>Intensity on the |F|² scale, arbitrary units. |F<sub>o</sub>| is its square root; this is the quantity written to the HKLF 4 file.</td></tr>
+<tr><td>|F|², I calc, I obs</td><td>Rietveld phases: the calculated squared structure factor, the calculated intensity and the observed intensity shared out in proportion to the calculated ones (the basis of R<sub>Bragg</sub>).</td></tr>
+<tr><td>flag</td><td><span class="badge">overlap</span> exactly coincident: only the sum of the group is determined; <span class="badge">at 0</span> held at zero by the non-negativity.</td></tr>
+</table></div>
+</section>
+
+<section id="solve">
+<h2>Structure solution</h2>
+<p>In <b>Solve → WPPF</b>. Start from a WPPF phase whose cell and peak shape are settled: they decide what the intensities are. The order is extract, test the space group, then charge flipping and/or the Wyckoff search; the sites found are handed back to the phase for a Rietveld fit.</p>
+<div class="note"><b>Check the result.</b> Charge flipping and the Wyckoff search find candidates, not proofs. Look at the difference curve, the contacts, the density and the chemistry before trusting a solution.</div>
+
+<h3 id="s-extract">1. Extract</h3>
+<p>Extraction takes the WPPF intensities of the phase in one dataset at the current values, with uncertainties obtained by integrating out the ticked parameters (the full Pawley normal matrix). It does not iterate. It needs the phase to be WPPF and the dataset to have been fitted by WPPF with the present model (the button says what is missing, for example “Fit this dataset in WPPF first. Refit after changing the model or point weights”). The number of reflections extracted, counted from the lowest angle, is set by <i>Lowest-angle reflections</i> (default 220, 8 to 600). The extraction is marked stale when the cell, profile or space group changes afterwards. Intensities are Kα<sub>1</sub> areas; |F<sub>o</sub>|² = I/(m·Lp) uses the Lp of the dataset's polarisation model (<a href="#lp">Lorentz-polarisation</a>), which is why the polarisation setting matters here even though it does not change a Le Bail or WPPF fit.</p>
+
+<h3 id="s-sg">2. Space-group test</h3>
+<p>The test scores every setting compatible with the current Laue class against the extracted intensities and returns a ranked list of posterior probabilities (Markvardsen, David, Johnson and Shankland 2001).</p>
+<h4>Principle</h4>
+<p>A candidate space group makes exactly one testable statement about a powder pattern: a particular subset of the reflections is systematically absent, so their true integrated intensities are zero. The question is not “does this space group fit?” but “are the reflections it forbids consistent with zero, given how well the data determine them?” A WPPF refinement makes this answerable because every intensity is a least-squares parameter, so the refinement returns not only the intensities but the normal matrix behind them, hence their full covariance. In a powder pattern overlapping intensities are strongly correlated: a reflection that should be absent can carry a large apparent intensity simply by borrowing it from a neighbour it cannot be resolved from. Judging each reflection on its own I/σ ignores this and can mislead in either direction. Le Bail intensities are partitioned, not fitted; they have no covariance, so the test needs WPPF intensities.</p>
+<h4>Statistical model</h4>
+<p>The true intensities are given a Gaussian prior that encodes what the group claims: variance 0 for reflections absent under S, a local Wilson-like scale τ² otherwise. Marginalising over the true intensities, the extracted ones follow a multivariate normal with covariance Q<sup>-1</sup> + P<sub>S</sub> (Q the intensity precision matrix, P<sub>S</sub> the prior), so the evidence for S is one density evaluation:</p>
+<div class="eq">−2 ln P(D|S) = Σ_{j∈f} ln τ_j²  +  ln det B_S  −  b_S' B_S⁻¹ b_S
+B_S = Q_ff + diag(1/τ_f²),   b_S = (Q·Î)_f      (f = reflections the group allows)</div>
+<p>The quadratic form is the evidence carried by the would-be-absent reflections, evaluated with the full correlation structure. The log-determinant is an Occam factor: without it the group with no extinction conditions would always win, since nothing contradicts it. Posterior probabilities follow by normalising over the candidate list. The intensity block is marginalised over the lattice, profile and background parameters by a Schur complement, so their uncertainties are folded in. τ is estimated separately for each candidate from the reflections it says are present (a single global estimate collapses in centred lattices, where most reflections are absent). The original paper uses a Wilson (exponential) prior; a Gaussian of the same scale makes the marginalisation exact, so rankings are essentially unchanged but absolute probabilities are approximate.</p>
+<h4>Reading the result</h4>
+<p>Each row is a distinct <em>extinction symbol</em>: powder diffraction cannot separate groups that predict identical absences (centrosymmetric and non-centrosymmetric pairs, for instance), so those share one probability. The setting matters: <i>Pnma</i> and <i>Pbnm</i> are the same group but predict different absences relative to fixed axes and appear separately. Columns: P(SG|data), the number of refined reflections the group forbids (a group forbidding nothing is always in the list as a baseline), and ⟨I/σ⟩ and worst I/σ over the would-be-absent set (diagonal errors only; the familiar numbers, but not what drives the ranking). Choose a row to set the space group of the phase.</p>
+<h4>Requirements</h4>
+<ul>
+  <li><b>Run the WPPF fit in a condition-free group.</b> A reflection can only be tested if it was a parameter of the fit. If the fit was run in <i>Pnma</i>, every reflection <i>Pnma</i> forbids was never refined and carries no information, so the test is blind exactly where it matters. Use the group of the correct Laue class that imposes no conditions: <i>P</i>-1, <i>P</i>2/<i>m</i>, <i>Pmmm</i>, <i>P</i>4/<i>m</i>, <i>P</i>4/<i>mmm</i>, <i>P</i>-3, <i>P</i>-3<i>m</i>1, <i>P</i>6/<i>m</i>, <i>P</i>6/<i>mmm</i>, <i>Pm</i>-3 or <i>Pm</i>-3<i>m</i>. The test detects the situation and marks affected candidates as partial.</li>
+  <li><b>The Laue class is not under test</b>, only the absences. It fixes the reflection orbits and multiplicities. A test run from <i>Pm</i>-3<i>m</i> cannot return <i>Pa</i>-3. If the Laue class is in doubt, run the test from each candidate in turn.</li>
+  <li><b>Exact coincidences</b> (333/511 in a cubic cell) are handled, because the test is formulated in precision space, where Q may be singular while B<sub>S</sub> never is. The I/σ columns fall back to conditional estimates and are flagged.</li>
+</ul>
+
+<h3 id="s-cf">3. Charge flipping</h3>
+<h4>Principle</h4>
+<p>Diffraction gives amplitudes |F| but not phases. Charge flipping (Oszlányi and Sütő 2004, 2008) iterates between real space (electron density ρ on a grid) and reciprocal space, enforcing one simple constraint in each. In real space, a correct density is non-negative almost everywhere, so every voxel with ρ below a small positive threshold δ has its sign flipped; this deliberately wrong perturbation drives the phases towards consistency. In reciprocal space, the Fourier transform of the flipped density is corrected by reimposing what is known: the measured amplitudes, the point-group symmetry and the systematic absences, keeping the calculated phases. Reflections that were never measured stay free, which lets the map extend beyond the data. The threshold is in units of the map's own RMS density σ, so it is scale-independent.</p>
+<p>The agreement tracked every cycle is <code>R = Σ_c |√I_calc,c − √I_obs,c| / Σ_c √I_obs,c</code>, summed over measured <em>peaks</em> c, not individual reflections: a powder pattern cannot tell overlapping reflections apart, and scoring them separately would score noise. I<sub>calc,c</sub> is the total calculated intensity under peak c. A run that has found the structure typically drops below R ≈ 0.15 and then oscillates; above ≈ 0.30 it has usually not converged. The best iterate of the run is kept, not the last. Weak and negative intensities are replaced by their posterior expectation (French and Wilson 1978), which is why the WPPF uncertainties of zero-clipped intensities matter.</p>
+<h4>Controls</h4>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>Control</th><th>Default</th><th>Meaning</th></tr>
+<tr><td>Grid</td><td>auto</td><td>Edge of the density grid (a power of two). Auto picks the smallest of 32, 64, 128 that holds every symmetry-expanded index (N ≥ 2<i>h</i><sub>max</sub> + 2); reflections that do not fit are lost, and the summary says how many. Aim for a voxel of 0.25–0.35 Å. 128³ is about eight times the cost of 64³.</td></tr>
+<tr><td>Threshold δ (σ)</td><td>1.1</td><td>Density below δ standard deviations of the map is flipped. The most sensitive parameter: working range 0.8–1.2. If R plateaus above 0.3 with no oscillation, lower it in steps of 0.1; if R is erratic from the first cycles, raise it. Weak or noisy data generally want a slightly lower value.</td></tr>
+<tr><td>Cycles</td><td>1000</td><td>Cycles per random start (10–100000). Charge flipping stays flat and then drops abruptly when the phases lock in, often after several hundred cycles; judge a run by whether the drop happened.</td></tr>
+<tr><td>Random starts</td><td>3</td><td>Independent trials from random phases (1–100); the map with the lowest R is kept. More starts is usually a better investment than more cycles: 10–20 starts of 1000 cycles beat 2 of 10000.</td></tr>
+<tr><td>Symmetry in the loop (λ)</td><td>0.5</td><td>0 = none (P1 charge flipping), 1 = strict. See rule 4 below.</td></tr>
+<tr><td>Weak reflections</td><td>0.15</td><td>Fraction (0–0.33) of the weakest units whose phase is advanced by π/2 instead of being forced onto |F<sub>obs</sub>| (Oszlányi and Sütő 2005). 0 reproduces the 2004 algorithm. Scan it (0, 0.10, 0.20, 0.30) over all starts rather than tuning it.</td></tr>
+<tr><td>Grouping</td><td>clusters</td><td>Whether the weak fraction counts unresolved peak <em>clusters</em> (default) or individual reflection orbits (see rule 5).</td></tr>
+<tr><td>Overlap (° 2θ)</td><td>0.05</td><td>Reflections closer than this share one observation: their sum is kept, the split is free. Roughly half the FWHM of a mid-angle peak. Too small imposes intensities the data never determined; too large lets resolved reflections trade intensity. Broad peaks or high-symmetry cells with many coincidences want 0.10–0.15°. If the number of reflections sharing a peak is close to the total, it is too large.</td></tr>
+<tr><td>Peak merge (Å)</td><td>0.9</td><td>Density peaks closer than this are one site.</td></tr>
+</table></div>
+<h4>Starting points by problem type</h4>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>Situation</th><th>Grid</th><th>δ/σ</th><th>Cycles</th><th>Starts</th><th>λ</th><th>Overlap</th></tr>
+<tr><td>First attempt (group known, d<sub>min</sub> ≈ 1.0 Å)</td><td>32³</td><td>1.1</td><td>500</td><td>3</td><td>0.5</td><td>0.05°</td></tr>
+<tr><td>Small cell (V ≲ 500 Å³, few atoms)</td><td>32³</td><td>1.0–1.1</td><td>300–500</td><td>3</td><td>1.0</td><td>0.05°</td></tr>
+<tr><td>Medium cell (500–2000 Å³)</td><td>64³</td><td>1.0–1.2</td><td>1000</td><td>5</td><td>0.5</td><td>0.05°</td></tr>
+<tr><td>Large or organic (&gt; 2000 Å³)</td><td>64–128³</td><td>0.9–1.1</td><td>1500–3000</td><td>10–20</td><td>0.5</td><td>0.08°</td></tr>
+<tr><td>Space group uncertain</td><td>32–64³</td><td>1.1</td><td>1000</td><td>10</td><td>0</td><td>0.05°</td></tr>
+<tr><td>Heavy overlap (high symmetry, broad peaks)</td><td>as above</td><td>1.1</td><td>1500</td><td>10</td><td>1.0</td><td>0.10–0.15°</td></tr>
+</table></div>
+<p><b>When a run fails</b>, in order: (1) check the warnings about reflection counts (a grid too small, or intensities on systematically absent reflections are input problems no parameter will fix); (2) add random starts; (3) adjust δ by ±0.1; (4) try λ = 0 and λ = 1: a solution that appears at 0 but not at 1 says the space group is wrong; (5) only then increase the grid or the cycles.</p>
+<h4>Space-group constraints in the loop</h4>
+<p>Classical charge flipping works in <i>P</i>1, discarding the symmetry and letting the algorithm rediscover it, which is a safeguard when the group is uncertain. Powder 6 keeps that mode (λ = 0) but by default uses the selected space group inside the iteration. Five different constraints come from it, and they behave differently.</p>
+<ol>
+  <li><b>Orbits: symmetry equivalents share one intensity.</b> A WPPF fit reports one intensity per symmetry-unique reflection. Its equivalents <i>h</i>R are generated from the actual operators of the group and placed on the P1 grid. The Laue class is not the holohedry of the crystal system: <i>P</i>4 has Laue class 4/m, so a general reflection has 8 equivalents, not 16; likewise -3 versus -3<i>m</i>, 6/<i>m</i> versus 6/<i>mmm</i>, <i>m</i>-3 versus <i>m</i>-3<i>m</i>. Spreading one intensity over twice as many positions as exist would put half of it on reflections that are not equivalent. Within an orbit the amplitudes are equal, |F| = √(I<sub>obs</sub>/<i>m</i>). Hard constraint, every cycle. Only the phases are free.</li>
+  <li><b>Overlap: distinct reflections may share one peak.</b> Reflections that are not symmetry-equivalent can fall at the same 2θ (exactly, as 511/333 in a cubic cell, or accidentally). The pattern gives only their sum. Such reflections are grouped into a cluster and its total is re-partitioned between them each cycle in proportion to the current calculated values (the idea of Le Bail extraction applied inside the loop; Baerlocher, McCusker and Palatinus 2007). The split is free; the total is fixed. Symmetry equivalents must be equal (constraint); overlapping distinct reflections are free to differ (unknown). Letting the members of an orbit float would discard exactly the information the space group provides.</li>
+  <li><b>Systematic absences are excluded and held at zero.</b> Reflections forbidden by centring, screw axes or glide planes are removed before the orbits are built and their grid points are forced to F = 0 every cycle. Leaving them free lets the density break the centring outright (for an <i>F</i> or <i>I</i> lattice that is most of the reciprocal grid). A fitted reflection that the selected group forbids never becomes an ordinary charge-flipping reflection; if it overlaps an allowed reflection, its corrected intensity stays in the measured cluster total and is re-partitioned among the allowed orbits only. An isolated forbidden reflection with raw I/σ ≥ 3 is inconsistent with strict symmetry: a strict run (λ = 1) is refused and names an example, while λ below 1 may still be run for diagnosis. The result records how many forbidden reflections were excluded, transferred from clusters or significant while isolated.</li>
+  <li><b>Symmetrisation of the phases.</b> For an operator x′ = xR + t the structure factors of a correct structure satisfy F(<i>h</i>R) = F(<i>h</i>) exp(−2πi <i>h</i>·t). Each cycle the members of an orbit are reduced to a common representative, averaged and pushed back: F ← (1 − λ)F + λF<sub>sym</sub>. λ = 0 imposes nothing (classical P1); λ = 1 is the exact projection, which converges faster and puts the solution on a standard origin. The trade-off: strict symmetry cannot recover from a wrong group and will happily converge to a low R for a structure that does not exist. If the group is uncertain, run at λ = 0 as well: a density that is genuinely consistent with the group will symmetrise well afterwards without having been forced to. Without the symmetry operators of the group, the effective λ is 0.</li>
+  <li><b>Weak reflections are freed, not forced.</b> The rules above impose |F<sub>obs</sub>| on every ordinary reflection. The weak fraction exempts the selected weakest units: their calculated moduli are kept and their phases advanced by π/2 each cycle instead (Oszlányi and Sütő 2005); their measured intensity is used only for the knowledge that they are weak. The perturbation can help the iteration escape the flat, featureless maps the 2004 algorithm can settle into. Classification is made once, before iteration, and cannot change as overlaps are re-partitioned. By default (clusters) the unresolved peak clusters are ranked by total observed intensity per reciprocal-grid member and every orbit in a selected cluster is flagged weak, which avoids classifying an arbitrary, changing overlap partition as if it were an independent measurement; the number of phase-shifted orbits can therefore exceed the number of selected clusters. Individual mode ranks each orbit by its own initial target intensity. This is a different mechanism from rule 2: overlap re-partitioning frees a reflection's share of a cluster while holding the total; the weak flip frees a reflection's modulus entirely and perturbs its phase. A reflection can be subject to both.</li>
+</ol>
+<p>The CPU and WebGPU paths apply the same classification and operations. If the adapter cannot take the grid, the run falls back to the CPU with a message; the CPU at 128³ takes minutes per start.</p>
+<h4>From the map to atoms</h4>
+<p>Density peaks are picked as centres of mass of the density above the threshold, merged within the peak-merge distance, snapped to special positions in the space group, and arranged into a structure; an origin search checks the result on a standard origin. The 3D viewer shows the density with the cell, the sites and an iso-level. Non-uniqueness is real: different random starts can land on different origins or enantiomorphs, and the density often contains ghost peaks and merged atoms. Assign elements from the chemistry, not from peak heights alone.</p>
+
+<h3 id="s-wy">4. Wyckoff search</h3>
+<p>A WebGPU replica-exchange Monte Carlo search places atoms on trial Wyckoff-position assignments and scores them against the WPPF intensities. It needs the formula and, directly or by a scan, Z. It runs one complete search per value of Z, refines the coordinates of each best structure, and lists the solutions.</p>
+<h4>The objective</h4>
+<p>Each candidate is scored by <code>score = (1 − wR2) − pen</code>, and the candidate list is ordered by it. wR2 is the scale-only weighted residual over the observed group intensities; eliminating the optimal multiplicative scale gives</p>
+<div class="eq">wR2 = √( 1 − (Σ w Ic Io)² / ( (Σ w Ic²)(Σ w Io²) ) )</div>
+<p>This is invariant to overall scale but deliberately not to an additive shift: centring the intensities would silently fit a constant structure-factor intercept, which has no physical place in this model. Reflections the powder pattern cannot separate are summed into one group first, so the comparison is made where the measurement exists. Each group is weighted by 1/σ² of its total when usable WPPF uncertainties exist; if at least one complete group has a σ, incomplete groups receive zero weight (never 1 or 1/I); only when no group has a usable σ is the whole problem unweighted. The final coordinate refinement uses the same policy and the same scale-only form, and reports the weighted residual it minimised, wR(F²).</p>
+<h4>Penalties: soft during the search, hard afterwards</h4>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>Term</th><th>Weight</th><th>Charged for</th></tr>
+<tr><td>penClash</td><td>0.05</td><td>Each pair closer than the contact floor d<sub>min</sub>: 0.05 × (1 + 9δ), δ = (d<sub>min</sub> − d)/d<sub>min</sub>. A pair barely touching costs one unit, a collapsed pair ten: a soft wall that steepens.</td></tr>
+<tr><td>penBond</td><td>0.10</td><td>Each bond outside a distance window. A bare nearest-neighbour rule charges the overshoot in ångström; a coordination-shell rule charges each of its <i>n</i> slots by miss·(1 + miss/soft); a slot with no partner costs a flat maximum.</td></tr>
+<tr><td>penCoord</td><td>0.03</td><td>Each neighbour in excess of the requested coordination number (a shortfall is charged through penBond's empty-slot route).</td></tr>
+</table></div>
+<p>The total is multiplied by a factor that ramps from 0.2 at the start of a run to 4.0 at the end: geometry is nearly free early, so the search can pass through crowded configurations between two good basins, and expensive late, so the answer has to be physically legal. Archived bests are stored unscaled and re-scored at the current weight when compared. Because every geometry term is soft, a winning candidate can still be illegal; the result stage therefore re-checks floors, bare upper bounds and exact or at-least coordination counts as <b>hard filters</b>, and repeats the check after coordinate refinement. A violating structure is rejected rather than reported, which is why a run can report “search positions kept” after refinement broke a rule.</p>
+<p>The search starts with only the first 25 % of the reflection groups (lowest angle first) and has all of them active by 60 % of the run (resolution ramp), because a low-resolution picture of the intensities lets the swarm find the right basin before high-angle detail makes the landscape rough. The running wR2 during the ramp is therefore not comparable to the final one.</p>
+<h4>Controls</h4>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>Control</th><th>Default</th><th>Meaning</th></tr>
+<tr><td>Formula, Z</td><td>blank</td><td>Formula unit and number of formula units in the cell. Blank Z selects Auto: a scan over plausible values (see below).</td></tr>
+<tr><td>Density window</td><td>2–10 g/cm³</td><td>Whole g/cm³, 1 to 22; bounds are rounded inward so every candidate density lies in the window. The only control that carries knowledge about the sample.</td></tr>
+<tr><td>Values of Z, at most</td><td>3 (1–12)</td><td>How many Z one scan may search. Each is a full run. The least plausible are dropped first and the log names them.</td></tr>
+<tr><td>Sites per element, at most</td><td>auto (4)</td><td>Distinct Wyckoff sites per element; raised automatically when the composition demands more.</td></tr>
+<tr><td>Atoms per position, at most</td><td>auto (4)</td><td>Independent atoms on one Wyckoff position at different coordinates.</td></tr>
+<tr><td>Particles</td><td>512 (auto)</td><td>Trial structures held at once (64 up to the hardware budget).</td></tr>
+<tr><td>Iterations</td><td>2000</td><td>Generations per restart (10–10000).</td></tr>
+<tr><td>Restarts</td><td>4</td><td>Independent runs per Z.</td></tr>
+<tr><td>Shortest contact (Å)</td><td>1.0</td><td>A structure with two unlike atoms closer than this is rejected. A distance rule on the pair replaces it for that pair.</td></tr>
+<tr><td>Distance constraints</td><td>none</td><td>One rule per line (next subsection).</td></tr>
+</table></div>
+<p>Under the hood the search is a replica-exchange ladder of 8 rungs at fixed temperatures from 5×10<sup>-4</sup> to 0.05 (in correlation units), proposal widths adapting towards a 30 % acceptance, swaps every 10 generations. Temperatures are fixed, not annealed: a single chain that anneals into a wrong basin has no way back out. Stopping returns the best structure found so far. The GPU kernel has fixed capacities: <b>32</b> independent Wyckoff sites in one assignment (summed over elements), <b>8</b> elements, <b>8</b> distance rules and <b>64</b> coordination slots in total, up to 4096 operators. A run that needs more is refused with a message naming the total and the limit; nothing is silently truncated.</p>
+
+<h4 id="s-wy-dist">Distance constraints</h4>
+<p>One rule per line; blank lines and lines starting with <code>#</code> are ignored. Element symbols are case-insensitive and must appear in the formula; anything else is reported as an error rather than skipped. The general form is</p>
+<div class="eq">ElemA ElemB [count] dmin/dmax</div>
+<p>Everything except the two symbols is optional. What matters is which of three mechanisms a line switches on:</p>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>Field</th><th>What it does</th></tr>
+<tr><td>dmin</td><td>A hard floor on the pair. It <em>replaces</em> the Shortest-contact value for this pair, in either direction, so a rule can hold one pair further apart than the global floor or admit an approach it would forbid. Charged as a clash penalty that grows with the depth of the overlap. Costs no rule.</td></tr>
+<tr><td>dmax</td><td>With no count: the nearest partner must be within it. A pure nearest-neighbour condition, applied in both directions when the two elements differ, so it costs two rules (one when both symbols are the same). With a count: the upper edge of the window the shell is measured against.</td></tr>
+<tr><td>count</td><td>A coordination number: <code>4</code> exactly four, <code>4+</code> at least four. The kernel keeps the <i>count</i> nearest partners and charges each by how far it misses the window, so the penalty is graded by distance. Directed and never mirrored: costs one rule and <i>count</i> slots.</td></tr>
+</table></div>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>Line</th><th>Meaning</th><th>Rules</th><th>Slots</th></tr>
+<tr><td><code>S O 4 1.40/1.80</code></td><td>Every S wants exactly four O between 1.40 and 1.80 Å; also floors S–O at 1.40.</td><td class="n">1</td><td class="n">4</td></tr>
+<tr><td><code>S O 4+ 1.40/1.80</code></td><td>At least four: a fifth O in the window is not penalised. Use when the coordination is uncertain.</td><td class="n">1</td><td class="n">4</td></tr>
+<tr><td><code>Pb O 8 2.00/3.00</code></td><td>Every Pb wants eight O in 2.00–3.00 Å.</td><td class="n">1</td><td class="n">8</td></tr>
+<tr><td><code>O O 2.40</code></td><td>O–O no closer than 2.40 Å. A floor and nothing else: the cheapest kind of line.</td><td class="n">0</td><td class="n">0</td></tr>
+<tr><td><code>O O - 2.40/</code></td><td>The same: <code>-</code> is an explicit “no count”, the empty right-hand side an explicit “no upper bound”.</td><td class="n">0</td><td class="n">0</td></tr>
+<tr><td><code>Pb O /3.00</code></td><td>The nearest O to any Pb must be within 3.00 Å, and vice versa. No count, so it is mirrored.</td><td class="n">2</td><td class="n">0</td></tr>
+<tr><td><code>Pb O 2.00 3.00</code></td><td>The same window without a slash: two bare numbers are dmin then dmax.</td><td class="n">2</td><td class="n">0</td></tr>
+</table></div>
+<p>Example, anglesite PbSO<sub>4</sub> (<i>Pnma</i>, Z = 4):</p>
+<pre><code>S  O   4  1.40/1.80     # sulfate tetrahedron
+Pb O   8  2.00/3.00     # lead coordination shell
+O  O      2.40          # keep the tetrahedra from interpenetrating</code></pre>
+<p>Two rules and twelve slots, well within the budget; the third line costs nothing because floors live in the clash matrix, not the rule table. No Pb–S rule, because there is no Pb–S bond: constraining a distance you have no chemical reason to constrain is the commonest way to make the right answer unreachable.</p>
+<ul>
+  <li><b>Direction matters.</b> A coordination number is tested from its first element outward. <code>S O 4 1.40/1.80</code> asks every sulfur for four oxygens; <code>O S 4 1.40/1.80</code> asks every oxygen for four sulfurs, which in a sulfate is false and is paid on every evaluation. Writing both is two independent demands (two rules, eight slots) and the box warns. Put the count on the centre of the polyhedron.</li>
+  <li><b>Running out of budget</b> (8 rules, 64 slots; the rule count is the binding one, almost always through mirrored upper bounds): drop upper bounds you do not need (<code>Pb O 8 2.00/3.00</code> says it better than <code>Pb O /3.00</code> and costs one rule); turn windows into floors if you only care about the near side; constrain the cation polyhedra, not the anion–anion contacts, which follow from them.</li>
+  <li><b>A count without an upper distance counts the whole cell.</b> <code>S O 4 1.40/</code> asks for four oxygens further than 1.40 Å, which every oxygen in the structure satisfies; it constrains nothing and the box warns. A bare integer with no distance, <code>S O 4</code>, is rejected as ambiguous (it is equally a 4 Å distance).</li>
+</ul>
+<h4>Z, the density window and the scan</h4>
+<p>Z is the number of formula units in the cell and the one input that is neither measured nor refined. The stoichiometry is enforced by construction, so a wrong Z is fitted dutifully and reported with a residual that names no error. Blank Z does not estimate Z; it <em>scans</em>: every plausible value is searched in full and the best structure for each is offered, because a rule of thumb about cell volume is a prior and the intensities are evidence. The density fixes the relation Z = ρV/(1.66054·M), with M the formula mass (g/mol) and V the cell volume (Å³). The candidate list is cut three times before any GPU time is spent: the density window; what the space group permits (below); and whether a legal assignment of atoms to Wyckoff positions exists at all (a Z that cannot be built is discarded in milliseconds).</p>
+<h4>What the space group says about Z</h4>
+<p>Atoms of one element occupy Wyckoff positions, so their number in the cell is a sum of multiplicities. Let <i>g</i> be the greatest common divisor of every multiplicity the setting offers. For each element with subscript <i>k<sub>e</sub></i> in the formula unit, Z·<i>k<sub>e</sub></i> ≡ 0 (mod <i>g</i>), hence Z must be a multiple of lcm<sub>e</sub> <i>g</i>/gcd(<i>g</i>, <i>k<sub>e</sub></i>). For a pyrochlore A<sub>2</sub>B<sub>2</sub>O<sub>7</sub> in <i>Fd</i>-3<i>m</i> the multiplicities are 8, 16, 32, 48, 96 and 192, so <i>g</i> = 8; oxygen requires 7Z ≡ 0 (mod 8), so Z is a multiple of 8, and of the eleven values from 3 to 11 only Z = 8 survives. The step and <i>g</i> are not always equal: in <i>Pnma</i> (<i>g</i> = 4) Fe<sub>2</sub>O<sub>4</sub> gives a step of 2. In <i>P</i>1 and <i>P</i>-1 the rule says nothing (<i>g</i> = 1), correctly: a triclinic cell can hold any Z, which is why low-symmetry problems are the expensive ones. A fractional subscript (Fe<sub>0.5</sub>Ni<sub>0.5</sub>) voids the argument and the rule is skipped. The log states the derivation, not just the answer.</p>
+<h4>Solutions</h4>
+<p>Every surviving Z gets its own complete search (all restarts, the resolution ramp, the closing quench, the contact filter and the coordinate refinement). The plausibility ranking (volume per atom nearest 16 Å³, with a mild preference for a Z commensurate with the group order) decides only the <em>order</em> of the searches, so stopping early means the likeliest candidates are done. The results open with a Solutions table, one row per Z, with density, atoms per cell, assignment, search wR2 and wR(F²); click a row and everything below (coordinates, R factor, CIF, contacts, bond valences, structure plot, report) switches to it. Ranking is by wR(F²); a solution whose refinement did not run is placed below those that have one. <b>A better wR does not make a Z right:</b> more atoms mean more free parameters and often a better fit for that reason alone. Read the table beside the density, the contacts and the bond valences. Two Z that both fit respectably is a real result.</p>
+<p>A typed Z is honoured exactly as typed and the density window is ignored; the panel still shows the implied density. A Z implying a density outside about 0.5–22.5 g/cm³ is refused (lithium is 0.53, osmium 22.59), because the Z, the formula and the cell cannot describe the same solid; the usual cause is Z counting atoms rather than formula units. A typed Z that breaks the space-group rule is warned about, not blocked.</p>
+<h4>How many sites a structure needs</h4>
+<p>The number of free parameters is three per general-position site, fewer for special positions, plus nothing else (scale is eliminated). A structure with 17 independent sites has around fifty parameters; the search needs enough <em>effective</em> observations to determine them (next subsection). Raising the number of sites per element increases the search space steeply; keep it at what the composition and the group demand.</p>
+<h4>Final coordinate refinement</h4>
+<p>The best structure of each Z is refined as a local least-squares problem in the free coordinates, with the same scale-only objective and weights as the search, then validated again against the hard geometry rules. If the refinement breaks a rule the search positions are kept and the log says so. The reported wR(F²) is the weighted residual actually minimised; an unweighted figure printed beside a weighted refinement would describe a fit nobody performed.</p>
+<h4>When the ranking is withheld</h4>
+<p>A high fitness is not by itself evidence that a structure is right. wR2 compares a <em>distribution</em> of intensity, and a model can reproduce the few highest-leverage points while every other reflection is wrong by any amount. The number of reflections is also not the number of observations: because the residual is weighted, a group counts for its share of the observed denominator <i>w<sub>i</sub>I<sub>i</sub></i>², and 1/σ² rewards sharp low-angle reflections and all but erases high-angle overlaps whose σ exceeds their value. The search reports the effective number of observations</p>
+<div class="eq">N_eff = 1 / Σ p_i²,    p_i = w_i I_i² / Σ_j w_j I_j²</div>
+<p>which equals N when all shares are equal and 1 when one group is everything; a list of 35 groups is routinely 5 or 6 effective observations. Distance constraints count as observations: a coordination-shell rule asking for <i>n</i> partners adds <i>n</i> pseudo-observations per independent site (not per atom in the cell), reported separately from N<sub>eff</sub> because a structure held up by restraints is a different claim from one determined by the data.</p>
+<p>The behaviour has two thresholds, measured as (N<sub>eff</sub> + restraints) per free parameter of the best candidate:</p>
+<ul>
+  <li><b>Below 1.0: the ranking is withheld.</b> A model with at least as many free parameters as effective observations reproduces them exactly whatever the structure, so every candidate scores near 1 and the ordering is noise. The candidates are still returned and worth testing (the coordinates are real), but the list is unordered, the panel says “candidates, not a solution”, and no best is claimed.</li>
+  <li><b>Between 1.0 and 3.0: “thin data”.</b> The ranking is kept, because a correct structure can and does appear at this ratio (a correct ab initio solution of PbSO<sub>4</sub> at 1.83 is the reason the threshold is not 3), but the gap between leading candidates carries little weight: check the chemistry and the refinement wR before accepting one.</li>
+</ul>
+<p>To lift a withheld ranking, extract more reflections (particularly at high angle, where severe overlap leaves σ/I near or above 1 and the weighting correctly discards them) or add distance constraints, which count; or reduce the free-parameter count with a smaller Z or higher-symmetry sites. This is a test of meaningfulness, not of quality: above it a low score is still a real answer, and below it a high one is not.</p>
+
+<h3 id="s-bv">5. Contacts and bond valence</h3>
+<p>Each solution has a structure plot (cell, atoms with covalent-radius bonds; Cordero et al. 2008), a contact table and a bond-valence analysis. The wR says the fit converged; this table says whether the result is chemistry.</p>
+<ul>
+  <li><b>Coordination number</b> is the number of neighbours within a cutoff (default 3.5 Å, with element-specific limits so that a sulfate sulfur and a lead are not judged by one number). The count depends on the cutoff, which is stated under the table.</li>
+  <li><b>Bond-valence sum</b> (Brown and Altermatt 1985; Brese and O'Keeffe 1991): <code>s = Σ exp((R<sub>0</sub> − d)/b)</code> over the coordination shell, with b = 0.37 Å and R<sub>0</sub> from the Brese–O'Keeffe table, compared with the formal valence of the site. The verdict is <b>plausible</b> within 15 % of the formal valence, <b>borderline</b> within 30 %, and <b>check</b> beyond (Brown 2009 on the method as a validation tool).</li>
+  <li><b>Which atoms are anions</b> and in what oxidation state is a choice: the analysis states the assignment it used. A wrong oxidation state gives a wrong verdict for a right structure.</li>
+  <li><b>Limits.</b> Hydrogen is not located by these methods, so hydrogen-bond contributions are missing from every oxygen sum in a hydrate or a hydroxide: expect them to read low. A mixed or partially occupied site will not balance against a single formal valence.</li>
+</ul>
+<h3 id="s-back">6. Back to the phase</h3>
+<p>The sites found replace the atoms of the phase in every dataset. Switch the phase to Rietveld and fit again, in the order of <a href="#strategy">Strategy</a>. Constrain shared sites and displacement parameters (<a href="#c-atomic">Atomic constraints</a>) and refine B last.</p>
+</section>
+<section id="commands">
+<h2>Command line</h2>
+<p>Type in the field at the bottom of the window and press <kbd>Enter</kbd>. Commands act on the selected datasets. Every command is logged. <code>cmd</code> or the <b>?</b> button lists them; <code>help</code> opens this documentation in a new tab.</p>
+<div class="tablewrap"><table class="wrapfirst">
+<tr><th>Command</th><th>Does</th></tr>
+<tr><td><code>fit</code>, <code>globalfit</code></td><td>Refine the selected datasets one by one, or together.</td></tr>
+<tr><td><code>stop</code></td><td>Stop the running refinement.</td></tr>
+<tr><td><code>steps&gt;&gt;scale|cell|profile|atoms|none</code></td><td>Tick the parameters of a step and of the steps before it.</td></tr>
+<tr><td><code>tick&gt;&gt;pattern</code>, <code>untick&gt;&gt;pattern</code></td><td>Tick or untick the parameters whose name matches a regular expression, e.g. <code>tick&gt;&gt;p1\.a</code>.</td></tr>
+<tr><td><code>scales</code></td><td>Estimate scales and a constant background.</td></tr>
+<tr><td><code>range&gt;&gt;a&amp;b</code></td><td>Fit from 2θ = a to b.</td></tr>
+<tr><td><code>bkg&gt;&gt;n</code></td><td>n Chebyshev background terms (0–24).</td></tr>
+<tr><td><code>anchors&gt;&gt;n</code></td><td>Spline background through n automatically placed anchors (2–200).</td></tr>
+<tr><td><code>exclude&gt;&gt;a&amp;b</code>, <code>include&gt;&gt;a&amp;b</code></td><td>Leave a region out of the fit, or take it back.</td></tr>
+<tr><td><code>method&gt;&gt;rietveld|lebail|wppf</code></td><td>Choose the calculation method of the phases.</td></tr>
+<tr><td><code>phases</code>, <code>phases&gt;&gt;p1&amp;p2|all|none</code></td><td>Show the phase table, or set the phases of the selected datasets.</td></tr>
+<tr><td><code>sharing</code></td><td>Open the sharing table of the global fit.</td></tr>
+<tr><td><code>simulate</code></td><td>Calculate a pattern from phases with atoms.</td></tr>
+<tr><td><code>clone_all</code>, <code>clone_active</code></td><td>Copy values and ticks of the first selected dataset to all, or to the selected ones.</td></tr>
+<tr><td><code>select&gt;&gt;text</code></td><td>Select the datasets whose name matches the text (a regular expression).</td></tr>
+<tr><td><code>demo</code></td><td>Load NaCl and Si.</td></tr>
+<tr><td><code>gsas2</code></td><td>Export the selected datasets and their phases to a ZIP for GSAS-II.</td></tr>
+<tr><td><code>undo</code></td><td>Go back one step; repeat to go further.</td></tr>
+<tr><td><code>cmd</code></td><td>List the commands.</td></tr>
+<tr><td><code>help</code></td><td>Open this documentation in a new tab.</td></tr>
+</table></div>
+<p>Parameter names for <code>tick</code>: <code>zero</code>, <code>disp</code>, <code>transp</code>, <code>bkg0 …</code>, <code>bga0 …</code>, <code>p1.scale</code>, <code>p1.a</code>, <code>p1.GW</code>, <code>p1.po</code>, <code>p1.Na1.x</code>, <code>p1.Na1.occ</code>, <code>p1.Na1.B</code>. p1 is the first phase.</p>
+</section>
+
+<section id="keys">
+<h2>Mouse and keys</h2>
+<div class="tablewrap"><table class="wrapfirst">
+<tr><th>Where</th><th>Action</th></tr>
+<tr><td>Anywhere</td><td><kbd>F9</kbd> fit · <kbd>Ctrl</kbd>+<kbd>S</kbd> save the project · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo (not while typing in a field or with a dialog open). On a Mac, <kbd>⌘</kbd> works in place of <kbd>Ctrl</kbd>.</td></tr>
+<tr><td>Plots</td><td>Drag to zoom. Shift-drag or right-drag to pan. Wheel zooms 2θ about the cursor (<kbd>Alt</kbd>: intensity). A thin box zooms one axis only. Double-click autoscales. The difference plot follows.</td></tr>
+<tr><td>Background and regions</td><td><kbd>Ctrl</kbd>+click adds or removes an anchor. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+drag marks an excluded region.</td></tr>
+<tr><td>Parameter value</td><td>Mouse wheel or arrow keys change it; <kbd>Shift</kbd> for larger steps, <kbd>Alt</kbd> for smaller.</td></tr>
+<tr><td>Parameters panel</td><td>← → beside the dataset name show the previous or next dataset. A group header folds the group; its box ticks the whole group. In Global mode a padlock shares a parameter; right-click it for more.</td></tr>
+<tr><td>Dataset list</td><td><kbd>Ctrl</kbd>+<kbd>A</kbd> all · <kbd>Shift</kbd>+click a range · <kbd>Ctrl</kbd>+click one more · <kbd>Delete</kbd> · <kbd>F2</kbd> or double-click renames · drag reorders.</td></tr>
+<tr><td>Phase list</td><td>The box of a phase puts it in the selected datasets (ticked), or takes it out. A dash: in some. The dots after a dataset name are the phases it holds. Double-click inspects a phase.</td></tr>
+<tr><td>Side panel edge</td><td>Drag to resize; double-click to reset.</td></tr>
+</table></div>
+</section>
+
+<section id="settings">
+<h2>Settings</h2>
+<div class="tablewrap"><table class="wrapfirst">
+<tr><th>Setting</th><th>Meaning</th></tr>
+<tr><td>Algorithm</td><td>LM, or PT with an LM finish.</td></tr>
+<tr><td>PT sweeps · replicas · highest temperature · seed</td><td>10–100000 sweeps; 2–16 replicas per fit worker; ladder from 1 to the highest temperature (> 1); seed for repeatable runs. Shown only with PT.</td></tr>
+<tr><td>Maximum iterations</td><td>LM iterations per stage, 1–10000. PT sweeps are additional.</td></tr>
+<tr><td>Stop when χ² changes less than</td><td>Relative change, twice in a row.</td></tr>
+<tr><td>Weight of each point</td><td>Poisson (1/σ²) or unit.</td></tr>
+<tr><td>Chebyshev terms of new datasets</td><td>0–24.</td></tr>
+<tr><td>Spline anchors placed</td><td>2–200, used by automatic placement.</td></tr>
+<tr><td>Datasets drawn at most</td><td>Larger selections are thinned evenly for drawing only; fits use all of them.</td></tr>
+<tr><td>Parameter limits and shared flags</td><td>Per parameter. <b>All limits and shared flags to their defaults</b> resets them.</td></tr>
+</table></div>
+</section>
+
+<section id="storage">
+<h2>Saved data</h2>
+<ul>
+  <li><b>Local storage</b> (keys start with <code>powder6.</code>): the settings including the theme, and the Solve options (formula, Z and the charge-flipping and Wyckoff options). Clearing site data resets them.</li>
+  <li><b>Project files</b>: JSON with the format tag <code>powder6-project</code>.</li>
+  <li><b>Calibration and peak-shape presets</b>: JSON files (<code>powder6-instrument-resolution</code>, <code>powder6-profile</code>).</li>
+  <li>Nothing leaves the browser. There are no accounts and no network calls apart from reading the files of the program itself.</li>
+</ul>
+</section>
+
+<section id="arch">
+<h2>Code layout</h2>
+<p>For anyone extending the program. The page loads classic scripts in this order; modules that run in workers are loaded with <code>importScripts</code> in the same order.</p>
+<pre class="tree"><code>powder6.html            the page: header, panes, side panel, dialogs
+powder6.css             tokens (light/dark), layout, components
+charge_flipping.wgsl    GPU kernel for charge flipping
+swarm_reflection.wgsl   GPU kernel for the Wyckoff search
+
+js/
+  constants.js          shared physical and numerical constants
+  crystal.js            cell metrics, d-spacings, hkl positions, Lp
+  profile.js            peak shapes, background, peak shift, pattern assembly
+  wppf_linear.js        skyline matrix, non-negative least squares
+  polarization.js       polarisation modes, French-Wilson
+  scatterers.js         X-ray / neutron scattering factors
+  parsers.js            pattern file readers (all formats above)
+  data_io.js            pdCIF reader
+  cif_structure.js      structure CIF reader
+  sg_engine.js          space-group lookup (loaded after sg/all.json)
+  spacegroup_ui.js      the space-group browser
+  wyckoff_report.js     structure report (packing, contacts, bond valence)
+  density3d.js          3D density and cell viewer
+  atomic_constraints.js GSAS-II style linear constraints
+  rietveld_core.js      the fit: Rietveld, Le Bail, WPPF, LM, PT (DOM-free)
+  rietveld_worker.js    runs one fit off the main thread
+  charge_flipping_worker.js
+  wyckoff_worker.js     with symmetry_utils, observations, wyckoff_assign,
+                        contacts, swarm_wyckoff, coord_refine
+  rietveld/
+    rv_state.js         the single state object, history, settings, storage
+    rv_ui.js            toasts, dialogs, menus, formatting
+    rv_plot2d.js, rv_plots.js   canvas plots
+    rv_phases.js, rv_datasets.js, rv_panels.js   panes and side panel
+    rv_commands.js      menus, command line, file reading, fits
+    rv_results.js, rv_pdf.js    results, text export, PDF writer
+    rv_gsas2.js                 export to GSAS-II (CIF, xye, instprm, ZIP writer)
+    rv_sgtest.js, rv_solve.js   space-group test and the Solve tab
+    rv_absorption.js, rv_constraints.js, rv_rietveld_structure.js
+    rv_app.js           start-up, tabs, databases, keyboard
+    rv_theme_startup.js applies the saved theme before first paint</code></pre>
+<h3>Design rules worth knowing</h3>
+<ul>
+  <li><b>One fit core.</b> <code>rietveld_core.js</code> has no DOM access. The page, the worker and tests load the same file.</li>
+  <li><b>Plot colours are plain values.</b> Variables read by canvas code (<code>--plot-*</code>, <code>--series-*</code>, <code>--phase-*</code>, <code>--calc-line</code> …) must be #hex, rgb() or px: a canvas cannot evaluate <code>var()</code> or <code>color-mix()</code>. The JavaScript keeps no colours of its own.</li>
+  <li><b>The end of <code>powder6.css</code></b> is an override block of UI refinements; removing it restores the earlier look.</li>
+</ul>
+</section>
+
+<section id="trouble">
+<h2>Troubleshooting</h2>
+<div class="tablewrap"><table class="wrapfirst">
+<tr><th>Message or symptom</th><th>Cause and fix</th></tr>
+<tr><td>“The space groups are not loaded … Open powder6.html through a web server.”</td><td><code>sg/all.json</code> could not be fetched. Serve the folder over HTTP and check the file is present.</td></tr>
+<tr><td>“The scattering factors are not loaded (scatters/index.json: 404)”</td><td>The <code>scatters/</code> folder is missing or the page is not served from the right folder. Atoms scatter nothing until it loads.</td></tr>
+<tr><td>A <code>.brml</code> or <code>.rasx</code> file is refused</td><td><code>lib/jszip.min.js</code> is missing.</td></tr>
+<tr><td>Wyckoff search says the shader failed to load</td><td><code>swarm_reflection.wgsl</code> is missing, stale or cached. Reload with the cache cleared. The message also appears if the WGSL and <code>wyckoff_assign.js</code> constants disagree.</td></tr>
+<tr><td>The Wyckoff search will not start</td><td>WebGPU is unavailable. Use a current Chrome or Edge, or run on a machine with a supported GPU.</td></tr>
+<tr><td>A fit does not move</td><td>Check that parameters are ticked for the selected datasets, that the phases are assigned to them, and the fitted 2θ range. Fit scales and background first.</td></tr>
+<tr><td>R<sub>wp</sub> is good but the cell drifts or intensities go to zero</td><td>Too many parameters at once, or overlapping reflections. Use Le Bail or WPPF to settle cell and shape, then a Rietveld step by step. Check the limits.</td></tr>
+<tr><td>Everything is slow with many datasets</td><td>Individual fits run in parallel workers; global fits are one large problem. Lower <b>Datasets drawn at most</b> for drawing speed.</td></tr>
+<tr><td>χ² is far below 1 but the fit looks good</td><td>The intensities are probably not counts (normalised, averaged or smoothed data), so the Poisson weights are on the wrong scale. Parameters, R<sub>wp</sub> and the uncertainties are unaffected; read R<sub>wp</sub> and the difference curve. See <a href="#chi2">χ² and the weights</a>.</td></tr>
+<tr><td>A constraint is refused: “already in another relationship”, “fixed or dependent by site symmetry”, “cannot be met within the parameter limits”</td><td>A parameter can be in one relationship only; only free directions of a site can be constrained; a sum that the limits cannot reach (occupancies limited to 0–1 summing to 3) is refused. See <a href="#c-atomic">Atomic constraints</a>.</td></tr>
+<tr><td>“Constraint sharing conflict”</td><td>In a global fit, the terms of one constraint equation have different shared/local flags. Make them all shared or all local.</td></tr>
+<tr><td>The space-group test finds no difference between groups</td><td>The WPPF fit was run in a group that already forbids the reflections. Refit in the condition-free group of the Laue class. See <a href="#s-sg">Space-group test</a>.</td></tr>
+<tr><td>The Wyckoff search says the ranking is withheld</td><td>Fewer effective observations than free parameters. Extract more reflections, add distance constraints, or lower Z. See <a href="#s-wy">Wyckoff search</a>.</td></tr>
+<tr><td>Distance constraints refused (“make N rules; the kernel holds 8”)</td><td>Drop upper bounds you do not need or turn them into floors. See <a href="#s-wy-dist">Distance constraints</a>.</td></tr>
+<tr><td>Settings or theme came back unexpectedly</td><td>They live in local storage under <code>powder6.</code>. Use <b>Reset settings</b> or clear site data.</td></tr>
+</table></div>
+</section>
+
+<section id="refs">
+<h2>References</h2>
+<h3>Powder 6 and its predecessors</h3>
+<ul>
+  <li>Dragoe, N. (2001). PowderV2: a suite of applications for powder X-ray diffraction calculations. <i>J. Appl. Cryst.</i> 34, 535.</li>
+</ul>
+<h3>Pattern decomposition and fitting</h3>
+<ul>
+  <li>Le Bail, A., Duroy, H., Fourquet, J. L. (1988). Ab-initio structure determination of LiSbWO<sub>6</sub> by X-ray powder diffraction. <i>Mater. Res. Bull.</i> 23, 447–452.</li>
+  <li>Pawley, G. S. (1981). Unit-cell refinement from powder diffraction scans. <i>J. Appl. Cryst.</i> 14, 357–361.</li>
+  <li>Toraya, H. (1986). Whole-powder-pattern fitting without reference to a structural model: application to X-ray powder diffractometer data. <i>J. Appl. Cryst.</i> 19, 440–447.</li>
+  <li>Golub, G. H., Pereyra, V. (1973). The differentiation of pseudo-inverses and nonlinear least squares problems whose variables separate. <i>SIAM J. Numer. Anal.</i> 10, 413–432.</li>
+  <li>Kaufman, L. (1975). A variable projection method for solving separable nonlinear least squares problems. <i>BIT</i> 15, 49–57.</li>
+  <li>Lawson, C. L., Hanson, R. J. (1974). <i>Solving Least Squares Problems.</i> Prentice-Hall, Englewood Cliffs, NJ.</li>
+  <li>Gill, P. E., Murray, W. (1974). Newton-type methods for unconstrained and linearly constrained optimization. <i>Math. Program.</i> 7, 311–350.</li>
+  <li>Swendsen, R. H., Wang, J. S. (1986). Replica Monte Carlo simulation of spin-glasses. <i>Phys. Rev. Lett.</i> 57, 2607.</li>
+  <li>Fritsch, F. N., Carlson, R. E. (1980). Monotone piecewise cubic interpolation. <i>SIAM J. Numer. Anal.</i> 17, 238–246.</li>
+  <li>Hill, R. J., Howard, C. J. (1987). Quantitative phase analysis from neutron powder diffraction data using the Rietveld method. <i>J. Appl. Cryst.</i> 20, 467–474.</li>
+</ul>
+<h3>Profiles, polarisation and conventions</h3>
+<ul>
+  <li>Thompson, P., Cox, D. E., Hastings, J. B. (1987). Rietveld refinement of Debye–Scherrer synchrotron X-ray data from Al<sub>2</sub>O<sub>3</sub>. <i>J. Appl. Cryst.</i> 20, 79–83.</li>
+  <li>Stephens, P. W. (1999). Phenomenological model of anisotropic peak broadening in powder diffraction. <i>J. Appl. Cryst.</i> 32, 281–289.</li>
+  <li>Larson, A. C., Von Dreele, R. B. (2004). General Structure Analysis System (GSAS). Los Alamos National Laboratory Report LAUR 86-748.</li>
+  <li>Toby, B. H., Von Dreele, R. B. (2013). GSAS-II: the genesis of a modern open-source all purpose crystallography software package. <i>J. Appl. Cryst.</i> 46, 544–549. (Source of the constraint rules, the separated size/strain profile and the single-parameter polarisation convention.)</li>
+  <li>Azaroff, L. V. (1955). Polarization correction for crystal-monochromatized X-radiation. <i>Acta Cryst.</i> 8, 701–704.</li>
+  <li>Klug, H. P., Alexander, L. E. (1974). <i>X-Ray Diffraction Procedures for Polycrystalline and Amorphous Materials</i>, 2nd ed. Wiley, New York.</li>
+</ul>
+<h3>Structure solution</h3>
+<ul>
+  <li>Markvardsen, A. J., David, W. I. F., Johnson, J. C., Shankland, K. (2001). A probabilistic approach to space-group determination from powder diffraction data. <i>Acta Cryst.</i> A57, 47–54.</li>
+  <li>Oszlányi, G., Sütő, A. (2004). Ab initio structure solution by charge flipping. <i>Acta Cryst.</i> A60, 134–141.</li>
+  <li>Oszlányi, G., Sütő, A. (2005). Ab initio structure solution by charge flipping. II. Use of weak reflections. <i>Acta Cryst.</i> A61, 147–152.</li>
+  <li>Oszlányi, G., Sütő, A. (2008). The charge flipping algorithm. <i>Acta Cryst.</i> A64, 123–134.</li>
+  <li>Palatinus, L., Chapuis, G. (2007). SUPERFLIP: a computer program for the solution of crystal structures by charge flipping in arbitrary dimensions. <i>J. Appl. Cryst.</i> 40, 786–790.</li>
+  <li>Baerlocher, C., McCusker, L. B., Palatinus, L. (2007). Charge flipping combined with histogram matching to solve complex crystal structures from powder diffraction data. <i>Z. Kristallogr.</i> 222, 47–53.</li>
+  <li>French, S., Wilson, K. (1978). On the treatment of negative intensity observations. <i>Acta Cryst.</i> A34, 517–525.</li>
+  <li>Brown, I. D., Altermatt, D. (1985). Bond-valence parameters obtained from a systematic analysis of the Inorganic Crystal Structure Database. <i>Acta Cryst.</i> B41, 244–247.</li>
+  <li>Brese, N. E., O'Keeffe, M. (1991). Bond-valence parameters for solids. <i>Acta Cryst.</i> B47, 192–197.</li>
+  <li>Brown, I. D. (2009). Recent developments in the methods and applications of the bond valence model. <i>Chem. Rev.</i> 109, 6858–6919.</li>
+  <li>Cordero, B., Gómez, V., Platero-Prats, A. E., Revés, M., Echeverría, J., Cremades, E., Barragán, F., Alvarez, S. (2008). Covalent radii revisited. <i>Dalton Trans.</i> (21), 2832–2838.</li>
+  <li>Grosse-Kunstleve, R. W., Sauter, N. K., Moriarty, N. W., Adams, P. D. (2002). The Computational Crystallography Toolbox: crystallographic algorithms in a reusable software framework. <i>J. Appl. Cryst.</i> 35, 126–136. (Space-group symmetry and systematic-absence rules.)</li>
+</ul>
+</section>
+
+<section id="about">
+<h2>About</h2>
+<p>Powder 6 was developed by Nita Dragoe, Université Paris-Saclay, as a browser-based implementation of powder pattern decomposition, Rietveld refinement and structure solution. It descends from PowderV2 (Dragoe, N. (2001). <i>J. Appl. Cryst.</i> 34, 535) and includes whole-powder-pattern fitting (WPPF; Toraya 1986, with Pawley-type intensity extraction) and modern global optimisation.</p>
+<p>All numerical work (the skyline Cholesky behind the covariance matrix and the uncertainties, the banded solver for the WPPF intensities, the non-negative least squares and the minimisers) is implemented in the program itself, so a refinement can never be blocked by a content-delivery network and the application works fully offline once served. Plots are drawn on canvas and the PDF report by a built-in writer. Space-group symmetry data is derived from the Computational Crystallography Toolbox (cctbx).</p>
+<p>This document was written and checked against the code with the assistance of an AI.</p>
+<div class="warn"><b>Disclaimer.</b> This application is provided for educational and research purposes. While it implements standard and robust algorithms, it is not a substitute for fully validated, peer-reviewed software packages (for example GSAS-II, FullProf or TOPAS) for analyses intended for publication.</div>
+</section>
+</main>
+</div>
+<script>
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme');
+  try { var t = localStorage.getItem('powder6.doc.theme'); if (t) root.setAttribute('data-theme', t); } catch (e) {}
+  btn.addEventListener('click', function () {
+    var dark = root.getAttribute('data-theme') ? root.getAttribute('data-theme') === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    var next = dark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('powder6.doc.theme', next); } catch (e) {}
+  });
+  var links = [].slice.call(document.querySelectorAll('nav.toc a[href^="#"]')), map = {};
+  links.forEach(function (a) { map[a.getAttribute('href').slice(1)] = a; });
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting && map[e.target.id]) { links.forEach(function (a) { a.classList.remove('on'); }); map[e.target.id].classList.add('on'); } });
+    }, { rootMargin: '-10% 0px -80% 0px' });
+    Object.keys(map).forEach(function (id) { var el = document.getElementById(id); if (el && el.tagName === 'SECTION') io.observe(el); });
+  }
+})();
+</script>
+</body>
+</html>

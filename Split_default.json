@@ -1,0 +1,42 @@
+{
+  "broadening": {
+    "size": "isotropic",
+    "strain": "isotropic",
+    "sizeAxis": [
+      0,
+      0,
+      1
+    ],
+    "strainAxis": [
+      0,
+      0,
+      1
+    ]
+  },
+  "format": "powder6-profile",
+  "version": 2,
+  "profileType": "split_pvoigt",
+  "separatedProfile": false,
+  "sizeUnit": "nm",
+  "label": "Split pseudo-Voigt, default",
+  "parameters": {
+    "param-gu_l": "2.0000",
+    "fit-gu_l": false,
+    "param-gv_l": "-2.0000",
+    "fit-gv_l": false,
+    "param-gw_l": "5.0000",
+    "fit-gw_l": false,
+    "param-lx_l": "1.0000",
+    "fit-lx_l": false,
+    "param-gu_r": "2.0000",
+    "fit-gu_r": false,
+    "param-gv_r": "-2.0000",
+    "fit-gv_r": false,
+    "param-gw_r": "5.0000",
+    "fit-gw_r": false,
+    "param-lx_r": "1.0000",
+    "fit-lx_r": false,
+    "param-eta_split": "0.5000",
+    "fit-eta_split": false
+  }
+}
