@@ -119,20 +119,21 @@ RV.cmd = (function () {
       }
       if (/\.(?:pd)?cif$/i.test(f.name)) {
         var text = new TextDecoder().decode(buf);
-        if (/_cell[._]length_a/i.test(text)) structures.push({ name: f.name, text: text });
-        if (/_pd_(?:meas|proc)[._]/i.test(text)) data.push({ name: f.name, buf: buf });
-        else if (!/_cell[._]length_a/i.test(text)) data.push({ name: f.name, buf: buf });
+        if (/_cell[._]length_a/i.test(text)) structures.push({ name: f.name, text: text, source: f });
+        if (/_pd_(?:meas|proc|calc)[._]/i.test(text)) data.push({ name: f.name, buf: buf, source: f });
+        else if (!/_cell[._]length_a/i.test(text)) data.push({ name: f.name, buf: buf, source: f });
         continue;
       }
       data.push({ name: f.name, buf: buf });
     }
     if (project) { try { await openProject(project.text); } catch (e) { ui.toast(project.name + ': ' + e.message, 'err'); } return; }
-    if (structures.length) readStructures(structures);
-    if (data.length) await readData(data);
+    var importedPhases = structures.length ? readStructures(structures) : [];
+    if (data.length) await readData(data, importedPhases);
     for (var preset of presets) await applyPresetText(preset.text, preset.name);
   }
   function instFromFile(pd) {
     var inst = {}, base = S.settings.inst;
+    if (pd.radiation) inst.radiation = pd.radiation;
     if (pd.wavelength > 0) {
       var an = St.anodeOf(pd.wavelength);
       inst.lambda1 = pd.wavelength; inst.anode = an;
@@ -140,17 +141,28 @@ RV.cmd = (function () {
       else { inst.lambda2 = 0; inst.ratio = 0; }
     }
     if (pd.wavelength2 > 0 && Number.isFinite(pd.ratio21)) { inst.lambda2 = pd.wavelength2; inst.ratio = pd.ratio21; }
+    if (pd.singleWavelength || pd.radiation === 'neutron') { inst.lambda2 = 0; inst.ratio = 0; }
+    if (pd.radiation === 'neutron') { inst.anode = ''; inst.pol = 'none'; }
     return inst;
   }
-  async function readData(items) {
+  async function readData(items, importedPhases) {
     var raws = [], failed = 0;
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
       try {
-        var pd = normalizeParsedData(await detectAndParseBuffer(it.name, it.buf), it.name);
-        var raw = { name: baseName(it.name), tth: pd.tth, y: pd.intensity, inst: instFromFile(pd) };
-        if (Number.isFinite(pd.zeroShift)) raw.p = { zero: pd.zeroShift };
-        raws.push(raw);
+        var parsed = await detectAndParseBuffer(it.name, it.buf), patterns = parsed.patterns || [parsed], fileRaws = [];
+        patterns.forEach(function (pattern) {
+          var pd = normalizeParsedData(pattern, it.name);
+          var raw = { name: baseName(it.name) + (patterns.length > 1 ? ' / ' + pd.blockName : ''), tth: pd.tth, y: pd.intensity, sig: pd.sig, weights: pd.weights, inst: instFromFile(pd) };
+          if (pd.phaseBlockIds) raw.phases = pd.phaseBlockIds.map(function (blockName) {
+            var found = (importedPhases || []).filter(function (p) { return p.source === it.source && p.blockName === blockName; })[0];
+            if (!found) throw new Error('Referenced phase block data_' + blockName + ' could not be imported.');
+            return found.key;
+          });
+          if (Number.isFinite(pd.zeroShift)) raw.p = { zero: pd.zeroShift };
+          fileRaws.push(raw);
+        });
+        Array.prototype.push.apply(raws, fileRaws);
       } catch (e) { failed++; ui.toast(it.name + ': ' + ((e && e.message) || e), 'err'); }
     }
     if (!raws.length) return;
@@ -176,18 +188,21 @@ RV.cmd = (function () {
     return { ph: ph, cif: cif, how: sg.how };
   }
   function readStructures(items) {
-    if (!haveSG()) return;
-    var blocks = [];
+    if (!haveSG()) return [];
+    var blocks = [], imported = [];
     items.forEach(function (it) {
-      var parts = it.text.split(/^(?=data_)/im).filter(function (t) { return /_cell[._]length_a\b/i.test(t); });
-      if (!parts.length) blocks.push(it);
-      else parts.forEach(function (text) { blocks.push({ name: it.name, text: text }); });
+      try {
+        var parts = CifReader.parse(it.text).filter(function (b) { return Object.keys(b.values).some(function (k) { return /^_cell[._]length_a$/i.test(k); }); });
+        if (!parts.length) blocks.push(it);
+        else parts.forEach(function (b) { blocks.push({ name: it.name, text: b.text, source: it.source }); });
+      } catch (e) { ui.toast(it.name + ': ' + e.message, 'err'); }
     });
     blocks.forEach(function (it) {
       var got;
       try { got = phaseFromCif(it.text, it.name); } catch (e) { ui.toast(it.name + ': ' + e.message, 'err'); return; }
       snapshot('reading phase ' + got.ph.name);
       St.addPhase(got.ph);
+      imported.push({ source: it.source, blockName: got.cif.blockName, key: got.ph.key });
       var ph = got.ph, miss = S.tables ? ph.atoms.filter(function (a) { return !St.scatterer(a.type).xray; }).map(function (a) { return a.label + ' (' + a.type + ')'; }) : [];
       ui.toast('Phase ' + ph.name + ' from ' + it.name + ': ' + St.sgText(ph.sg) + ', ' + ph.sg.system + ', ' + plural(ph.atoms.length, 'atom') + ' (' +
         ph.atoms.slice(0, 6).map(function (a) { return a.label + ' ' + a.site.wyck; }).join(', ') + (ph.atoms.length > 6 ? ' …' : '') + ')' +
@@ -197,6 +212,7 @@ RV.cmd = (function () {
         (S.datasets.length ? '. In ' + (S.datasets.length > 1 ? 'every dataset, scales estimated (change assignments in Datasets for datasets without it)' : 'the dataset, scale estimated') + '.' : '.'),
         miss.length || got.cif.blocks > 1 || got.how !== 'exact' ? 'warn' : 'ok');
     });
+    return imported;
   }
   async function readData0() { var fs = await ui.pickFiles({ multiple: true }); if (fs.length) await readFiles(fs); }
   async function readStructure() {

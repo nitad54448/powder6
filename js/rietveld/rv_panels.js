@@ -547,7 +547,7 @@ RV.panels = (function () {
       { key: 'ptSeed', label: 'PT random seed', type: 'int', pt: true, hint: 'Repeat a run with the same seed and starting values for reproducible proposals.' },
       { key: 'maxIter', label: 'Maximum iterations', type: 'int', hint: 'LM iterations per stage, 1 to 10000. Also in Solve. PT sweeps are additional.' },
       { key: 'tol', label: 'Stop when χ² changes less than', type: 'num', hint: 'Relative change, twice in a row.' },
-      { key: 'weight', label: 'Weight of each point', type: 'select', options: [['poisson', '1/σ², σ² = counts (or the σ read from the file)'], ['unit', '1 (no weighting)']] }] },
+      { key: 'weight', label: 'Weight of each point', type: 'select', options: [['poisson', 'File weights or 1/σ² (counts if no σ supplied)'], ['unit', '1 (no weighting)']] }] },
     { legend: 'Background', fields: [
       { key: 'bkgN', label: 'Chebyshev terms of new datasets', type: 'int', hint: 'Polynomials over the fitted range, 0 to 24; per dataset in Background (Datasets panel).' },
       { key: 'nAnchors', label: 'Spline anchors placed', type: 'int', hint: 'How many anchors Place automatically puts, 2 to 200.' }] },

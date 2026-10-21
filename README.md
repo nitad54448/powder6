@@ -1,5 +1,7 @@
 # Powder 6
 
+Version **2.6**, 21 October 2026. See [corrections](CHANGELOG.md).
+
 Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by **Rietveld**, **Le Bail** or **WPPF**, fitted individually or in one global fit, with **structure solution** from the extracted intensities. Everything runs locally; nothing is uploaded.
 
 Full documentation: [`Powder6_documentation.html`](Powder6_documentation.html): methods, the instrument and Lorentz-polarisation model, peak shapes, every kind of constraint (cell, special positions, atomic constraints, limits, sharing), uncertainties, structure solution, and where Powder 6 differs from Powder 5.
@@ -43,7 +45,7 @@ Data files the page fetches. Without them the program still starts, but loses th
 | Path | Without it |
 |---|---|
 | `sg/all.json` | no space groups: no new phases, CIF import or Solve |
-| `scatters/index.json` and element files | atoms scatter nothing; the demo cannot load |
+| `scatters/index.json` and element files | Rietveld calculations and the demo are unavailable; Le Bail and WPPF remain usable |
 | `lib/jszip.min.js` | `.brml` and `.rasx` files are refused |
 | `absorption.json` | load a table yourself in Datasets → Absorption |
 | `Voigt_default.json`, `TCH_default.json`, `Split_default.json` | no starting peak-shape presets (in `TCH_default.json`, X is the 1/cos θ term and Y the tan θ term, as in GSAS-II; "version": 2) |
@@ -66,6 +68,7 @@ Data files the page fetches. Without them the program still starts, but loses th
 - `js/rietveld_core.js` is DOM-free and shared by the page and `rietveld_worker.js`.
 - CSS variables read by canvas plots (`--plot-*`, `--series-*`, `--phase-*`, `--calc-line`…) must stay plain values (`#hex`, `rgb()`, `px`).
 - `powder6.css` is the single source of truth for all light/dark tokens, layout and component styles.
+- Run the import, weighting, fit-state and export regression checks with `node --test tests/regressions.test.cjs` (Node.js; no additional packages).
 
 ## References
 

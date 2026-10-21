@@ -229,7 +229,7 @@
       $('#scat-list').innerHTML = S.tables.labels.map(function (l) { return '<option value="' + ui.esc(l) + '">'; }).join('');
       notes.push('X-ray form factors ' + ((t.index && t.index.preferred) || '') + (t.neutron ? ' and neutron lengths' : ''));
     } catch (e) {
-      ui.toast('The scattering factors are not loaded (' + ((e && e.message) || e) + '): atoms scatter nothing until they are.', 'err');
+      ui.toast('The scattering factors are not loaded (' + ((e && e.message) || e) + '): Rietveld calculations are unavailable until they are.', 'err');
     }
     RV.bus.emit('tables');
     var got = await RV.cmd.loadDefaultPresets();
@@ -328,7 +328,7 @@
     initSolveHeader();
     applyTheme(); syncToolbar();
 
-    $('#about-version').textContent = 'Powder 6, version ' + RV.version + ', fit core ' + RVCore.VERSION;
+    $('#about-version').textContent = 'version ' + RV.version.replace(/\s*\(([^)]+)\)$/, ', $1');
     showSide(St.load('side') || 'datasets');
     showTab(St.load('tab') || 'pattern');
     RV.bus.emit('datasets'); RV.bus.emit('selection'); RV.bus.emit('settings', '*');

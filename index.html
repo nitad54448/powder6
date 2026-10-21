@@ -184,8 +184,7 @@
 
     <div class="pane about-pane" id="pane-about" role="tabpanel" aria-labelledby="tab-about">
       <article class="about">
-        <p class="mark-big">Powder 6</p>
-        <h1>Powder diffraction: Rietveld, Le Bail and WPPF, structure solution <small id="about-version"></small></h1>
+        <p class="sub" id="about-version"></p>
         <p>Load one or more patterns from the Datasets tab, or use Simulate with any phase that has atoms. Define phases with or without atoms, then assign phases with <b>Datasets tab → Phases…</b> or <b>Refine → Phases of the datasets…</b>. Solve contains separate <b>Le Bail</b>, <b>WPPF</b> and <b>Rietveld</b> calculations of the same observations. Switching method tabs preserves each calculation’s values, fit flags, background, sharing choices and results in the project file. New calculations start from the current values. Phase definitions and dataset assignments are shared by the project; changing a structure invalidates incompatible saved results. During a Rietveld calculation, any phase without atoms is fitted by WPPF alongside the Rietveld phases.</p>
         <p>Select datasets on the right, choose Individual or Global, then select parameters to refine. Global fits allow a mixture of local and shared cell, atom, orientation, profile, zero-point and sample-geometry parameters. Scales and background remain local. Rietveld needs atoms; atomless phases use WPPF in a Rietveld calculation. Refine scales only fits all Rietveld phase scales in the selected patterns with other parameters held fixed; the results show their normalized weight fractions.</p>
         <table class="grid"><tr><th>Parameter ownership</th><th>Controls</th></tr>
@@ -305,6 +304,7 @@
 <script src="js/wppf_linear.js"></script>
 <script src="js/polarization.js"></script>
 <script src="js/scatterers.js"></script>
+<script src="js/cif_reader.js"></script>
 <script src="js/data_io.js"></script>
 <script src="js/parsers.js"></script>
 <script src="js/cif_structure.js"></script>

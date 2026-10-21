@@ -169,7 +169,7 @@ RV.results = (function () {
               cellText(p, d).map(function (t) { return '<td>' + t + '</td>'; }).join('') + '<td>' + (Number.isFinite(W[i].ct.V) ? W[i].ct.V.toFixed(3) : '—') + '</td></tr>';
           }).join('');
         }).join('') + '</tbody></table></div><p class="hint">Weight fractions are among the Rietveld phases and assume that every crystalline phase of the sample is in the model; a Le Bail or WPPF phase has no scale. Values with their standard uncertainty in brackets, from the last fit.</p>' +
-        '<details class="acc sub"><summary><span class="acc-t">What does R<sub>Bragg</sub> mean?</span></summary><div class="acc-body"><p class="hint">R<sub>Bragg</sub> = 100 × Σ|I<sub>obs</sub> − I<sub>calc</sub>| / Σ|I<sub>obs</sub>| measures how well the structural model reproduces the integrated reflection intensities of a phase. Because powder reflections overlap, I<sub>obs</sub> is not observed directly: at each point of the pattern the background-subtracted net intensity is partitioned between overlapping reflections in proportion to their calculated profiles, and integrated for each reflection (Rietveld, 1969; McCusker et al., 1999). R<sub>Bragg</sub> is therefore model-dependent (it decreases if a phase is given no reflections in a region, and depends on peak shapes and background) and should always be read alongside R<sub>wp</sub>, χ² and the difference curve in Pattern. R<sub>F</sub> uses √I in the same way, by analogy with single-crystal structure factors.</p></div></details></section>';
+        '</section>';
     }
     parts.summary = h;
     var pairs = [];
@@ -378,7 +378,13 @@ RV.results = (function () {
       });
       if(powder){
         var calc=St.calcFor(d), stats=statsOf(d), points=St.fitPoints(d);
-        L.push('','data_pattern_'+(di+1),'_pd_block_id '+cifQuote('pattern_'+(di+1)),'_pd_spec_special_details '+cifQuote('Dataset '+d.name+'; method '+C.METHOD_LABELS[S.calculation]+'; original intensities, background not subtracted'), '_diffrn_radiation_wavelength '+cifNumber(d.inst.lambda1));
+        L.push('','data_pattern_'+(di+1),'_pd_block_id '+cifQuote('pattern_'+(di+1)),'_pd_spec_special_details '+cifQuote('Dataset '+d.name+'; method '+C.METHOD_LABELS[S.calculation]+'; original intensities, background not subtracted'),
+          '_diffrn_radiation_probe '+(d.inst.radiation==='neutron'?'neutron':'x-ray'),
+          '_pd_calib_2theta_offset '+cifNumber(-(d.p.zero || 0)));
+        if(d.inst.radiation!=='neutron' && d.inst.lambda2>0 && d.inst.ratio>0){
+          L.push('loop_','_diffrn_radiation_wavelength_id','_diffrn_radiation_wavelength','_diffrn_radiation_wavelength_wt',
+            '1 '+cifNumber(d.inst.lambda1)+' 1','2 '+cifNumber(d.inst.lambda2)+' '+cifNumber(d.inst.ratio));
+        }else L.push('_diffrn_radiation_wavelength '+cifNumber(d.inst.lambda1));
         if(stats)L.push('_pd_proc_ls_prof_R_factor '+cifNumber(stats.Rp),'_pd_proc_ls_prof_wR_factor '+cifNumber(stats.Rwp),'_pd_proc_ls_prof_wR_expected '+cifNumber(stats.Rexp));
         if(ids.length){L.push('loop_','_pd_phase_id','_pd_phase_name','_pd_phase_block_id');ids.forEach(function(id,i){L.push((i+1)+' '+cifQuote(phaseNames[i])+' '+cifQuote(id));});}
         if(calc){L.push('loop_','_pd_meas_2theta_scan','_pd_meas_intensity_total','_pd_calc_intensity_total','_pd_calc_intensity_bkg','_pd_proc_ls_weight');for(var j=0;j<calc.tth.length;j++)L.push([calc.tth[j],calc.yobs[j],calc.ycalc[j],calc.bkg[j],points.w[j]].map(function(v){return cifNumber(v);}).join(' '));}

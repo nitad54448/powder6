@@ -92,10 +92,12 @@ RV.gsas2 = (function () {
 
   // ---------------------------------------------------------------- the pattern
   function xyeOf(ds) {
-    var unit = S.settings.weight === 'unit', L = ['# Powder 6 export for GSAS-II', '# ' + String(ds.name).replace(/[\r\n]+/g, ' '), '# 2theta /deg, counts, standard uncertainty'], i, s, n = 0;
+    var L = ['# Powder 6 export for GSAS-II', '# ' + String(ds.name).replace(/[\r\n]+/g, ' '), '# 2theta /deg, counts, standard uncertainty', '# Points with an imported zero weight are omitted.'], i, s, n = 0;
     for (i = 0; i < ds.tth.length; i++) {
       if (!Number.isFinite(ds.tth[i]) || !Number.isFinite(ds.y[i])) continue;
-      s = unit ? 1 : (ds.sig && ds.sig[i] > 0 ? ds.sig[i] : Math.sqrt(Math.max(ds.y[i], 1)));
+      var w = St.pointWeight(ds, i);
+      if (!(w > 0)) continue;
+      s = 1 / Math.sqrt(w);
       L.push(num(ds.tth[i], 5) + ' ' + trim(ds.y[i], 4) + ' ' + trim(s, 6));
       n++;
     }

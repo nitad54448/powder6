@@ -87,7 +87,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <div class="layout">
 <nav class="toc" aria-label="Contents">
   <a class="brand" href="#top"><svg viewBox="0 0 26 20" aria-hidden="true"><path d="M1 17.5h5.2l1.6-2.2 1.2 2.2h3.4l1.3-14.2 1.5 14.2h2.6l1.3-6.6 1.1 6.6H25" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Powder 6</a>
-  <p class="ver">Documentation</p>
+  <p class="ver">Version 2.6 · 21 October 2026</p>
   <ol>
     <li><a href="#overview">Overview</a></li>
     <li><a href="#start">Getting started</a>
@@ -113,6 +113,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
     <li><a href="#storage">Saved data</a></li>
     <li><a href="#arch">Code layout</a></li>
     <li><a href="#trouble">Troubleshooting</a></li>
+    <li><a href="#corrections">Corrections in 2.6</a></li>
     <li><a href="#refs">References</a></li>
     <li><a href="#about">About</a></li>
   </ol>
@@ -154,7 +155,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <tr><td><code>js/</code>, <code>js/rietveld/</code></td><td>All code, workers included.</td><td>Nothing works.</td></tr>
 <tr><td><code>charge_flipping.wgsl</code>, <code>swarm_reflection.wgsl</code></td><td>GPU kernels for charge flipping and the Wyckoff search.</td><td>Charge flipping falls back to the CPU; the Wyckoff search stops with a message.</td></tr>
 <tr><td><code>sg/all.json</code> <span class="tag opt">data</span></td><td>The 530-odd space-group settings, with operators and Wyckoff positions.</td><td>No space groups: no new phases, no CIF import, no Solve.</td></tr>
-<tr><td><code>scatters/index.json</code> and the element files <span class="tag opt">data</span></td><td>X-ray and neutron scattering factors.</td><td>Atoms scatter nothing, and the demo cannot load.</td></tr>
+<tr><td><code>scatters/index.json</code> and the element files <span class="tag opt">data</span></td><td>X-ray and neutron scattering factors.</td><td>Rietveld calculations and the demo are unavailable. Le Bail and WPPF remain usable.</td></tr>
 <tr><td><code>lib/jszip.min.js</code> <span class="tag opt">data</span></td><td>JSZip, to open the ZIP-based <code>.brml</code> and <code>.rasx</code> files.</td><td>Those two formats are refused with a message; all others work.</td></tr>
 <tr><td><code>absorption.json</code> <span class="tag opt">data</span></td><td>Mass attenuation coefficients for the transparency estimate.</td><td>Load your own table in Datasets → Absorption.</td></tr>
 <tr><td><code>Voigt_default.json</code>, <code>TCH_default.json</code>, <code>Split_default.json</code></td><td>Starting peak-shape presets, offered by <em>Load a peak-shape preset</em>.</td><td>Load a preset of your own, or start from the built-in defaults.</td></tr>
@@ -527,6 +528,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <p>The fit stops when the relative change of χ² is below the tolerance twice in a row, when every refined parameter is at a limit or has no effect, or at the maximum number of iterations. <b>Stop</b> (or <code>stop</code>) ends a run; a stopped fit keeps nothing from the half-finished stage.</p>
 
 <h3 id="weights">Weights</h3>
+<p>Supplied weights in a pdCIF take precedence over standard uncertainties. ESD, FXYE and XYE files retain their supplied σ values; otherwise the default is 1/max(counts, 1). Imported zero weights exclude those points even in unit-weight mode. Weights and uncertainties remain attached to their observations when the axis is sorted and are saved with the project.</p>
 <p>Each point has weight 1/σ², with σ² the counts (Poisson) or the σ read from the file; a unit weight can be chosen in Settings. This is the right model for measured counts and for nothing else; see <a href="#chi2">χ² and the weights</a> for what happens when the intensities are not counts. The <em>structure fitting</em> steps (Wyckoff search and final coordinate refinement) use a different weight: 1/σ² of each extracted intensity from the WPPF decomposition, because the uncertainty of an extracted intensity comes from the decomposition and not from photon counting (see <a href="#s-wy">Wyckoff search</a>).</p>
 
 <h3 id="strategy">Strategy</h3>
@@ -829,7 +831,7 @@ O  O      2.40          # keep the tetrahedra from interpenetrating</code></pre>
 <tr><td>PT sweeps · replicas · highest temperature · seed</td><td>10–100000 sweeps; 2–16 replicas per fit worker; ladder from 1 to the highest temperature (> 1); seed for repeatable runs. Shown only with PT.</td></tr>
 <tr><td>Maximum iterations</td><td>LM iterations per stage, 1–10000. PT sweeps are additional.</td></tr>
 <tr><td>Stop when χ² changes less than</td><td>Relative change, twice in a row.</td></tr>
-<tr><td>Weight of each point</td><td>Poisson (1/σ²) or unit.</td></tr>
+<tr><td>Weight of each point</td><td>File weights, supplied 1/σ², Poisson fallback, or unit.</td></tr>
 <tr><td>Chebyshev terms of new datasets</td><td>0–24.</td></tr>
 <tr><td>Spline anchors placed</td><td>2–200, used by automatic placement.</td></tr>
 <tr><td>Datasets drawn at most</td><td>Larger selections are thinned evenly for drawing only; fits use all of them.</td></tr>
@@ -863,6 +865,7 @@ js/
   polarization.js       polarisation modes, French-Wilson
   scatterers.js         X-ray / neutron scattering factors
   parsers.js            pattern file readers (all formats above)
+  cif_reader.js         shared CIF tokens, loops and data blocks
   data_io.js            pdCIF reader
   cif_structure.js      structure CIF reader
   sg_engine.js          space-group lookup (loaded after sg/all.json)
@@ -900,7 +903,7 @@ js/
 <div class="tablewrap"><table class="wrapfirst">
 <tr><th>Message or symptom</th><th>Cause and fix</th></tr>
 <tr><td>“The space groups are not loaded … Open index.html through a web server.”</td><td><code>sg/all.json</code> could not be fetched. Serve the folder over HTTP and check the file is present.</td></tr>
-<tr><td>“The scattering factors are not loaded (scatters/index.json: 404)”</td><td>The <code>scatters/</code> folder is missing or the page is not served from the right folder. Atoms scatter nothing until it loads.</td></tr>
+<tr><td>“The scattering factors are not loaded (scatters/index.json: 404)”</td><td>The <code>scatters/</code> folder is missing or the page is not served from the right folder. Rietveld calculations require the factors for every assigned atom and radiation type; Le Bail and WPPF remain usable.</td></tr>
 <tr><td>A <code>.brml</code> or <code>.rasx</code> file is refused</td><td><code>lib/jszip.min.js</code> is missing.</td></tr>
 <tr><td>Wyckoff search says the shader failed to load</td><td><code>swarm_reflection.wgsl</code> is missing, stale or cached. Reload with the cache cleared. The message also appears if the WGSL and <code>wyckoff_assign.js</code> constants disagree.</td></tr>
 <tr><td>The Wyckoff search will not start</td><td>WebGPU is unavailable. Use a current Chrome or Edge, or run on a machine with a supported GPU.</td></tr>
@@ -915,6 +918,19 @@ js/
 <tr><td>Distance constraints refused (“make N rules; the kernel holds 8”)</td><td>Drop upper bounds you do not need or turn them into floors. See <a href="#s-wy-dist">Distance constraints</a>.</td></tr>
 <tr><td>Settings or theme came back unexpectedly</td><td>They live in local storage under <code>powder6.</code>. Use <b>Reset settings</b> or clear site data.</td></tr>
 </table></div>
+</section>
+
+<section id="corrections">
+<h2>Corrections in 2.6</h2>
+<p>Released 21 October 2026. The complete correction list and regression command are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
+<ul>
+  <li>Restored scale estimation and cleared obsolete fit statistics and uncertainties after phase additions or deletions.</li>
+  <li>Preserved measurement uncertainties, explicit weights and zero-weight exclusions through import, saving and undo.</li>
+  <li>Read each pdCIF profile with its own metadata and referenced phases; preserved neutron radiation and single-wavelength measurements.</li>
+  <li>Handled CIF comments, quoted values, wrapped loop rows and multiline text without losing atoms.</li>
+  <li>Required the scattering factors needed by each Rietveld model before calculating or fitting it.</li>
+  <li>Exported pdCIF radiation, wavelength components and zero correction, and restored calculation-affecting settings when undoing a project load.</li>
+</ul>
 </section>
 
 <section id="refs">

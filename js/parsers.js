@@ -218,7 +218,7 @@ const detectAndParseBuffer = async (fileName, buffer) => {
                     // A .cif that is not a powder profile (a structure CIF, say)
                     // must report the reader's error. Falling through let the
                     // two-column fallback read atom coordinates as a pattern.
-                    fatal: (name) => name.endsWith('.cif'),
+                    fatal: () => true,
                     // RETURNED WHOLE, NOT WHITELISTED.
                     //
                     // This used to rebuild the result as
@@ -239,7 +239,10 @@ const detectAndParseBuffer = async (fileName, buffer) => {
                     // this hands them on untouched. normalizeParsedData() below
                     // spreads the object rather than rebuilding it, so they
                     // survive the rest of the way.
-                    parser: (content) => parsePdCifFile(content)
+                    parser: (content) => {
+                        const patterns = parsePdCifFiles(content);
+                        return patterns.length > 1 ? { ...patterns[0], patterns } : patterns[0];
+                    }
                 },
                 { // XRDML
                     test: (name, content) => name.endsWith('.xrdml') || (content.includes('<?xml') && content.includes('<xrdMeasurement')),
@@ -274,6 +277,7 @@ const detectAndParseBuffer = async (fileName, buffer) => {
                 },
                 { // GSAS ESD/XRA
                     test: (name, content, firstLine, upper, allLines) => allLines.some(line => line.trim().toUpperCase().startsWith('BANK')),
+                    fatal: () => true,
                     parser: (content, allLines) => {
                         const bankLine = allLines.find(line => line.trim().toUpperCase().startsWith('BANK'));
                         if (bankLine.toUpperCase().includes('STD')) {
@@ -378,9 +382,13 @@ const detectAndParseBuffer = async (fileName, buffer) => {
             // them shifted by every dropped, re-sorted or duplicate point -- a
             // calculated curve offset from the data it was fitted to.
             const out = { ...parsed, tth: outX, intensity: outY };
-            for (const col of ['calc', 'bkg']) {
+            for (const col of ['calc', 'bkg', 'sig', 'weights']) {
                 const src = parsed[col];
-                if (src && src.length === parsed.tth.length) out[col] = keep.map(k => src[k]);
+                if (!src) continue;
+                if ((col === 'sig' || col === 'weights') && src.length < n) throw new Error(`Incomplete ${col} column in ${fileName}.`);
+                if (src.length >= n) out[col] = keep.map(k => src[k]);
+                if (col === 'sig' && !out[col].every(v => Number.isFinite(v) && v > 0)) throw new Error(`Invalid standard uncertainty in ${fileName}.`);
+                if (col === 'weights' && !out[col].every(v => Number.isFinite(v) && v >= 0)) throw new Error(`Invalid weight in ${fileName}.`);
             }
             return out;
         };
@@ -391,7 +399,8 @@ const detectAndParseBuffer = async (fileName, buffer) => {
          */
         const parseDataFile = (text, fileName = "") => {
             const lines = text.trim().split(/\r?\n/);
-            const tth = [], intensity = [];
+            const tth = [], intensity = [], sig = [];
+            const hasSigma = /\.(?:fxye|xye)$/i.test(String(fileName));
             let last_x = -Infinity;
             let suspicious_steps = 0;
             let positive_x_values = 0;
@@ -444,6 +453,11 @@ const detectAndParseBuffer = async (fileName, buffer) => {
 
                 tth.push(x);
                 intensity.push(y);
+                if (hasSigma) {
+                    const s = Number(parts[2]);
+                    if (!(Number.isFinite(s) && s > 0)) throw new Error(`Invalid standard uncertainty at 2-theta ${x} in ${fileName}.`);
+                    sig.push(s);
+                }
             });
 
             //   Final checks (log warnings to console)  
@@ -461,7 +475,7 @@ const detectAndParseBuffer = async (fileName, buffer) => {
                  throw new Error(`Could not parse any 2-column data from ${fileName}. File may be binary or have an unknown header.`);
             }
 
-            return { tth, intensity };
+            return { tth, intensity, sig: hasSigma ? sig : null };
         };
 
         const parseXrdmlFile = (xmlString) => { const parser = new DOMParser(); const xmlDoc = parser.parseFromString(xmlString, "application/xml"); if (xmlDoc.querySelector("parsererror")) { throw new Error("Error parsing XRDML file."); } let wavelength = null; const kAlpha1Node = xmlDoc.querySelector("kAlpha1"); if (kAlpha1Node?.textContent) wavelength = parseFloat(kAlpha1Node.textContent); const intensityNode = xmlDoc.querySelector("intensities") || xmlDoc.querySelector("counts"); if (!intensityNode) throw new Error("Could not find <intensities> or <counts> in XRDML file."); const intensity = intensityNode.textContent.trim().split(/\s+/).map(Number); const positionsNode = xmlDoc.querySelector('positions[axis="2Theta"]'); if (!positionsNode) throw new Error("Could not find <positions> in XRDML file."); const startPosNode = positionsNode.querySelector("startPosition"); const endPosNode = positionsNode.querySelector("endPosition"); if (!startPosNode || !endPosNode) throw new Error("Could not find start/end positions in XRDML."); const startPos = parseFloat(startPosNode.textContent); const endPos = parseFloat(endPosNode.textContent); if (!isFinite(startPos) || !isFinite(endPos)) throw new Error("XRDML start/end positions are not numeric."); if (intensity.length < 2) throw new Error("XRDML file contains fewer than two data points."); /* FIX: (length - 1) was an unguarded divisor -> Infinity for a 1-point scan. */ const step = (endPos - startPos) / (intensity.length - 1); const tth = Array.from({ length: intensity.length }, (_, i) => startPos + i * step); return { tth, intensity, wavelength }; };
@@ -489,7 +503,7 @@ const detectAndParseBuffer = async (fileName, buffer) => {
                 !['STD', 'ESD', 'FXYE'].includes(type)) {
                 throw new Error('GSAS Parse Error: Invalid or unsupported BANK scan parameters.');
             }
-            const intensity = [], tth = [];
+            const intensity = [], tth = [], sig = [];
             const numeric = /^[+\-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+\-]?\d+)?$/;
             for (let i = bankIndex + 1; i < lines.length && intensity.length < count; i++) {
                 const line = lines[i];
@@ -503,11 +517,11 @@ const detectAndParseBuffer = async (fileName, buffer) => {
                     if (fixed.every(v => !v || numeric.test(v))) fields = fixed;
                 }
                 if (type === 'FXYE') {
-                    const x = Number(fields[0]), y = Number(fields[1]);
-                    if (fields.length < 3 || !Number.isFinite(x) || !Number.isFinite(y)) {
+                    const x = Number(fields[0]), y = Number(fields[1]), s = Number(fields[2]);
+                    if (fields.length < 3 || !Number.isFinite(x) || !Number.isFinite(y) || !(s > 0 && Number.isFinite(s))) {
                         throw new Error('GSAS Parse Error: Invalid FXYE data record.');
                     }
-                    tth.push(x / 100); intensity.push(y);
+                    tth.push(x / 100); intensity.push(y); sig.push(s);
                 } else {
                     const stride = type === 'ESD' ? 2 : 1;
                     for (let j = 0; j < fields.length && intensity.length < count; j += stride) {
@@ -519,6 +533,11 @@ const detectAndParseBuffer = async (fileName, buffer) => {
                         const y = Number(fields[j]);
                         if (!Number.isFinite(y)) throw new Error('GSAS Parse Error: Non-finite intensity.');
                         intensity.push(y);
+                        if (stride === 2) {
+                            const s = Number(fields[j + 1]);
+                            if (!(s > 0 && Number.isFinite(s))) throw new Error('GSAS Parse Error: Invalid standard uncertainty.');
+                            sig.push(s);
+                        }
                     }
                 }
             }
@@ -527,7 +546,7 @@ const detectAndParseBuffer = async (fileName, buffer) => {
             }
             return {
                 tth: type === 'FXYE' ? tth : Array.from({ length: count }, (_, i) => start + i * step),
-                intensity, wavelength
+                intensity, wavelength, sig: type === 'STD' ? null : sig
             };
         };
         const parseGsasEsdFile = (text) => parseGsasBankFile(text, 'ESD');

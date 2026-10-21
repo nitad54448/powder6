@@ -105,7 +105,7 @@
 (function (root) {
 'use strict';
 
-var VERSION = '2.5';
+var VERSION = '2.6';
 var TWO_PI = 2 * Math.PI, D2R = Math.PI / 180, R2D = 180 / Math.PI;
 var METHODS = ['rietveld', 'lebail', 'wppf'];
 var METHOD_LABELS = { rietveld: 'Rietveld', lebail: 'Le Bail', wppf: 'WPPF' };
@@ -587,6 +587,14 @@ function Model(problem) {
         var bx = spline ? (d.bkgX || []).map(Number).filter(Number.isFinite).sort(function (a, b) { return a - b; }) : [];
         // the phases in the dataset: a phase absent from it has no reflections there and adds nothing
         var has = self.phases.map(function (P) { return !Array.isArray(d.phases) || d.phases.indexOf(P.def.key) >= 0; });
+        self.phases.forEach(function (P, pi) {
+            if (!has[pi] || P.method !== 'rietveld') return;
+            (P.def.atoms || []).forEach(function (at) {
+                var ff = at.ff, x = ff && ff.xray, neutron = d.radiation === 'neutron';
+                var valid = neutron ? ff && Number.isFinite(ff.neutron) : x && x.a && x.b && x.a.length > 0 && x.a.length === x.b.length && Array.from(x.a).every(Number.isFinite) && Array.from(x.b).every(Number.isFinite) && Number.isFinite(x.c);
+                if (!valid) throw new Error('Missing ' + (neutron ? 'neutron' : 'X-ray') + ' scattering factor for ' + P.def.key + '.' + at.label + '.');
+            });
+        });
         return { def: d, n: n, T: T, spline: spline, bkgX: bx, trap: trap, nFit: nFit, refl: [], nnls: {}, has: has };
     });
     // reflections of each phase in each dataset, from the start values, with 2 % of margin for the cell to move

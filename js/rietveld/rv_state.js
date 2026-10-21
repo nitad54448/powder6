@@ -1,6 +1,6 @@
 /*  Powder 6: the state of the program, its persistence, fit jobs, projects and the history of restore points.
  *
- *  Dataset { id, name, tth, y, sig (Float64Array | null), inst, phases [keys of the phases it holds], p: {name: value},
+ *  Dataset { id, name, tth, y, sig, weights (Float64Array | null), inst, phases [keys of the phases it holds], p: {name: value},
  *            fit: {name: bool}, esd: {name: number}, stats: null | {...}, mem: {name: [value, fit]} (parameters that left
  *            the model), apart: {name: true} (shared parameters this dataset keeps its own value of in a global fit),
  *            calc (cached pattern), ints (intensities of the Le Bail and WPPF phases from the last fit, not saved),
@@ -156,7 +156,7 @@ RV.state = (function () {
     Object.keys((t.xray && t.xray.table) || {}).forEach(function (k) { xm.set(k.toUpperCase(), { label: k, e: t.xray.table[k] }); });
     Object.keys((t.neutron && t.neutron.table) || {}).forEach(function (k) { nm.set(k.toUpperCase(), { label: k, e: t.neutron.table[k] }); });
     S.tables = { raw: t, xray: xm, neutron: nm, labels: Object.keys((t.xray && t.xray.table) || {}) };
-    invalidateAll();
+    S.datasets.forEach(function (ds) { clearFit(ds, true); });
   }
   // standard atomic weights (g/mol), for cell masses, densities and weight fractions
   var WEIGHTS = {};
@@ -181,7 +181,7 @@ RV.state = (function () {
   // { xray: {a, b, c} | null, neutron: fm, xlabel, nlabel }: the type as written ("Fe3+"), then without its charge, then
   // the element; the neutron length of the element
   function scatterer(type) {
-    var t = String(type || '').trim(), T = S.tables, out = { xray: null, neutron: 0, xlabel: '', nlabel: '' };
+    var t = String(type || '').trim(), T = S.tables, out = { xray: null, neutron: null, xlabel: '', nlabel: '' };
     if (!T || !t) return out;
     var ionic=/^([A-Za-z]{1,2})(?:([0-9]+)([+-])|([+-])([0-9]+))$/.exec(t), ion=ionic ? ionic[1]+(ionic[2] || ionic[5])+(ionic[3] || ionic[4]) : t;
     var cands = [t, ion, ionic ? ionic[1]+(ionic[3] || ionic[4])+(ionic[2] || ionic[5]) : '', elementOf(t)], i, hit;
@@ -503,7 +503,7 @@ RV.state = (function () {
     var tth = Float64Array.from(raw.tth), y = Float64Array.from(raw.y), n = tth.length;
     var inst = cleanInst(Object.assign({}, S.settings.inst, { bkgN: S.settings.bkgN, bkgX: [], excl: [] }, raw.inst || {}));
     if (!(inst.tthMin < inst.tthMax)) { inst.tthMin = tth[0]; inst.tthMax = tth[n - 1]; }
-    var ds = { id: S.nextId++, name: raw.name || 'data', tth: tth, y: y, sig: raw.sig ? Float64Array.from(raw.sig) : null, inst: inst,
+    var ds = { id: S.nextId++, name: raw.name || 'data', tth: tth, y: y, sig: raw.sig ? Float64Array.from(raw.sig) : null, weights: raw.weights ? Float64Array.from(raw.weights) : null, inst: inst,
                p: raw.p ? Object.assign({}, raw.p) : {}, fit: raw.fit ? Object.assign({}, raw.fit) : {}, esd: raw.esd ? Object.assign({}, raw.esd) : {},
                calculations: cleanCalculations(raw.calculations), stats: raw.stats || null, mem: null, calc: null, ints: null, sim: raw.sim || null, step: medianStep(tth), apart: apartOf(raw.apart),
                phases: Array.isArray(raw.phases) ? raw.phases.filter(function (k) { return !!phaseByKey(k); }) : S.phases.map(function (ph) { return ph.key; }) };
@@ -652,7 +652,19 @@ RV.state = (function () {
     if (S.calculation !== 'rietveld') return '';
     try { if(typeof AtomicConstraints!=='undefined')S.phases.filter(function(p){return list.some(function(d){return hasPhase(d,p);});}).forEach(function(p){AtomicConstraints.definitions(p);}); } catch(e){return 'Atomic constraints: '+e.message;}
     var missing = S.phases.filter(function (p) { return !canRietveld(p) && list.some(function (d) { return hasPhase(d, p); }); });
-    return missing.length ? 'Rietveld needs atoms for ' + missing.map(function (p) { return p.name; }).join(', ') + '. Add an atomic model in Phases, change assignments in Datasets, or choose Le Bail / WPPF in Solve.' : '';
+    if (missing.length) return 'Rietveld needs atoms for ' + missing.map(function (p) { return p.name; }).join(', ') + '. Add an atomic model in Phases, change assignments in Datasets, or choose Le Bail / WPPF in Solve.';
+    var factors = [];
+    list.forEach(function (ds) {
+      var neutron = ds.inst.radiation === 'neutron';
+      phasesIn(ds).forEach(function (ph) { ph.atoms.forEach(function (at) {
+        var f = scatterer(at.type);
+        if (neutron ? !f.nlabel : !f.xray) {
+          var label = (neutron ? 'neutron' : 'X-ray') + ': ' + ph.name + '/' + at.label + ' (' + at.type + ')';
+          if (factors.indexOf(label) < 0) factors.push(label);
+        }
+      }); });
+    });
+    return factors.length ? 'Missing scattering factors (' + factors.join('; ') + '). Load the required tables or correct the atom types before Rietveld fitting.' : '';
   }
   // An immutable snapshot avoids later queued jobs starting from values that
   // an earlier parallel fit has already changed. Order, not focus, selects it.
@@ -689,7 +701,7 @@ RV.state = (function () {
       if (!ids || ids.indexOf(ds.id) >= 0) ds.phases.push(ph.key);
       remap(ds);
       if (ph.method === 'rietveld' && !ds.sim && hasPhase(ds, ph)) estimateScales(ds, ph.key);
-      ds.ints = null; invalidate(ds);
+      clearFit(ds, true);
     });
     RV.bus.emit('phases'); RV.bus.emit('phaseSel'); RV.bus.emit('params', {});
   }
@@ -698,6 +710,7 @@ RV.state = (function () {
     S.datasets.forEach(function (ds) {
       ds.phases = ds.phases.filter(function (k) { return k !== key; });
       Object.keys(ds.apart).forEach(function (n) { if (n.indexOf(key + '.') === 0) delete ds.apart[n]; });
+      clearFit(ds, true);
     });
     if (S.phaseSel === key) S.phaseSel = S.phases.length ? S.phases[0].key : null;
     S.version++;
@@ -793,6 +806,12 @@ RV.state = (function () {
 
   // ---------------------------------------------------------------- values
   function invalidate(ds) { ds.calc = null; }
+  function clearFit(ds, banks) {
+    ds.stats = null; ds.esd = {}; ds.ints = null; invalidate(ds);
+    if (banks) Object.keys(ds.calculations || {}).forEach(function (m) {
+      var b = ds.calculations[m]; b.stats = null; b.esd = {}; b.ints = null;
+    });
+  }
   function invalidateAll() { S.datasets.forEach(invalidate); }
   // list: the datasets to change (default: the selected ones); template: also the start values of the phase
   function setParam(name, value, list, template) {
@@ -828,15 +847,22 @@ RV.state = (function () {
 
   // ---------------------------------------------------------------- the problem handed to rietveld_core.js
   // the points of the fitted range; a point in an excluded region gets weight 0 (it is calculated, not fitted)
+  function pointWeight(ds, k) {
+    // A supplied zero weight excludes a point even in unit-weight mode.
+    if (ds.weights && ds.weights[k] === 0) return 0;
+    if (S.settings.weight === 'unit') return 1;
+    if (ds.weights && Number.isFinite(ds.weights[k]) && ds.weights[k] > 0) return ds.weights[k];
+    var s = ds.sig && ds.sig[k] > 0 ? ds.sig[k] : Math.sqrt(Math.max(ds.y[k], 1));
+    return 1 / (s * s);
+  }
   function fitPoints(ds) {
     var lo = ds.inst.tthMin, hi = ds.inst.tthMax, idx = [];
     for (var i = 0; i < ds.tth.length; i++) if (ds.tth[i] >= lo && ds.tth[i] <= hi && Number.isFinite(ds.y[i])) idx.push(i);
-    var unit = S.settings.weight === 'unit', n = idx.length, tth = new Float64Array(n), y = new Float64Array(n), w = new Float64Array(n), nEx = 0;
+    var n = idx.length, tth = new Float64Array(n), y = new Float64Array(n), w = new Float64Array(n), nEx = 0;
     idx.forEach(function (k, j) {
       tth[j] = ds.tth[k]; y[j] = ds.y[k];
-      var s = ds.sig && ds.sig[k] > 0 ? ds.sig[k] : Math.sqrt(Math.max(ds.y[k], 1));
-      w[j] = unit ? 1 : 1 / (s * s);
-      if (excluded(ds.inst, tth[j])) { w[j] = 0; nEx++; }
+      w[j] = excluded(ds.inst, tth[j]) ? 0 : pointWeight(ds, k);
+      if (!w[j]) nEx++;
     });
     return { tth: tth, y: y, w: w, nExcluded: nEx };
   }
@@ -902,7 +928,7 @@ RV.state = (function () {
   // scales of the phases (all, or one) and the constant background, by linear least squares from the patterns of the
   // phases at unit scale; a phase that comes out negative is kept small rather than removed
   function estimateScales(ds, onlyKey) {
-    if (!S.phases.length) return false;
+    if (!S.phases.length || calculationIssue([ds])) return false;
     try {
       var rv = S.phases.map(function (p, i) { return p.method === 'rietveld' && hasPhase(ds, p) ? i : -1; }).filter(function (i) { return i >= 0; });
       if (!rv.length || (onlyKey && !rv.some(function (i) { return S.phases[i].key === onlyKey; }))) return false;
@@ -910,7 +936,6 @@ RV.state = (function () {
       keys.forEach(function (k) { v[k + '.scale'] = 1; });
       M = new C.Model(pr);
       var D = M.datasets[0], n = D.n, y = D.def.y, w = D.def.w;
-      M.minFwhm(D);
       var cols = rv.map(function (pi) { return M.evalPhase(pi, 0, v).y; });
       var spline = D.spline, bk = M.background(0, spline ? v : Object.assign({}, v, { bkg0: 0 })), r = new Float64Array(n);
       for (var i = 0; i < n; i++) r[i] = y[i] - bk[i];
@@ -941,7 +966,7 @@ RV.state = (function () {
         if (nb && !onlyKey && own(ds.p, 'bkg0')) ds.p.bkg0 = x[0];
         break;
       }
-      invalidate(ds);
+      clearFit(ds);
       return true;
     } catch (e) { return false; }
   }
@@ -1103,7 +1128,7 @@ RV.state = (function () {
                  constraints:JSON.parse(JSON.stringify(ph.constraints || [])), atoms: ph.atoms.map(function (a) { return { label: a.label, type: a.type }; }), v: mapOut(ph.v), fit: ph.fit };
       }),
       datasets: S.datasets.map(function (d) {
-        return { id: d.id, name: d.name, tth: Array.from(d.tth), y: Array.from(d.y), sig: d.sig ? Array.from(d.sig) : null, inst: instCopy(d.inst),
+        return { id: d.id, name: d.name, tth: Array.from(d.tth), y: Array.from(d.y), sig: d.sig ? Array.from(d.sig) : null, weights: d.weights ? Array.from(d.weights) : null, inst: instCopy(d.inst),
                  calculations: d.calculations, phases: d.phases.slice(), apart: Object.keys(d.apart), p: mapOut(d.p), fit: d.fit, esd: mapOut(d.esd), stats: d.stats, sim: d.sim || null };
       }),
       log: log || []
@@ -1154,8 +1179,12 @@ RV.state = (function () {
       var n = nums(r.tth, null, what + ': 2-theta').length;
       nums(r.y, n, what + ': intensities');
       if (r.sig != null) nums(r.sig, n, what + ': standard deviations');
+      if (r.weights != null) {
+        nums(r.weights, n, what + ': weights');
+        if (r.weights.some(function (w) { return w < 0; })) bad(what + ': negative weight');
+      }
       if (n < 2) bad(what + ': fewer than two points');
-      return { savedId: r.id, name: String(r.name || 'data'), tth: r.tth, y: r.y, sig: r.sig, inst: isObj(r.inst) ? cleanInst(r.inst) : null,
+      return { savedId: r.id, name: String(r.name || 'data'), tth: r.tth, y: r.y, sig: r.sig, weights: r.weights, inst: isObj(r.inst) ? cleanInst(r.inst) : null,
                phases: Array.isArray(r.phases) ? r.phases.filter(function (k) { return phases.some(function (ph) { return ph.key === k; }); }) : null,
                apart: Array.isArray(r.apart) ? r.apart.filter(function (n) { return typeof n === 'string'; }) : null,
                p: numMap(r.p, what + ': values'), fit: isObj(r.fit) ? r.fit : {}, esd: numMap(r.esd, what + ': uncertainties'), stats: isObj(r.stats) ? r.stats : null,
@@ -1212,7 +1241,7 @@ RV.state = (function () {
     hasPhase: hasPhase, phasesIn: phasesIn, holdersOf: holdersOf, setPhaseIn: setPhaseIn,
     phaseChanged: phaseChanged, renameAtom: renameAtom, removeAtom: removeAtom, replaceAtoms: replaceAtoms, setPhaseSG: setPhaseSG, cleanLabel: cleanLabel,
     invalidate: invalidate, invalidateAll: invalidateAll, setParam: setParam, setFit: setFit, copyParams: copyParams,
-    fitPoints: fitPoints, phaseDefs:phaseDefs, problemFor: problemFor, jobFor: jobFor, globalJob: globalJob, fitNames: fitNames, calcFor: calcFor,
+    pointWeight: pointWeight, fitPoints: fitPoints, phaseDefs:phaseDefs, problemFor: problemFor, jobFor: jobFor, globalJob: globalJob, fitNames: fitNames, calcFor: calcFor,
     estimateScales: estimateScales, applyResult: applyResult, fitStatus: fitStatus,
     calculationIssue: calculationIssue, startingModel:startingModel, seedPhaseStarts:seedPhaseStarts, setCalculation: setCalculation, saveCalculation: saveCalculation, projectJSON: projectJSON, prepareProject: prepareProject, commitProject: commitProject, setBusy: setBusy
   };
@@ -1231,27 +1260,33 @@ RV.history = (function () {
     Object.keys(S.limits).forEach(function (n) { lim[n] = S.limits[n].slice(); });
     return {
       datasets: S.datasets.map(function (d) {
-        return { calculations: JSON.parse(JSON.stringify(d.calculations || {})), id: d.id, name: d.name, tth: d.tth, y: d.y, sig: d.sig, step: d.step, inst: RV.state.instCopy(d.inst), phases: d.phases.slice(), apart: copy(d.apart), p: copy(d.p), fit: copy(d.fit), esd: copy(d.esd), stats: d.stats, mem: copy(d.mem), sim: d.sim || null };
+        return { calculations: JSON.parse(JSON.stringify(d.calculations || {})), id: d.id, name: d.name, tth: d.tth, y: d.y, sig: d.sig, weights: d.weights, step: d.step, inst: RV.state.instCopy(d.inst), phases: d.phases.slice(), apart: copy(d.apart), p: copy(d.p), fit: copy(d.fit), esd: copy(d.esd), stats: d.stats, mem: copy(d.mem), sim: d.sim || null };
       }),
       phases: S.phases.map(function (ph) {
         return { key: ph.key, color: ph.color || null, name: ph.name, method: ph.method, sg: copy(ph.sg), ops: ph.ops, wyckoff: ph.wyckoff, profileType: ph.profileType, separatedProfile: ph.separatedProfile === true, broadening: RVCore.broadeningConfig(ph.broadening), poDir: ph.poDir.slice(),
                  constraints:JSON.parse(JSON.stringify(ph.constraints || [])), atoms: ph.atoms.map(function (a) { return { label: a.label, type: a.type, site: a.site }; }), v: copy(ph.v), fit: copy(ph.fit) };
       }),
+      calculationSettings: { weight: S.settings.weight, bkgN: S.settings.bkgN, nAnchors: S.settings.nAnchors, inst: RV.state.instCopy(S.settings.inst) },
       refinement: RV.state.refinementOptions(), calculation: S.calculation, maxIter: S.settings.maxIter, tol: S.settings.tol, fitmode: RV.state.load('fitmode'), calculationOptions: JSON.parse(JSON.stringify(S.calculationOptions)), sel: Array.from(S.sel), focus: S.focus, anchor: S.anchor, phaseSel: S.phaseSel, shared: copy(S.shared), limits: lim,
       nextId: S.nextId, nextPhase: S.nextPhase
     };
   }
   function apply(st) {
     S.datasets = st.datasets.map(function (r) {
-      return { calculations: JSON.parse(JSON.stringify(r.calculations || {})), id: r.id, name: r.name, tth: r.tth, y: r.y, sig: r.sig, step: r.step, inst: RV.state.instCopy(r.inst), phases: r.phases.slice(), apart: copy(r.apart) || {}, p: copy(r.p), fit: copy(r.fit), esd: copy(r.esd), stats: r.stats, mem: copy(r.mem), calc: null, ints: null, sim: r.sim || null };
+      return { calculations: JSON.parse(JSON.stringify(r.calculations || {})), id: r.id, name: r.name, tth: r.tth, y: r.y, sig: r.sig, weights: r.weights, step: r.step, inst: RV.state.instCopy(r.inst), phases: r.phases.slice(), apart: copy(r.apart) || {}, p: copy(r.p), fit: copy(r.fit), esd: copy(r.esd), stats: r.stats, mem: copy(r.mem), calc: null, ints: null, sim: r.sim || null };
     });
     S.phases = st.phases.map(function (p) {
       return { key: p.key, color: p.color || null, name: p.name, method: p.method, sg: copy(p.sg), ops: p.ops, wyckoff: p.wyckoff, profileType: p.profileType, separatedProfile: p.separatedProfile === true, broadening: RVCore.broadeningConfig(p.broadening), poDir: p.poDir.slice(),
                constraints:JSON.parse(JSON.stringify(p.constraints || [])), atoms: p.atoms.map(function (a) { return { label: a.label, type: a.type, site: a.site }; }), v: copy(p.v), fit: copy(p.fit) };
     });
     S.calculation = st.calculation || 'lebail'; S.calculationOptions = JSON.parse(JSON.stringify(st.calculationOptions || {}));
+    if (st.calculationSettings) {
+      ['weight', 'bkgN', 'nAnchors'].forEach(function (k) { S.settings[k] = st.calculationSettings[k]; });
+      S.settings.inst = RV.state.instCopy(st.calculationSettings.inst);
+    }
     RV.state.restoreRefinementOptions(st.refinement);
     S.settings.maxIter = st.maxIter == null ? S.settings.maxIter : st.maxIter; S.settings.tol = st.tol == null ? S.settings.tol : st.tol;
+    RV.state.store('settings', S.settings);
     RV.state.store('fitmode', st.fitmode || 'single');
     RV.bus.emit('fitmode'); RV.bus.emit('settings', '*');
     S.shared = copy(st.shared); S.limits = {};
