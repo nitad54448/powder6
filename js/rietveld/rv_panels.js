@@ -7,23 +7,6 @@ RV.panels = (function () {
   function fitMode() { return RV.app && RV.app.fitMode ? RV.app.fitMode() : 'single'; }
 
   // ================================================================ Datasets
-  function lambdaText(inst) {
-    var a = inst.anode && St.ANODES[inst.anode] && Math.abs(St.ANODES[inst.anode][0] - inst.lambda1) < 1e-6 ? inst.anode : '';
-    return (inst.radiation === 'neutron' ? 'n ' : '') + (a || (+inst.lambda1.toPrecision(5) + ' Å'));
-  }
-  function statusOf(d) {
-    var st = d.stats;
-    if (!st) return { cls: '', tip: 'not fitted' };
-    if (st.ok === false) return { cls: 'bad', tip: 'fit failed: ' + (st.msg || '') };
-    return { cls: St.fitStatus(st.msg), tip: 'Rwp ' + (100 * st.Rwp).toFixed(2) + ' %, χ² ' + ui.fmt(st.gof, 4) + ', ' + st.msg };
-  }
-  // the phases a dataset holds, a dot each in the colour of the phase (nothing with a single phase in every dataset)
-  function phaseDots(d) {
-    if (S.phases.length < 2 && S.datasets.every(function (x) { return x.phases.length === S.phases.length; })) return '';
-    var held = St.phasesIn(d);
-    return '<span class="phs" title="' + esc(held.length ? 'Phases: ' + held.map(function (p) { return p.name; }).join(', ') : 'No phase: background only') + '">' +
-      S.phases.map(function (ph, i) { return St.hasPhase(d, ph) ? '<i style="background:' + RV.plots.phaseVar(i) + '"></i>' : '<i class="off"></i>'; }).join('') + '</span>';
-  }
   function dsRow(d) {
     var on = S.sel.has(d.id);
     return '<div class="ds'+(on?' on':'')+'" data-id="'+d.id+'" draggable="true" role="option" aria-selected="'+on+'"><span class="nm" title="'+esc(d.name)+'">'+esc(d.name)+'</span></div>';
@@ -47,7 +30,8 @@ RV.panels = (function () {
   }
   function renderInfo() {
     var host = $('#ds-info'), d = St.first(), why = S.busy ? 'Not while a fit is running.' : !S.datasets.length ? 'No data loaded yet.' : !S.sel.size ? 'No dataset selected.' : '';
-    ['#ds-inst', '#ds-bkg', '#ds-excl', '#ds-phases', '#ds-resolution'].forEach(function (b) { ui.able($(b), why); });
+    ['#ds-inst', '#ds-bkg', '#ds-excl', '#ds-resolution'].forEach(function (b) { ui.able($(b), why); });
+    ui.able($('#ds-phases'), S.busy ? 'Not while a fit is running.' : !S.phases.length ? 'No phase yet. Read a structure CIF (File) or make a new phase (Refine).' : !S.datasets.length ? 'No data loaded yet.' : '');
     if (!d) { host.innerHTML = ''; return; }
     var i = d.inst, pol = i.radiation === 'neutron' ? 'neutrons' : { tube: 'X-rays, no monochromator', mono: 'X-rays, monochromator at 2θ = ' + i.monoTth + '°', sync: 'synchrotron, polarised fraction ' + i.polFrac, none: 'X-rays, no polarisation correction' }[i.pol];
     var pts = St.fitPoints(d), nFit = pts.tth.length - pts.nExcluded;
@@ -139,19 +123,6 @@ RV.panels = (function () {
   }
 
   // ================================================================ Phases
-  function phaseWarn(ph) {
-    if (ph.method !== 'rietveld') return '';
-    if (!S.tables) return '';
-    var miss = ph.atoms.filter(function (a) { return !St.scatterer(a.type).xray; }).map(function (a) { return a.label; });
-    return miss.length ? 'Not in the X-ray table: ' + miss.join(', ') + '.' : '';
-  }
-  // the box of a phase: in all the selected datasets (ticked), in some (dash), in none; with the datasets that hold it
-  function inSelection(ph) {
-    var list = St.selected(), n = list.filter(function (d) { return St.hasPhase(d, ph); }).length, all = St.holdersOf(ph);
-    var where = all.length === S.datasets.length ? 'every dataset' : all.length ? all.map(function (d) { return d.name; }).slice(0, 6).join(', ') + (all.length > 6 ? ' …' : '') : 'no dataset';
-    return { n: n, of: list.length, all: all.length, tip: ph.name + ' is in ' + (S.datasets.length ? all.length + ' of ' + plural(S.datasets.length, 'dataset') + ' (' + where + ')' : 'every dataset read') + '. ' +
-      (!list.length ? 'Select datasets to put it in or take it out of them.' : n === list.length ? 'Untick to take it out of the ' + plural(list.length, 'selected dataset') + '.' : 'Tick to put it in the ' + plural(list.length, 'selected dataset') + '.') };
-  }
   function renderPhases() {
     var cur = St.currentPhase();
     $('#ph-count').textContent = plural(S.phases.length, 'phase');

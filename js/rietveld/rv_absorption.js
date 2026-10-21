@@ -115,10 +115,10 @@ RV.absorption = (function () {
   function status(){return {loaded:!!table,elements:table?Object.keys(table).length:0,label:label,error:error,loading:loading};}
   async function loadFile() {
     if(S.busy)return;
-    var files=await ui.pickFiles('.json',false);if(!files.length)return;
+    var files=await ui.pickFiles({accept:'.json,application/json'});if(!files.length)return;
     try{
       var raw=JSON.parse(new TextDecoder().decode(await ui.readBuffer(files[0])));
-      var opts=await ui.prompt('Absorption table',[{key:'unit',label:'Energy unit for entries without energyUnit',type:'select',value:raw.energyUnit || 'eV',options:[['eV','eV'],['keV','keV'],['MeV','MeV']]}],'Load','Mass coefficients must be cm²/g. The expected transparency assumes 90% of the crystallographic solid density. Loaded coefficients remain in this session; place absorption.json beside powder6.html for automatic loading.');
+      var opts=await ui.prompt('Absorption table',[{key:'unit',label:'Energy unit for entries without energyUnit',type:'select',value:raw.energyUnit || 'eV',options:[['eV','eV'],['keV','keV'],['MeV','MeV']]}],'Load','Mass coefficients must be cm²/g. The expected transparency assumes 90% of the crystallographic solid density. Loaded coefficients remain in this session; place absorption.json beside index.html for automatic loading.');
       if(!opts || S.busy)return;
       var n=loadDocument(raw,files[0].name,opts.unit);ui.toast('Loaded '+n+' elemental absorption tables from '+files[0].name+'.','ok');
     }catch(e){ui.toast('Absorption table: '+e.message,'err');}

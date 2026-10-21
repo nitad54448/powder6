@@ -23,14 +23,14 @@ Serve the folder over HTTP (browsers block `fetch` on `file://`):
 python -m http.server 8000
 ```
 
-Open `http://localhost:8000/powder6.html` in a current Chrome, Edge or Firefox. The Wyckoff search needs WebGPU (Chrome or Edge).
+Open `http://localhost:8000/index.html` in a current Chrome, Edge or Firefox. The Wyckoff search needs WebGPU (Chrome or Edge).
 
 Press **F9** to fit, **Ctrl+S** to save the project, **Ctrl+Z** to undo. Try the **load the demo** link in the empty Datasets panel, or type `demo` (NaCl and Si). **File → Export to GSAS-II** writes a ZIP (CIF per phase, `.xye` and `.instprm` per dataset, README).
 
 ## Files
 
 ```
-powder6.html, powder6.css          the program
+index.html, powder6.css            the program
 Powder6_documentation.html         full documentation
 charge_flipping.wgsl               GPU kernel, charge flipping
 swarm_reflection.wgsl              GPU kernel, Wyckoff search
@@ -65,7 +65,7 @@ Data files the page fetches. Without them the program still starts, but loses th
 
 - `js/rietveld_core.js` is DOM-free and shared by the page and `rietveld_worker.js`.
 - CSS variables read by canvas plots (`--plot-*`, `--series-*`, `--phase-*`, `--calc-line`…) must stay plain values (`#hex`, `rgb()`, `px`).
-- The end of `powder6.css` is a self-contained block of UI refinements; delete it to restore the earlier look.
+- `powder6.css` is the single source of truth for all light/dark tokens, layout and component styles.
 
 ## References
 

@@ -94,7 +94,7 @@ RV.cmd = (function () {
   function idle() { return need(!S.busy, 'A fit is running. Wait for it to finish or press Stop.'); }
   function haveSel(n) { n = n || 1; return need(S.sel.size >= n, n > 1 ? 'Select at least ' + n + ' datasets.' : 'Select one or more datasets first.'); }
   function havePhase() { return need(S.phases.length, 'No phase yet. Read a structure CIF (File) or make a new phase (Refine).'); }
-  function haveSG() { return need(S.sgReady, S.sgLoading ? 'The space groups are still loading.' : 'The space-group database is not loaded: open powder6.html through a web server.'); }
+  function haveSG() { return need(S.sgReady, S.sgLoading ? 'The space groups are still loading.' : 'The space-group database is not loaded: open index.html through a web server.'); }
   function sel() { return St.selected(); }
   function snapshot(label, opts) { RV.history.take(label, opts); }
   function baseName(n) { return String(n).replace(/\.[^./\\]+$/, ''); }
@@ -959,7 +959,7 @@ RV.cmd = (function () {
     if (ds) { P['param-shft'] = (ds.p.disp || 0).toFixed(4); P['fit-shft'] = !!ds.fit.disp; P['param-trns'] = (ds.p.transp || 0).toFixed(6); P['fit-trns'] = !!ds.fit.transp; }
     var doc = { broadening:C.broadeningConfig(ph.broadening), format: PRESET_FORMAT, version: 2, profileType: ph.profileType, separatedProfile: C.usesSeparatedProfile(ph), sizeUnit: 'nm', label: C.PROFILE_LABELS[ph.profileType] + ', ' + ph.name, savedAt: new Date().toISOString(), parameters: P };
     ui.download(String(PRESET_FILES[ph.profileType] || 'profile.json').replace('_default', '_' + ph.name.replace(/[^\w-]+/g, '_')), JSON.stringify(doc, null, 2), 'application/json');
-    ui.toast('Saved the peak shape of ' + ph.name + (ds ? ' in ' + ds.name : '') + ' as a sample-profile preset. Instrument calibration is saved separately using Resolution. Legacy default filename: ' + (PRESET_FILES[ph.profileType] || '(none)') + ' next to powder6.html, it becomes the start of every new phase with that shape.', 'ok');
+    ui.toast('Saved the peak shape of ' + ph.name + (ds ? ' in ' + ds.name : '') + ' as a sample-profile preset. Instrument calibration is saved separately using Resolution. Legacy default filename: ' + (PRESET_FILES[ph.profileType] || '(none)') + ' next to index.html, it becomes the start of every new phase with that shape.', 'ok');
   }
   // the start values of new phases, from Voigt_default.json and its siblings next to the page; silent when absent
   async function loadDefaultPresets() {
@@ -1272,7 +1272,7 @@ RV.cmd = (function () {
   };
   function why(id) { var f = WHY[id]; return f ? f() || '' : ''; }
   var BUTTONS = [['#busy-cancel', 'stop'], ['#btn-fit', 'read'], ['[data-workflow="fit"]', 'fit'], ['[data-workflow="scales"]', 'selection'], ['#clone-all', 'cloneAll'], ['#clone-sel', 'cloneSel'], ['[data-plot-action="png"]', 'selection'],
-                  ['#btn-report', 'selection'], ['#fit-sharing', 'global'], ['#ph-map', 'phaseMap'],
+                  ['#btn-report', 'selection'], ['#fit-sharing', 'global'], ['#ds-phases', 'phaseMap'],
                   ['[data-dataset-action="delete"]', 'edit'], ['#ph-tab-del', 'havePhase']];
   var syncRaf = 0;
   function syncButtons() {

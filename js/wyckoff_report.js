@@ -679,23 +679,23 @@ function render(host, st) {
   </div>
 
   <div class="wy-plot-wrap">
-    <canvas class="wy-plot" id="wy-canvas"></canvas>
+    <canvas class="wy-plot" data-wy="canvas"></canvas>
     <div class="wy-plot-btns">
-      <button class="btn" id="wy-reset">Reset view</button>
-      <button class="btn" id="wy-png">PNG</button>
+      <button class="btn" data-wy="reset">Reset view</button>
+      <button class="btn" data-wy="png">PNG</button>
     </div>
     <div class="wy-plot-hint">drag to rotate \u00b7 wheel to zoom \u00b7 click an atom to list its contacts</div>
   </div>
 
   <div class="wy-controls">
     <label>Contact cutoff
-      <input type="number" id="wy-cutoff" min="1" max="8" step="0.1" value="${S.cutoff}"> \u00c5</label>
-    <label><input type="checkbox" id="wy-cell" ${S.showCell ? 'checked' : ''}> unit cell</label>
-    <label><input type="checkbox" id="wy-pack" ${S.pack ? 'checked' : ''}> boundary images</label>
-    <label><input type="checkbox" id="wy-lab" ${S.showLabels ? 'checked' : ''}> labels</label>
+      <input type="number" data-wy="cutoff" min="1" max="8" step="0.1" value="${S.cutoff}"> \u00c5</label>
+    <label><input type="checkbox" data-wy="cell" ${S.showCell ? 'checked' : ''}> unit cell</label>
+    <label><input type="checkbox" data-wy="pack" ${S.pack ? 'checked' : ''}> boundary images</label>
+    <label><input type="checkbox" data-wy="lab" ${S.showLabels ? 'checked' : ''}> labels</label>
   </div>
 
-  <table class="wy-tab" id="wy-sites">
+  <table class="wy-tab" data-wy="sites">
     <thead><tr>
       ${st.source==='rietveld'?'<th>Label</th>':''}<th>El</th><th>Wyck</th><th>x</th><th>y</th><th>z</th>${st.source==='rietveld'?'<th>Occ.</th><th>B /Å²</th>':''}
       <th title="Number of symmetry-equivalent atoms actually generated in the cell.">Mult</th>
@@ -715,10 +715,10 @@ function render(host, st) {
   </table>
 
   <h3>Contacts</h3>
-  <div class="wy-contacts" id="wy-contacts"></div>
+  <div class="wy-contacts" data-wy="contacts"></div>
 
   <h3>Structure quality</h3>
-  <table class="wy-tab" id="wy-quality">
+  <table class="wy-tab" data-wy="quality">
     <thead><tr>
       <th>Site</th>
       <th title="Counter-ions within the contact cutoff.">CN</th>
@@ -741,7 +741,7 @@ function render(host, st) {
 </div>`;
 
     /* ---- plot ---- */
-    const canvas = host.querySelector('#wy-canvas');
+    const canvas = host.querySelector('[data-wy="canvas"]');
     const plot = new Plot(canvas, { M: A.M, atoms: A.atoms, cutoff: A.cutoff, anions: A.anions }, S);
     const redraw = () => plot.draw();
     host.__wyFrame=requestAnimationFrame(redraw);
@@ -791,10 +791,10 @@ function render(host, st) {
         host.__wyResize=redraw;global.addEventListener('resize', redraw);
     }
 
-    host.querySelector('#wy-reset').addEventListener('click', () => {
+    host.querySelector('[data-wy="reset"]').addEventListener('click', () => {
         S.yaw = -0.6; S.pitch = 0.35; S.zoom = 1; redraw();
     });
-    host.querySelector('#wy-png').addEventListener('click', () => {
+    host.querySelector('[data-wy="png"]').addEventListener('click', () => {
         const a = document.createElement('a');
         a.download = `structure_${(st.spaceGroup && st.spaceGroup.symbol || 'cell').replace(/[^\w]/g, '')}.png`;
         a.href = canvas.toDataURL('image/png');
@@ -803,17 +803,17 @@ function render(host, st) {
 
     /* ---- controls ---- */
     const rerender = () => render(host, st);
-    host.querySelector('#wy-cutoff').addEventListener('change', e => {
+    host.querySelector('[data-wy="cutoff"]').addEventListener('change', e => {
         const v = parseFloat(e.target.value);
         if (Number.isFinite(v) && v > 0.5) { S.cutoff = v; rerender(); }
     });
-    host.querySelector('#wy-cell').addEventListener('change', e => {
+    host.querySelector('[data-wy="cell"]').addEventListener('change', e => {
         S.showCell = e.target.checked; redraw();
     });
-    host.querySelector('#wy-lab').addEventListener('change', e => {
+    host.querySelector('[data-wy="lab"]').addEventListener('change', e => {
         S.showLabels = e.target.checked; redraw();
     });
-    host.querySelector('#wy-pack').addEventListener('change', e => {
+    host.querySelector('[data-wy="pack"]').addEventListener('change', e => {
         S.pack = e.target.checked; plot.build(); redraw();
     });
 
@@ -833,7 +833,7 @@ function render(host, st) {
     });
 
     /* ---- contacts panel ---- */
-    renderContacts(host.querySelector('#wy-contacts'), A, S.selected);
+    renderContacts(host.querySelector('[data-wy="contacts"]'), A, S.selected);
 }
 
 function fmtCount(n) {

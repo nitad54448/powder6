@@ -54,22 +54,6 @@ function lorentzPolarization(tthDeg, pol) {
     return sharkoLpStrict(tthDeg, normalizePolarization(pol));
 }
 
-function getPolarizationSettings() {
-    const modeEl = document.getElementById('polarization-mode');
-    const monoEl = document.getElementById('mono-2theta');
-    const fracEl = document.getElementById('pol-fraction');
-    return normalizePolarization({
-        mode:    modeEl ? modeEl.value : POLARIZATION_DEFAULTS.mode,
-        monoTth: monoEl ? parseFloat(monoEl.value) : POLARIZATION_DEFAULTS.monoTth,
-        polFrac: fracEl ? parseFloat(fracEl.value) : POLARIZATION_DEFAULTS.polFrac
-    });
-}
-
-function polarizationFromParams(params) {
-    if (params && params.polarization) return normalizePolarization(params.polarization);
-    return getPolarizationSettings();
-}
-
 function polarizationDescription(pol) {
     const P = normalizePolarization(pol);
     if (P.mode === 'none') return 'None (Lorentz factor only, P = 1)';

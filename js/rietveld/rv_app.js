@@ -217,7 +217,7 @@
       $('#sg-list').innerHTML = SG_ENGINE.list().map(function (sym) { return '<option value="' + ui.esc(sym) + '">'; }).join('');
       notes.push(Object.keys(SG_DATABASE.space_groups).length + ' space groups');
     } catch (e) {
-      ui.toast('The space groups are not loaded (' + ((e && e.message) || e) + '). Open powder6.html through a web server.', 'err');
+      ui.toast('The space groups are not loaded (' + ((e && e.message) || e) + '). Open index.html through a web server.', 'err');
     }
     S.sgLoading = false;
     RV.bus.emit('phases');

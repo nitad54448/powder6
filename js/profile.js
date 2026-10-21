@@ -142,19 +142,23 @@ function calculatePeakShift(tth, params) {
  * does that, and it preserves the Gaussian/Lorentzian ratio (hence eta).
  *
  * @param {number} sigma_sq_cdeg2 Caglioti sigma^2 in GSAS units.
+ * @param {number} [minFwhmDeg] Minimum resolvable FWHM in degrees.
  * @returns {number} Gaussian FWHM, degrees 2-theta.
  */
-function gaussianFromSigmaSq(sigma_sq_cdeg2) {
-    const floorSq = Math.pow(0.25 * MIN_PROFILE_FWHM_DEG / GSAS_GAUSSIAN_TO_DEG, 2);
+function gaussianFromSigmaSq(sigma_sq_cdeg2, minFwhmDeg) {
+    const fwhmMin = minFwhmDeg > 0 ? minFwhmDeg : MIN_PROFILE_FWHM_DEG;
+    const floorSq = Math.pow(0.25 * fwhmMin / GSAS_GAUSSIAN_TO_DEG, 2);
     return Math.sqrt(softPositive(sigma_sq_cdeg2, floorSq)) * GSAS_GAUSSIAN_TO_DEG;
 }
 /**
  * Lorentzian gamma (GSAS centidegrees) -> FWHM in degrees.
  * @param {number} gL_cdeg
+ * @param {number} [minFwhmDeg] Minimum resolvable FWHM in degrees.
  * @returns {number} Lorentzian FWHM, degrees 2-theta.
  */
-function lorentzianFromGamma(gL_cdeg) {
-    const floor = 0.25 * MIN_PROFILE_FWHM_DEG / GSAS_LORENTZIAN_TO_DEG;
+function lorentzianFromGamma(gL_cdeg, minFwhmDeg) {
+    const fwhmMin = minFwhmDeg > 0 ? minFwhmDeg : MIN_PROFILE_FWHM_DEG;
+    const floor = 0.25 * fwhmMin / GSAS_LORENTZIAN_TO_DEG;
     return softPositive(gL_cdeg, floor) * GSAS_LORENTZIAN_TO_DEG;
 }
 
@@ -205,10 +209,11 @@ function softFloor(x, f) {
  * @param {number} gamma_L Lorentzian FWHM, degrees.
  * @returns {Widths}
  */
-function applyFwhmFloor(gamma_G, gamma_L) {
+function applyFwhmFloor(gamma_G, gamma_L, minFwhmDeg) {
+    const fwhmMin = minFwhmDeg > 0 ? minFwhmDeg : MIN_PROFILE_FWHM_DEG;
     return {
-        gamma_G: softFloor(gamma_G, MIN_PROFILE_FWHM_DEG),
-        gamma_L: softFloor(gamma_L, MIN_PROFILE_FWHM_DEG)
+        gamma_G: softFloor(gamma_G, fwhmMin),
+        gamma_L: softFloor(gamma_L, fwhmMin)
     };
 }
 
@@ -227,8 +232,9 @@ function applyFwhmFloor(gamma_G, gamma_L) {
  */
 function _calculateWidths_Simple(tth, hkl, params, safeThetaRad, tanTheta, cosTheta_safe, cosThetaSq_safe) {
     if (params.separated) return gsasCwComponents(tth,hkl,params);
-    let gamma_G = MIN_PROFILE_FWHM_DEG;
-    let gamma_L = MIN_PROFILE_FWHM_DEG;
+    const fwhmMin = params.minFwhm > 0 ? params.minFwhm : MIN_PROFILE_FWHM_DEG;
+    let gamma_G = fwhmMin;
+    let gamma_L = fwhmMin;
 
     const GU = params.GU || 0;
     const GV = params.GV || 0;
@@ -238,10 +244,10 @@ function _calculateWidths_Simple(tth, hkl, params, safeThetaRad, tanTheta, cosTh
 
     //   Caglioti in cdeg²/(8 ln2). Convert √σ² to FWHM in degrees.
     const sigma_sq_cdeg2 = GU * tanTheta * tanTheta + GV * tanTheta + GW + GP / cosThetaSq_safe;
-    gamma_G = gaussianFromSigmaSq(sigma_sq_cdeg2);
+    gamma_G = gaussianFromSigmaSq(sigma_sq_cdeg2, fwhmMin);
     //   Lorentzian (size only) in centidegrees → degrees.
     const gL_cdeg = LX / cosTheta_safe;
-    gamma_L = lorentzianFromGamma(gL_cdeg);
+    gamma_L = lorentzianFromGamma(gL_cdeg, fwhmMin);
 
     return { gamma_G, gamma_L };
 }
@@ -265,8 +271,9 @@ function _calculateWidths_Split(tth, hkl, params, side, safeThetaRad, tanTheta, 
         const flank = side === 'left' ? '_L' : '_R';
         return gsasCwComponents(tth,hkl,Object.assign({},params,{U:params['U'+flank],V:params['V'+flank],W:params['W'+flank],X:params['X'+flank],Y:0,Z:0}));
     }
-    let gamma_G = MIN_PROFILE_FWHM_DEG;
-    let gamma_L = MIN_PROFILE_FWHM_DEG;
+    const fwhmMin = params.minFwhm > 0 ? params.minFwhm : MIN_PROFILE_FWHM_DEG;
+    let gamma_G = fwhmMin;
+    let gamma_L = fwhmMin;
     let GU, GV, GW, LX;
 
     if (side === 'left') {
@@ -282,9 +289,9 @@ function _calculateWidths_Split(tth, hkl, params, side, safeThetaRad, tanTheta, 
     }
 
     const sigma_sq_cdeg2 = GU * tanTheta * tanTheta + GV * tanTheta + GW;  //  no GP for split
-    gamma_G = gaussianFromSigmaSq(sigma_sq_cdeg2);
+    gamma_G = gaussianFromSigmaSq(sigma_sq_cdeg2, fwhmMin);
     const gL_cdeg = LX / cosTheta_safe;
-    gamma_L = lorentzianFromGamma(gL_cdeg);
+    gamma_L = lorentzianFromGamma(gL_cdeg, fwhmMin);
 
     return { gamma_G, gamma_L };
 }
@@ -402,14 +409,16 @@ function gsasCwComponents(tth, hkl, params) {
     const instrumentGamma=value('X')/cos+value('Y')*tan+value('Z');
     const sampleSigma=(Math.pow(sizeGamma*(1-sm),2)+Math.pow(strainGamma*(1-em),2))/(8*Math.log(2));
     const sampleGamma=sizeGamma*sm+strainGamma*em;
+    const fwhmMin = params.minFwhm > 0 ? params.minFwhm : MIN_PROFILE_FWHM_DEG;
     return {instrumentSigma,instrumentGamma,sampleSigma,sampleGamma,sizeGamma,strainGamma,
-        gamma_G:gaussianFromSigmaSq(instrumentSigma+sampleSigma),gamma_L:lorentzianFromGamma(instrumentGamma+sampleGamma)};
+        gamma_G:gaussianFromSigmaSq(instrumentSigma+sampleSigma, fwhmMin),gamma_L:lorentzianFromGamma(instrumentGamma+sampleGamma, fwhmMin)};
 }
 
 function _calculateWidths_TCH(tth, hkl, params, safeThetaRad, tanTheta, cosTheta_safe, cosThetaSq_safe) {
     if (params.separated) return gsasCwComponents(tth,hkl,params);
-    let gamma_G = MIN_PROFILE_FWHM_DEG;
-    let gamma_L = MIN_PROFILE_FWHM_DEG;
+    const fwhmMin = params.minFwhm > 0 ? params.minFwhm : MIN_PROFILE_FWHM_DEG;
+    let gamma_G = fwhmMin;
+    let gamma_L = fwhmMin;
 
     const U = params.U || 0;
     const V = params.V || 0;
@@ -418,9 +427,9 @@ function _calculateWidths_TCH(tth, hkl, params, safeThetaRad, tanTheta, cosTheta
     const Y = params.Y || 0;     //  GSAS LY  (strain · tanθ)
 
     const sigma_sq_cdeg2 = U * tanTheta * tanTheta + V * tanTheta + W;
-    gamma_G = gaussianFromSigmaSq(sigma_sq_cdeg2);
+    gamma_G = gaussianFromSigmaSq(sigma_sq_cdeg2, fwhmMin);
     const gL_cdeg = X / cosTheta_safe + Y * tanTheta;
-    gamma_L = lorentzianFromGamma(gL_cdeg);
+    gamma_L = lorentzianFromGamma(gL_cdeg, fwhmMin);
 
     //   Stephens anisotropic strain (orthorhombic-and-up form).
     //   Higher-symmetry systems collapse via the symmetry constraints
@@ -481,8 +490,9 @@ function _calculateWidths_TCH(tth, hkl, params, safeThetaRad, tanTheta, cosTheta
  * @returns {Widths} Both in DEGREES 2-theta, both >= MIN_PROFILE_FWHM_DEG.
  */
 function calculateProfileWidths(tth, hkl, params, side = 'center') {
+    const fwhmMin = params && params.minFwhm > 0 ? params.minFwhm : MIN_PROFILE_FWHM_DEG;
     if (!params || !params.profileType) {
-        return { gamma_G: MIN_PROFILE_FWHM_DEG, gamma_L: MIN_PROFILE_FWHM_DEG };
+        return { gamma_G: fwhmMin, gamma_L: fwhmMin };
     }
     
     const profileType = params.profileType;
@@ -491,7 +501,7 @@ function calculateProfileWidths(tth, hkl, params, side = 'center') {
     const MAX_ANGLE_RAD = Math.PI / 2.0 - 1e-6;
     const safeThetaRad = Math.min(thetaRad, MAX_ANGLE_RAD);
      if (safeThetaRad < 1e-6) {
-         return { gamma_G: MIN_PROFILE_FWHM_DEG, gamma_L: MIN_PROFILE_FWHM_DEG };
+         return { gamma_G: fwhmMin, gamma_L: fwhmMin };
      }
 
     const tanTheta = Math.tan(safeThetaRad);
@@ -499,7 +509,7 @@ function calculateProfileWidths(tth, hkl, params, side = 'center') {
     const cosTheta_safe = Math.max(cosTheta, 1e-9);
     const cosThetaSq_safe = Math.max(cosTheta * cosTheta, 1e-9);
 
-    let widths = { gamma_G: MIN_PROFILE_FWHM_DEG, gamma_L: MIN_PROFILE_FWHM_DEG };
+    let widths = { gamma_G: fwhmMin, gamma_L: fwhmMin };
 
     //   Dispatch to specific width calculators  
     switch (profileType) {
@@ -514,7 +524,7 @@ function calculateProfileWidths(tth, hkl, params, side = 'center') {
             break;
     }
 
-    return applyFwhmFloor(widths.gamma_G, widths.gamma_L);
+    return applyFwhmFloor(widths.gamma_G, widths.gamma_L, fwhmMin);
 }
 
 
@@ -1051,147 +1061,6 @@ function calculatePatternCPU(tthAxis, hklList, params, outArr = null) {
                              buildPeakContributions(tthAxis, hklList, params), pattern);
 }
 
-// ===========================================================================
-//  BACKGROUND
-//
-//  Also moved here from its two duplicates (the page and
-//  a worker), plus a third copy of the spline interpolator in
-//  spline_background.js. Same argument as above.
-//
-//  THE BACKGROUND IS NOT REFINED. It is interpolated through anchor points the
-//  user places, held fixed for the whole fit, and subtracted before the
-//  decomposition. That is a deliberate choice, not an omission, but it has
-//  consequences that belong in the report rather than in a comment nobody
-//  reads: no ESD anywhere in the output includes background uncertainty, and
-//  any error in the anchors is absorbed wholesale into the extracted
-//  intensities. calculateStatistics reports it explicitly.
-// ===========================================================================
-
-/**
- * Monotonic cubic Hermite spline (Fritsch-Carlson tangents).
- * @param {Array<{tth:number,y:number}>} points  Sorted, strictly increasing tth.
- * @returns {function(number):number | null} Interpolator, or null on bad input.
- */
-function createMonotonicCubicSplineInterpolator(points) {
-    const n = points.length;
-    if (n < 2) return null;
-
-    const h = new Array(n - 1);
-    const delta = new Array(n - 1);
-    for (let i = 0; i < n - 1; i++) {
-        h[i] = points[i + 1].tth - points[i].tth;
-        if (h[i] <= 0) {
-            console.error("Monotonic spline failed: points must have strictly increasing tth.");
-            return null;
-        }
-        delta[i] = (points[i + 1].y - points[i].y) / h[i];
-    }
-
-    const m = new Array(n);
-    m[0] = delta[0];
-    m[n - 1] = delta[n - 2];
-    for (let i = 1; i < n - 1; i++) {
-        if (delta[i - 1] * delta[i] <= 0) {
-            m[i] = 0;                                   // slope changes sign
-        } else {
-            m[i] = (h[i] * delta[i - 1] + h[i - 1] * delta[i]) / (h[i - 1] + h[i]);
-        }
-    }
-
-    for (let i = 0; i < n - 1; i++) {
-        if (delta[i] === 0) {
-            m[i] = 0; m[i + 1] = 0;
-        } else {
-            const alpha = m[i] / delta[i];
-            const beta  = m[i + 1] / delta[i];
-            const tau = alpha * alpha + beta * beta;
-            if (tau > 9) {                              // Fritsch-Carlson bound
-                const factor = 3.0 / Math.sqrt(tau);
-                m[i]     = alpha * delta[i] * factor;
-                m[i + 1] = beta  * delta[i] * factor;
-            }
-        }
-    }
-
-    return function (tthValue) {
-        // Flat extrapolation, checked BEFORE the cubic is evaluated.
-        if (tthValue <= points[0].tth)     return points[0].y;
-        if (tthValue >= points[n - 1].tth) return points[n - 1].y;
-
-        let i = 0;
-        while (i < n - 2 && points[i + 1].tth <= tthValue) i++;
-
-        const x_i = points[i].tth;
-        const y_i = points[i].y, y_ip1 = points[i + 1].y;
-        const h_i = h[i], m_i = m[i], m_ip1 = m[i + 1];
-
-        const t = (h_i > 1e-9) ? (tthValue - x_i) / h_i : 0;
-        const t2 = t * t, t3 = t2 * t;
-        const h00 =  2 * t3 - 3 * t2 + 1;
-        const h10 =      t3 - 2 * t2 + t;
-        const h01 = -2 * t3 + 3 * t2;
-        const h11 =      t3 -     t2;
-
-        return h00 * y_i + h10 * h_i * m_i + h01 * y_ip1 + h11 * h_i * m_ip1;
-    };
-}
-
-/**
- * Background on `tthAxis`, interpolated through the anchor points and clamped
- * at zero.
- *
- * @param {Float64Array|number[]} tthAxis
- * @param {ProfileParams} params           Unused; kept for call compatibility.
- * @param {Array<{tth:number,y:number}>} splinePoints
- * @param {Float64Array} [outArr]
- * @returns {Float64Array}
- */
-function calculateTotalBackground(tthAxis, params, splinePoints, outArr = null) {
-    const n = tthAxis ? tthAxis.length : 0;
-    const background = outArr || new Float64Array(n);
-    background.fill(0);
-    if (n === 0 || !splinePoints || splinePoints.length < 2) return background;
-
-    const mappedPoints = splinePoints.map((p, i) => ({
-        tth: p.tth,
-        y: (params && params[`bg_y_${i}`] !== undefined) ? params[`bg_y_${i}`] : p.y
-    }));
-
-    let interpolate = null;
-    try {
-        interpolate = createMonotonicCubicSplineInterpolator(mappedPoints);
-    } catch (splineError) {
-        console.error("Monotonic spline failed; falling back to linear.", splineError);
-        interpolate = null;
-    }
-
-    if (!interpolate) {
-        console.warn("Using linear interpolation for the background.");
-        const np = mappedPoints.length;
-        let p_idx = 0;
-        for (let i = 0; i < n; i++) {
-            const tth = tthAxis[i];
-            while (p_idx < np - 2 && mappedPoints[p_idx + 1].tth < tth) p_idx++;
-            const p1 = mappedPoints[p_idx];
-            const p2 = mappedPoints[Math.min(p_idx + 1, np - 1)];
-            let v;
-            if (tth <= p1.tth)      v = p1.y;
-            else if (tth >= p2.tth) v = p2.y;
-            else {
-                const d = p2.tth - p1.tth;
-                v = (d > 1e-9) ? p1.y + (p2.y - p1.y) * (tth - p1.tth) / d : p1.y;
-            }
-            background[i] = v > 0 ? v : 0;
-        }
-    } else {
-        for (let i = 0; i < n; i++) {
-            const v = interpolate(tthAxis[i]);
-            background[i] = v > 0 ? v : 0;
-        }
-    }
-    return background;
-}
-
 // ---------------------------------------------------------------------------
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
@@ -1201,7 +1070,6 @@ if (typeof module !== 'undefined' && module.exports) {
         prepareVoigt, evalVoigt,
         hasRenderablePosition, hasRenderableIntensity,
         buildPeakContributions, accumulatePattern, intensityDerivativeColumn,
-        calculatePatternCPU,
-        createMonotonicCubicSplineInterpolator, calculateTotalBackground
+        calculatePatternCPU
     };
 }

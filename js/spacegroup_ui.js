@@ -334,9 +334,11 @@ if (state.selected) {
             }
 
            //   Public API  
+            let lastFocusedElement = null;
             function open(prefill) {
                 if (!ALL_SETTINGS) ALL_SETTINGS = buildAllSettings();
                 const n = grabNodes();
+                lastFocusedElement = document.activeElement;
                 // Either preload from the current SG or start blank.
 
 if (prefill) {
@@ -365,6 +367,7 @@ if (prefill) {
                 
                 renderAll();
 n.overlay.classList.add('open');
+n.overlay.setAttribute('aria-hidden', 'false');
 setTimeout(() => {
     n.txtInput.focus();
     // Scroll the list to the selected item
@@ -379,7 +382,13 @@ setTimeout(() => {
 
             }
             function close() {
-                grabNodes().overlay.classList.remove('open');
+                const n = grabNodes();
+                n.overlay.classList.remove('open');
+                n.overlay.setAttribute('aria-hidden', 'true');
+                if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+                    lastFocusedElement.focus();
+                    lastFocusedElement = null;
+                }
             }
 
             //   Event wiring (idempotent).  
@@ -405,12 +414,28 @@ setTimeout(() => {
                     onApply(state.selected);
                     close();
                 });
-                // Close on Escape; backdrop click.
+                // Close on Escape; backdrop click; trap Tab focus inside modal.
                 n.overlay.addEventListener('click', (e) => {
                     if (e.target === n.overlay) close();
                 });
                 document.addEventListener('keydown', (e) => {
-                    if (e.key === 'Escape' && n.overlay.classList.contains('open')) close();
+                    if (!n.overlay.classList.contains('open')) return;
+                    if (e.key === 'Escape') {
+                        close();
+                    } else if (e.key === 'Tab') {
+                        const focusable = Array.from(n.overlay.querySelectorAll(
+                            'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                        )).filter(el => el.offsetParent !== null);
+                        if (!focusable.length) return;
+                        const first = focusable[0], last = focusable[focusable.length - 1];
+                        if (e.shiftKey && (document.activeElement === first || !n.overlay.contains(document.activeElement))) {
+                            e.preventDefault();
+                            last.focus();
+                        } else if (!e.shiftKey && (document.activeElement === last || !n.overlay.contains(document.activeElement))) {
+                            e.preventDefault();
+                            first.focus();
+                        }
+                    }
                 });
             }
 

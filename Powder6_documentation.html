@@ -125,7 +125,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 
 <section id="overview">
 <h2>Overview</h2>
-<p>Powder 6 is a single page, <code>powder6.html</code>, that runs entirely on your machine. Nothing is uploaded. It descends from PowderV2 (Dragoe 2001). It does file reading, space groups, scattering factors, peak shapes, charge flipping and the Wyckoff search, together with Rietveld refinement, several phases and several patterns in one session, and global fits.</p>
+<p>Powder 6 is a single page, <code>index.html</code>, that runs entirely on your machine. Nothing is uploaded. It descends from PowderV2 (Dragoe 2001). It does file reading, space groups, scattering factors, peak shapes, charge flipping and the Wyckoff search, together with Rietveld refinement, several phases and several patterns in one session, and global fits.</p>
 <ul>
   <li><b>Many patterns, many phases.</b> Every dataset holds its own value of every parameter of its phases. A phase can be in some datasets and not in others.</li>
   <li><b>Three ways to get the intensities.</b> Rietveld (from atoms), Le Bail (partitioned from the data) and WPPF (free non-negative intensities solved exactly at each step). Phases using different methods can share a dataset.</li>
@@ -142,15 +142,15 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <h2>Getting started</h2>
 
 <h3 id="serve">Run it</h3>
-<p>Open <code>powder6.html</code> through a web server, not by double-clicking it. The page loads workers, shader files and databases with <code>fetch</code>, which browsers block on <code>file://</code>. From the folder that holds <code>powder6.html</code>:</p>
+<p>Open <code>index.html</code> through a web server, not by double-clicking it. The page loads workers, shader files and databases with <code>fetch</code>, which browsers block on <code>file://</code>. From the folder that holds <code>index.html</code>:</p>
 <pre><code>python -m http.server 8000</code></pre>
-<p>then open <code>http://localhost:8000/powder6.html</code>. Any static server works. Use a current Chrome, Edge or Firefox. The Wyckoff search needs WebGPU (Chrome or Edge); everything else, including charge flipping, runs without it.</p>
+<p>then open <code>http://localhost:8000/index.html</code>. Any static server works. Use a current Chrome, Edge or Firefox. The Wyckoff search needs WebGPU (Chrome or Edge); everything else, including charge flipping, runs without it.</p>
 
 <h3 id="files">Files it needs</h3>
 <p>The page is made of the files below. The ones marked <span class="tag opt">data</span> are data files that are not code; Powder 6 starts without them but loses the features noted.</p>
 <div class="tablewrap"><table>
 <tr><th>Path</th><th>Role</th><th>Without it</th></tr>
-<tr><td><code>powder6.html</code>, <code>powder6.css</code></td><td>The program and its stylesheet.</td><td>Nothing works.</td></tr>
+<tr><td><code>index.html</code>, <code>powder6.css</code></td><td>The program and its stylesheet.</td><td>Nothing works.</td></tr>
 <tr><td><code>js/</code>, <code>js/rietveld/</code></td><td>All code, workers included.</td><td>Nothing works.</td></tr>
 <tr><td><code>charge_flipping.wgsl</code>, <code>swarm_reflection.wgsl</code></td><td>GPU kernels for charge flipping and the Wyckoff search.</td><td>Charge flipping falls back to the CPU; the Wyckoff search stops with a message.</td></tr>
 <tr><td><code>sg/all.json</code> <span class="tag opt">data</span></td><td>The 530-odd space-group settings, with operators and Wyckoff positions.</td><td>No space groups: no new phases, no CIF import, no Solve.</td></tr>
@@ -183,7 +183,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
   <dt>Solve</dt><dd>The Le Bail, WPPF and Rietveld calculations: fit setup, results, and for WPPF the structure solution.</dd>
   <dt>Log</dt><dd>Every action with its time. Each action has a <b>Restore</b> button to go back to the state before it.</dd>
   <dt>About</dt><dd>A short in-program guide.</dd>
-  <dt>Side panel</dt><dd><b>Datasets</b> (select what to plot and fit; drag to reorder; double-click to rename), <b>Phases</b> (the phases, their method, the datasets that hold them) and <b>Parameters</b> (values, refine flags, locks, standard uncertainties of the first selected dataset).</dd>
+  <dt>Side panel</dt><dd><b>Datasets</b> (select what to plot and fit; drag to reorder; double-click to rename), <b>Phases</b> (select the active phase; double-click to open it in Phases) and <b>Parameters</b> (values, refine flags, locks, standard uncertainties of the first selected dataset).</dd>
   <dt>Status bar</dt><dd>The command line, the last message and the progress of a fit. See <a href="#commands">Command line</a>.</dd>
 </dl>
 <p>The theme follows the system and can be switched at any time. A busy calculation locks editing and shows a <b>Stop</b> button. The difference plot is scaled relative to the main pattern for visibility.</p>
@@ -816,7 +816,7 @@ O  O      2.40          # keep the tetrahedra from interpenetrating</code></pre>
 <tr><td>Parameter value</td><td>Mouse wheel or arrow keys change it; <kbd>Shift</kbd> for larger steps, <kbd>Alt</kbd> for smaller.</td></tr>
 <tr><td>Parameters panel</td><td>← → beside the dataset name show the previous or next dataset. A group header folds the group; its box ticks the whole group. In Global mode a padlock shares a parameter; right-click it for more.</td></tr>
 <tr><td>Dataset list</td><td><kbd>Ctrl</kbd>+<kbd>A</kbd> all · <kbd>Shift</kbd>+click a range · <kbd>Ctrl</kbd>+click one more · <kbd>Delete</kbd> · <kbd>F2</kbd> or double-click renames · drag reorders.</td></tr>
-<tr><td>Phase list</td><td>The box of a phase puts it in the selected datasets (ticked), or takes it out. A dash: in some. The dots after a dataset name are the phases it holds. Double-click inspects a phase.</td></tr>
+<tr><td>Phase list</td><td>Click or use ↑ ↓ to select the active phase; double-click or press <kbd>Enter</kbd> to open it in the Phases tab. Assign phases to datasets with <b>Datasets → Phases…</b> or <b>Refine → Phases of the datasets…</b>.</td></tr>
 <tr><td>Side panel edge</td><td>Drag to resize; double-click to reset.</td></tr>
 </table></div>
 </section>
@@ -850,7 +850,7 @@ O  O      2.40          # keep the tetrahedra from interpenetrating</code></pre>
 <section id="arch">
 <h2>Code layout</h2>
 <p>For anyone extending the program. The page loads classic scripts in this order; modules that run in workers are loaded with <code>importScripts</code> in the same order.</p>
-<pre class="tree"><code>powder6.html            the page: header, panes, side panel, dialogs
+<pre class="tree"><code>index.html              the page: header, panes, side panel, dialogs
 powder6.css             tokens (light/dark), layout, components
 charge_flipping.wgsl    GPU kernel for charge flipping
 swarm_reflection.wgsl   GPU kernel for the Wyckoff search
@@ -891,7 +891,7 @@ js/
 <ul>
   <li><b>One fit core.</b> <code>rietveld_core.js</code> has no DOM access. The page, the worker and tests load the same file.</li>
   <li><b>Plot colours are plain values.</b> Variables read by canvas code (<code>--plot-*</code>, <code>--series-*</code>, <code>--phase-*</code>, <code>--calc-line</code> …) must be #hex, rgb() or px: a canvas cannot evaluate <code>var()</code> or <code>color-mix()</code>. The JavaScript keeps no colours of its own.</li>
-  <li><b>The end of <code>powder6.css</code></b> is an override block of UI refinements; removing it restores the earlier look.</li>
+  <li><b>Single stylesheet source of truth.</b> <code>powder6.css</code> defines all light/dark design tokens, layout and component rules in one place.</li>
 </ul>
 </section>
 
@@ -899,7 +899,7 @@ js/
 <h2>Troubleshooting</h2>
 <div class="tablewrap"><table class="wrapfirst">
 <tr><th>Message or symptom</th><th>Cause and fix</th></tr>
-<tr><td>“The space groups are not loaded … Open powder6.html through a web server.”</td><td><code>sg/all.json</code> could not be fetched. Serve the folder over HTTP and check the file is present.</td></tr>
+<tr><td>“The space groups are not loaded … Open index.html through a web server.”</td><td><code>sg/all.json</code> could not be fetched. Serve the folder over HTTP and check the file is present.</td></tr>
 <tr><td>“The scattering factors are not loaded (scatters/index.json: 404)”</td><td>The <code>scatters/</code> folder is missing or the page is not served from the right folder. Atoms scatter nothing until it loads.</td></tr>
 <tr><td>A <code>.brml</code> or <code>.rasx</code> file is refused</td><td><code>lib/jszip.min.js</code> is missing.</td></tr>
 <tr><td>Wyckoff search says the shader failed to load</td><td><code>swarm_reflection.wgsl</code> is missing, stale or cached. Reload with the cache cleared. The message also appears if the WGSL and <code>wyckoff_assign.js</code> constants disagree.</td></tr>

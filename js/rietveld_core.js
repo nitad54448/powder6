@@ -3,7 +3,7 @@
    each phase by Rietveld, Le Bail or WPPF.
    ===========================================================================
 
-   DOM-free. The page (powder6.html), the fit worker (rietveld_worker.js) and
+   DOM-free. The page (index.html), the fit worker (rietveld_worker.js) and
    the node tests load the same file, after constants.js, crystal.js,
    profile.js and wppf_linear.js, whose functions it calls unchanged:
 
@@ -603,16 +603,11 @@ function Model(problem) {
 
 Model.prototype.methodOf = function (P) { return this.lbAsWppf && P.method === 'lebail' ? 'wppf' : P.method; };
 
-Model.prototype.minFwhm = function (D) {
-    // profile.js floors widths at MIN_PROFILE_FWHM_DEG (constants.js), a single number for the realm; datasets with
-    // different steps each need their own, so it is set before each dataset is evaluated.
-    if (D.def.minFwhm > 0 && typeof MIN_PROFILE_FWHM_DEG !== 'undefined') MIN_PROFILE_FWHM_DEG = D.def.minFwhm;
-};
-
 /** Profile parameters of phase P in dataset D, as profile.js reads them. */
 Model.prototype.profileParams = function (P, D, v) {
     var o = { profileType: P.def.profileType || 'simple_pvoigt', system: P.def.system,
-              lambda: D.def.lambda1, lambda2: D.def.lambda2 || 0, ratio: D.def.ratio || 0, zeroShift: v.zero || 0 };
+              lambda: D.def.lambda1, lambda2: D.def.lambda2 || 0, ratio: D.def.ratio || 0, zeroShift: v.zero || 0,
+              minFwhm: D.def.minFwhm > 0 ? D.def.minFwhm : (typeof getMinProfileFwhmDeg === 'function' ? getMinProfileFwhmDeg() : MIN_PROFILE_FWHM_DEG) };
     P.profNames.forEach(function (n) { o[n] = v[P.prefix + n]; });
     if (usesSeparatedProfile(P.def)) {
         instrumentProfileParams(P.def.profileType).forEach(function (p) { o[p[0]] = Number.isFinite(v['inst.' + p[0]]) ? v['inst.' + p[0]] : p[1]; });
@@ -1057,7 +1052,6 @@ Model.prototype.evalDataset = function (di, v, opts) {
             dataset.reflectionCellKey = key;
         }
     }
-    this.minFwhm(this.datasets[di]);
     var bkg = this.background(di, v), parts = [], held = opts.held || null;
     for (var pi = 0; pi < this.phases.length; pi++) {
         var po = { grad: !!opts.grad };

@@ -812,7 +812,7 @@ RV.solve = (function () {
     if (!host) return;
     dirty = false;
     pickDefaults();
-    if (!S.sgReady) { host.innerHTML = '<div class="empty-pane"><p>' + (S.sgLoading ? 'Loading the space-group database…' : 'The space-group database is not loaded: open powder6.html through a web server.') + '</p></div>'; return; }
+    if (!S.sgReady) { host.innerHTML = '<div class="empty-pane"><p>' + (S.sgLoading ? 'Loading the space-group database…' : 'The space-group database is not loaded: open index.html through a web server.') + '</p></div>'; return; }
     if (!S.phases.length) { host.innerHTML = '<div class="empty-pane"><p>No phase yet.</p><p class="hint">Make a phase from its space group and cell (Phases, New phase), fit it by WPPF, then solve its structure here.</p></div>'; return; }
     var o = SV.opts, acc = RV.acc ? RV.acc.attr : function (k, d) { return d ? ' open' : ''; };
     function block(key, title, body, dflt, sub, cls) {

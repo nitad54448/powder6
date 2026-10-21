@@ -66,7 +66,7 @@ RV.phasesTab = (function () {
     renderBar();
     if (!S.sgReady) {
       body.innerHTML = S.sgLoading ? '<div class="empty-pane"><p>Loading the space-group database…</p></div>' :
-        '<div class="empty-pane"><p><b>The space-group database is not loaded.</b></p><p>Powder 6 reads sg/all.json and the scattering factors in scatters/: open powder6.html through a web server (for example <code>python -m http.server</code> in its folder), not from the disk.</p></div>';
+        '<div class="empty-pane"><p><b>The space-group database is not loaded.</b></p><p>Powder 6 reads sg/all.json and the scattering factors in scatters/: open index.html through a web server (for example <code>python -m http.server</code> in its folder), not from the disk.</p></div>';
       return;
     }
     if (!ph) {
@@ -293,7 +293,6 @@ RV.phasesTab = (function () {
     var a = b.getAttribute('data-act'), ph = St.currentPhase();
     if (a === 'new') RV.cmd.newPhase();
     else if (a === 'cif') RV.cmd.readStructure();
-    else if (a === 'map') RV.cmd.phaseMap();
     else if (a === 'simulate') RV.cmd.simulate();
     else if (a === 'orientation') RV.cmd.orientation();
     else if (a === 'atom') RV.cmd.addAtom();
