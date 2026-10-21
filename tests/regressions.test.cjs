@@ -33,7 +33,7 @@ function app(withTables = true) {
   }
   context.SG_DATABASE = database;
   for (const file of ['js/sg_engine.js', 'js/rietveld/rv_state.js', 'js/rietveld/rv_commands.js',
-    'js/rietveld/rv_results.js', 'js/rietveld/rv_gsas2.js']) {
+    'js/rietveld/rv_phases.js', 'js/rietveld/rv_results.js', 'js/rietveld/rv_gsas2.js']) {
     vm.runInContext(read(file), context, { filename: file });
   }
   const state = context.RV.state;
@@ -290,4 +290,179 @@ test('the bundled demo generates patterns and its default Rietveld fit succeeds'
   const result = a.core.refine(job);
   assert.equal(result.ok, true, result.msg);
   assert.ok(Number.isFinite(result.stats[0].Rwp));
+});
+
+test('async PT falls back to the unchanged seeded CPU search when WebGPU fails', async () => {
+  const a = model(), job = a.state.jobFor(a.ds);
+  job.algorithm = 'pt'; job.pt = { chains: 2, sweeps: 10, maxTemp: 5, seed: 771 }; job.maxIter = 2;
+  const expected = a.core.refine(job);
+  let called = 0;
+  const actual = await a.core.refineAsync(job, { ptBackend: async ctx => {
+    called++;
+    assert.equal(ctx.setup.sweeps, 10); assert.equal(ctx.setup.chains, 2);
+    assert.ok(Number.isFinite(ctx.cost(ctx.x)));
+    throw new Error('test device lost');
+  } });
+  assert.equal(called, 1); assert.equal(actual.ok, true, actual.msg);
+  assert.deepEqual(plain(actual.values), plain(expected.values));
+  assert.equal(actual.chi2, expected.chi2); assert.equal(actual.pt.backend, 'cpu');
+  assert.match(actual.pt.fallbackReason, /device lost/);
+});
+
+test('GPU PT hands its checked best candidate to LM with combined progress and metadata', async () => {
+  const a = model(), job = a.state.jobFor(a.ds), progress = [];
+  job.algorithm = 'pt'; job.pt = { chains: 2, sweeps: 10, maxTemp: 5, seed: 19 }; job.maxIter = 2;
+  a.ds.p.bkg0 = 10; job.values[0].bkg0 = 10;
+  const result = await a.core.refineAsync(job, { linearStart: false, onIter: p => progress.push(p), ptBackend: async ctx => {
+    const x = Float64Array.from(ctx.x); x[0] = 17;
+    assert.ok(ctx.cost(x) < ctx.setup.initialCost);
+    return { x, pt: { backend: 'webgpu', chains: 2, sweeps: 10, seed: 19 } };
+  } });
+  assert.equal(result.ok, true, result.msg); assert.equal(result.effectiveAlgorithm, 'pt+lm');
+  assert.equal(result.pt.backend, 'webgpu'); assert.ok(result.iter >= 10);
+  assert.ok(Math.abs(result.values[0].bkg0 - 17) < 1e-9);
+});
+
+test('WebGPU PT compiles all profile types and joint intensity methods from their real model definitions', async () => {
+  for (const method of ['rietveld', 'lebail', 'wppf']) {
+    for (const profileType of ['simple_pvoigt', 'split_pvoigt', 'tch_aniso', 'gsas_cw']) {
+      const a = app(); a.S.calculation = method;
+      a.state.addPhase(a.state.makePhase({ name: 'C', sg: a.state.resolveSG(1), cell: { a: 3, b: 3.4, c: 3.7, alpha: 87, beta: 94, gamma: 102 }, profileType,
+        atoms: [{ label: 'C1', type: 'C', x: .13, y: .21, z: .32, B: .5, occ: 1 }] }));
+      const ds = a.state.makeDataset({ name: 'sample', tth: [15, 25, 35, 45], y: [10, 15, 20, 25], inst: { bkgN: 1, lambda2: 1.544, ratio: .5 } });
+      a.S.datasets.push(ds); a.state.selectIds([ds.id]); ds.fit.bkg0 = true;
+      const job = a.state.jobFor(ds); job.algorithm = 'pt'; job.pt = { chains: 2, sweeps: 10, maxTemp: 5, seed: 19 }; job.maxIter = 1;
+      vm.runInContext(read('js/pt_gpu.js'), a.context);
+      let compiled = false;
+      const result = await a.core.refineAsync(job, { ptBackend: ctx => {
+        const plan = a.context.RVPTGPU.compile(ctx); compiled = true;
+        assert.equal(plan.chains, 2); assert.ok(plan.reflectionCount > 0);
+        assert.ok(Array.from(plan.data).every(Number.isFinite));
+        assert.ok(plan.shader.includes('@compute')); assert.ok(!plan.shader.includes('/*GENERATED*/'));
+        assert.equal(plan.datasets[0].m > 0, method !== 'rietveld');
+        return { x: ctx.x, pt: { backend: 'webgpu', sweeps: 10 } };
+      } });
+      assert.equal(compiled, true, method + ' ' + profileType); assert.equal(result.ok, true, result.msg);
+    }
+  }
+});
+
+test('PT reflection envelope covers expanded and oblique trial cells', () => {
+  const a = app(), sg = a.state.resolveSG(1), initial = { a: 3, b: 4, c: 5, alpha: 90, beta: 90, gamma: 90 };
+  const envelope = a.core.generateReflections(initial, sg.ops, 1, [6, 8, 10]);
+  const keys = new Set(envelope.map(r => [r.h, r.k, r.l].join(',')));
+  for (const cell of [{ a: 6, b: 8, c: 10, alpha: 90, beta: 90, gamma: 90 }, { a: 5, b: 7, c: 9, alpha: 72, beta: 108, gamma: 115 }]) {
+    for (const r of a.core.generateReflections(cell, sg.ops, 1)) assert.ok(keys.has([r.h, r.k, r.l].join(',')));
+  }
+});
+
+test('missing WebGPU uses CPU PT, while LM and extraction never request a GPU', async () => {
+  const a = model(), job = a.state.jobFor(a.ds);
+  vm.runInContext(read('js/pt_gpu.js'), a.context);
+  job.algorithm = 'pt'; job.pt = { chains: 2, sweeps: 10, maxTemp: 5, seed: 771 }; job.maxIter = 1;
+  const result = await a.core.refineAsync(job);
+  assert.equal(result.ok, true, result.msg); assert.equal(result.pt.backend, 'cpu');
+  assert.match(result.pt.fallbackReason, /WebGPU is unavailable/);
+  let called = 0;
+  const opts = { ptBackend: () => { called++; throw new Error('Must not initialize GPU'); } };
+  job.algorithm = 'lm';
+  assert.equal((await a.core.refineAsync(job, opts)).ok, true);
+  job.algorithm = 'pt';
+  assert.equal((await a.core.refineAsync(job, { ...opts, evaluateOnly: true })).ok, true);
+  assert.equal(called, 0);
+});
+
+test('manual background anchors use both cursor coordinates and keep existing anchors', () => {
+  const a = model(); a.context.RV.plots = { anchorAt: () => null };
+  a.context.RV.cmd.markAt(25, 42.75, 100, 120);
+  assert.equal(a.ds.inst.bkgType, 'spline');
+  let k = a.ds.inst.bkgX.indexOf(25); assert.ok(k >= 0);
+  assert.equal(a.ds.p['bga' + k], 42.75);
+  a.ds.fit['bga' + k] = false;
+  a.context.RV.cmd.markAt(45, 18.125, 200, 150);
+  assert.equal(a.ds.p['bga' + a.ds.inst.bkgX.indexOf(45)], 18.125);
+  assert.equal(a.ds.p['bga' + a.ds.inst.bkgX.indexOf(25)], 42.75);
+  assert.equal(a.ds.fit['bga' + a.ds.inst.bkgX.indexOf(25)], false);
+  a.context.RV.history.undo();
+  const restored = a.state.byId(a.ds.id);
+  assert.equal(restored.inst.bkgX.includes(45), false);
+  assert.equal(restored.p['bga' + restored.inst.bkgX.indexOf(25)], 42.75);
+});
+
+test('moving anchors preserves point identity across sorting and retains separate method backgrounds', () => {
+  const a = model(); a.state.setInstrument([a.ds], { bkgType: 'spline', bkgX: [10, 30, 60] });
+  [12, 24, 36].forEach((v,k) => { a.ds.p['bga' + k] = v; a.ds.fit['bga' + k] = k !== 1; });
+  a.state.saveCalculation(); const bank = plain(a.ds.calculations.rietveld);
+  const index = a.state.moveBackgroundAnchor(a.ds, 0, 45, 21.5);
+  assert.equal(index, 1);
+  assert.deepEqual(plain(a.ds.inst.bkgX), [30, 45, 60]);
+  assert.deepEqual([a.ds.p.bga0, a.ds.p.bga1, a.ds.p.bga2], [24, 21.5, 36]);
+  assert.deepEqual([a.ds.fit.bga0, a.ds.fit.bga1, a.ds.fit.bga2], [false, true, true]);
+  assert.deepEqual(plain(a.ds.calculations.rietveld), bank);
+  assert.equal(a.state.moveBackgroundAnchor(a.ds, 1, 60, 99), -1);
+  assert.equal(a.state.moveBackgroundAnchor(a.ds, 1, 60 - .0000005, 99), -1);
+  assert.deepEqual(plain(a.ds.inst.bkgX), [30, 45, 60]);
+  assert.equal(a.ds.p.bga1, 21.5);
+  a.state.setCalculation('wppf');
+  a.state.setInstrument([a.ds], { bkgType: 'spline', bkgX: [10, 70] });
+  a.state.setParam('bga0', 9, [a.ds]);
+  a.state.setCalculation('rietveld');
+  assert.deepEqual(plain(a.ds.inst.bkgX), [30, 45, 60]); assert.equal(a.ds.p.bga1, 21.5);
+  a.state.setCalculation('wppf');
+  assert.deepEqual(plain(a.ds.inst.bkgX), [10, 70]); assert.equal(a.ds.p.bga0, 9);
+});
+
+test('Sample and Resolution group controls change only their eligible selected parameters', () => {
+  const a = model();
+  a.S.phases[1].profileType = 'simple_pvoigt'; a.S.phases[1].separatedProfile = false;
+  a.S.phases[0].profileType = 'gsas_cw'; a.state.phaseChanged(a.S.phases[0]);
+  const other = a.state.makeDataset({ name: 'untouched', tth: [10,20], y: [50,50] }); a.S.datasets.push(other);
+  const before = plain(other.fit);
+  Object.keys(a.ds.fit).forEach(n => { a.ds.fit[n] = false; });
+  a.context.RV.cmd.setFitGroup('profile', true);
+  assert.equal(a.ds.fit['p1.size'], true); assert.equal(a.ds.fit['p1.sizeMix'], true);
+  assert.equal(a.ds.fit['p2.GU'], true); assert.equal(a.ds.fit['inst.U'], false);
+  assert.equal(a.ds.fit.bkg0, false);
+  a.context.RV.cmd.setFitGroup('resolution', true);
+  assert.equal(a.ds.fit['inst.U'], true); assert.equal(a.ds.fit['inst.SL'], true);
+  assert.equal(a.ds.fit['inst.U_L'], false);
+  assert.equal(a.context.RV.cmd.fitGroupState('resolution').total, 8);
+  assert.deepEqual(plain(other.fit), before);
+});
+
+test('Le Bail and WPPF display Rietveld atomic values across edits and project reloads', () => {
+  const a = model(), name = 'p1.Si1.B';
+  a.state.setParam(name, 1.2, [a.ds]); a.state.setCalculation('lebail');
+  a.ds.p[name] = 9.4; // An older method snapshot can contain unused stale values.
+  a.state.saveCalculation(); assert.equal(a.state.atomicValues(a.ds)[name], 1.2);
+  a.state.setCalculation('rietveld'); a.state.setParam(name, 2.1, [a.ds]);
+  a.state.setCalculation('lebail');
+  assert.equal(a.ds.p[name], 9.4); assert.equal(a.state.atomicValues(a.ds)[name], 2.1);
+  a.state.commitProject(a.state.prepareProject(JSON.parse(a.state.projectJSON([]))));
+  assert.equal(a.state.atomicValues(a.S.datasets[0])[name], 2.1);
+  a.state.setCalculation('wppf'); assert.equal(a.state.atomicValues(a.S.datasets[0])[name], 2.1);
+});
+
+test('Le Bail and WPPF exports retain their cell and use the Rietveld atomic model', () => {
+  const a = model(), B = 'p1.Si1.B', occ = 'p1.Si1.occ';
+  a.state.setParam(B, 1.75, [a.ds]); a.state.setParam(occ, .6, [a.ds]);
+  for (const method of ['lebail', 'wppf']) {
+    a.state.setCalculation(method);
+    a.ds.p[B] = 8.5; a.ds.p[occ] = .9; a.ds.p['p1.a'] = 5.25;
+    a.ds.esd[B] = .3; // A free-intensity fit must not give the displayed atom a spurious uncertainty.
+    const cif = a.context.RV.results.cifText([a.ds], false, 'p1');
+    assert.match(cif, /_cell_length_a 5\.25/);
+    assert.match(cif, /'Si1' 'Si' 0 0 0 0\.6 1\.75\n/);
+    assert.match(cif, /Rietveld atomic model; unused by/);
+    const gsas = a.context.RV.gsas2.cifOf(a.S.phases[0], a.ds);
+    assert.match(gsas, /_cell_length_a 5\.250000/);
+    const atom = gsas.split('\n').find(line => line.startsWith('Si1 ')).split(/\s+/);
+    assert.equal(Number(atom[5]), .6);
+    assert.ok(Math.abs(Number(atom[6]) * 8 * Math.PI ** 2 - 1.75) < .00005);
+    const report = a.context.RV.results.reportText([a.ds]);
+    const row = report.split('\n').find(line => line.startsWith('Si1\t')).split('\t');
+    assert.equal(row.at(-1), '1.75'); assert.equal(row.at(-2), '0.6');
+    assert.match(report, /content\tSi0\.6/);
+    assert.equal(a.ds.p[B], 8.5, 'Export changed a saved method value');
+  }
 });

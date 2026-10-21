@@ -11,7 +11,7 @@ Full documentation: [`Powder6_documentation.html`](Powder6_documentation.html): 
 - Constant-wavelength X-ray and neutron data, Kα₂ doublet, polarisation, sample displacement and transparency.
 - Rietveld (atoms, scale, March–Dollase orientation, weight fractions), Le Bail and WPPF phases in the same dataset.
 - Individual or global fits, with a shared/local padlock on every parameter.
-- LM refinement, or parallel tempering with an LM finish; exact derivatives where the model is linear; special positions constrained, not corrected afterwards; GSAS-II style atomic constraints.
+- LM refinement, or WebGPU parallel tempering with a double-precision LM finish and automatic CPU fallback; exact derivatives where the model is linear; special positions constrained, not corrected afterwards; GSAS-II style atomic constraints.
 - Chebyshev or spline background, excluded regions, instrument calibration separate from sample broadening.
 - Space-group test, charge flipping (WebGPU with CPU fallback) and a Wyckoff-site search (WebGPU), handing the atoms back for a Rietveld fit.
 - Readers for xy/csv/txt, PANalytical `.xrdml`, Bruker `.brml`/`.uxd`, Rigaku `.ras`/`.rasx`, Philips `.udf`/`.rd`/`.sd`, GSAS `.xra`/`.esd`, Jade `.mdi`, pdCIF, and project files.
@@ -59,6 +59,8 @@ Data files the page fetches. Without them the program still starts, but loses th
 5. For an unknown structure: WPPF fit → extract intensities → space-group test → charge flipping or Wyckoff search → back to Rietveld.
 6. Save the project, the results or a PDF report from the File menu.
 
+On the pattern, Ctrl+click places a background anchor at the cursor's angle and height; right-drag an anchor to move it. Ctrl+Shift+drag still marks exclusions. Filled magenta anchors are refinable, hollow grey anchors are fixed, and editing an anchor in Parameters shows a yellow vertical guide. Solve has independent **Sample** and **Resolution** refinement checkboxes. Le Bail and WPPF show the Rietveld atomic model as unused and read-only; each method retains its own background and fitted results.
+
 ## Command line (bottom of the window)
 
 `fit`, `globalfit`, `stop`, `steps>>cell`, `tick>>p1\.a`, `scales`, `range>>10&80`, `bkg>>6`, `anchors>>12`, `exclude>>a&b`, `method>>wppf`, `phases`, `sharing`, `simulate`, `select>>text`, `demo`, `gsas2`, `undo`, `cmd` (lists the commands), `help` (opens the documentation in a new tab).
@@ -69,6 +71,10 @@ Data files the page fetches. Without them the program still starts, but loses th
 - CSS variables read by canvas plots (`--plot-*`, `--series-*`, `--phase-*`, `--calc-line`…) must stay plain values (`#hex`, `rgb()`, `px`).
 - `powder6.css` is the single source of truth for all light/dark tokens, layout and component styles.
 - Run the import, weighting, fit-state and export regression checks with `node --test tests/regressions.test.cjs` (Node.js; no additional packages).
+- GPU numerical checks: serve the repository and open `tests/webgpu-pt.html`, or run `node tests/run-webgpu.cjs` with Chrome/Edge installed. These execute actual shaders for every fit method and profile type, compare trial costs with the CPU model, and exercise a complete GPU PT search followed by CPU LM.
+- Browser interaction checks: open `tests/ui-interactions.html` through the local server, or run `node tests/run-webgpu.cjs "C:/Program Files/Google/Chrome/Application/chrome.exe" tests/ui-interactions.html`. These check cursor placement on all intensity scales, anchor dragging and undo, marker styles, Solve group controls and atomic model displays.
+
+PT uses WebGPU automatically inside the fit worker for Rietveld, Le Bail and WPPF. Proposals, pattern evaluation, joint nonnegative intensity solves, acceptance and replica exchange run on the GPU. It validates initial and perturbed trial costs against the CPU model and checks promising candidates in double precision. Device failures, resource limits, unconverged intensity solves or failed validation restart the original CPU PT. Results and text exports record the backend and fallback reason. The final LM fit, uncertainties and reported intensities always use the CPU model in double precision. The Wyckoff search already has its own GPU replica-exchange implementation.
 
 ## References
 

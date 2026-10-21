@@ -67,7 +67,7 @@ RV.gsas2 = (function () {
      program may take whichever it understands) and the atoms. A phase without atoms (Le Bail with a cell only) gets one placeholder atom,
      because GSAS-II refuses a CIF without an atom loop; the README says so. */
   function cifOf(ph, ds) {
-    var p = ds.p, k = ph.key + '.', cell = C.cellOf(ph.sg.system, ph.sg.uniqueAxis, function (c) { return p[k + c]; }), L = [], placeholder = !ph.atoms.length;
+    var p = ds.p, atoms = St.atomicValues(ds), k = ph.key + '.', cell = C.cellOf(ph.sg.system, ph.sg.uniqueAxis, function (c) { return p[k + c]; }), L = [], placeholder = !ph.atoms.length;
     if (!cell) throw new Error('phase ' + ph.name + ' has no usable cell in ' + ds.name);
     L.push('data_' + safeName(ph.name, ph.key));
     L.push("_audit_creation_method 'Powder 6, " + RV.version + "'");
@@ -82,9 +82,10 @@ RV.gsas2 = (function () {
     L.push('loop_', '_atom_site_label', '_atom_site_type_symbol', '_atom_site_fract_x', '_atom_site_fract_y', '_atom_site_fract_z',
            '_atom_site_occupancy', '_atom_site_U_iso_or_equiv', '_atom_site_adp_type');
     if (placeholder) L.push('PLACEHOLDER H 0.00000000 0.00000000 0.00000000 1.0 0.0127 Uiso');
+    if (!placeholder && S.calculation !== 'rietveld') L.push('# Rietveld atomic model; unused by ' + C.METHOD_LABELS[S.calculation] + '.');
     ph.atoms.forEach(function (at) {
-      var pre = k + at.label + '.', B = p[pre + 'B'], occ = p[pre + 'occ'];
-      L.push([cifWord(at.label), cifWord(at.type), num(p[pre + 'x'], 8), num(p[pre + 'y'], 8), num(p[pre + 'z'], 8),
+      var pre = k + at.label + '.', B = atoms[pre + 'B'], occ = atoms[pre + 'occ'];
+      L.push([cifWord(at.label), cifWord(at.type), num(atoms[pre + 'x'], 8), num(atoms[pre + 'y'], 8), num(atoms[pre + 'z'], 8),
               num(Number.isFinite(occ) ? occ : 1, 6), num((Number.isFinite(B) ? B : 0) / (8 * Math.PI * Math.PI), 6), 'Uiso'].join(' '));
     });
     return L.join('\n') + '\n';

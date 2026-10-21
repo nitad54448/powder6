@@ -12,12 +12,12 @@
 //        { type: 'done', id, result }             RVCore.refine's result
 //
 // Stop is the page terminating the worker: a refinement has no state worth keeping half-way.
-importScripts('constants.js', 'crystal.js', 'profile.js', 'wppf_linear.js', 'atomic_constraints.js', 'rietveld_core.js');
+importScripts('constants.js', 'crystal.js', 'profile.js', 'wppf_linear.js', 'atomic_constraints.js', 'rietveld_core.js', 'pt_gpu.js');
 
-self.onmessage = function (e) {
+self.onmessage = async function (e) {
     var m = e.data;
     if (!m || (m.type !== 'refine' && m.type !== 'extract')) return;
-    var result = RVCore.refine(m.problem, {
+    var result = await RVCore.refineAsync(m.problem, {
         evaluateOnly: m.type === 'extract',
         precision: m.precision || null,
         onIter: function (p) { self.postMessage({ type: 'iter', id: m.id, it: p.it, chi2: p.chi2, maxIter: p.maxIter }); }

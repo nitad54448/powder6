@@ -2,11 +2,12 @@
  *  contribution of each phase and its row of reflection ticks, the excluded regions, and below them the difference
  *  curve, for the selected datasets (thinned out evenly to "datasets drawn at most", as in Yappari). Phase curves and reflection positions are drawn for every plotted dataset. Only drawn while the tab is open; otherwise
  *  marked out of date. Ctrl+click and Ctrl+Shift+drag edit the anchors and the regions of the first selected dataset
- *  (RV.cmd.markAt, RV.cmd.regionAt).
+ *  (RV.cmd.markAt, RV.cmd.regionAt). Right-drag moves any visible background anchor.
  */
 RV.plots = (function () {
   'use strict';
   var S = RV.state.S, P = {}, dirty = true, raf = 0, needAuto = true, shown = false;
+  var anchorFocus = null, anchorDrag = null;
   function $(s) { return document.querySelector(s); }
   var esc = RV.ui.esc;
   // dataset colours from --series-k, phase colours from --phase-k (powder6.css)
@@ -60,7 +61,7 @@ RV.plots = (function () {
   function tipAnchor(s, i) {
     var x = s.x[i];
     return '<b>' + esc(s.ds.name) + '</b>, background anchor ' + (s.idxs[i] + 1) + '<br>2θ = ' + x.toFixed(4) + '°, background ' + fmtI(s.y[i]) +
-           '<br><span class="muted">Ctrl+click on it removes it</span>';
+           '<br>' + (s.ds.fit['bga'+s.idxs[i]] ? 'Refinable' : 'Fixed during refinement') + '<br><span class="muted">Right-drag to move; Ctrl+click to remove</span>';
   }
   function tooltip(s, i) { return s.kind === 'tick' ? tipTick(s, i) : s.kind === 'diff' ? tipDiff(s, i) : s.kind === 'anchor' ? tipAnchor(s, i) : tipObs(s, i); }
 
@@ -84,19 +85,32 @@ RV.plots = (function () {
     var src = phaseSources(list);
     list.forEach(function (ds, n) {
       var col = color(ds), c = RV.state.calcFor(ds), lo = ds.inst.tthMin, hi = ds.inst.tthMax, inI = [], outI = [];
+      var preview = anchorDrag && anchorDrag.dsId === ds.id, background = c && c.bkg;
+      if (preview && c) {
+        var anchors = ds.inst.bkgX.map(function(x,k){return {x:k===anchorDrag.index?anchorDrag.x:x,y:k===anchorDrag.index?anchorDrag.y:ds.p['bga'+k]};}).sort(function(a,b){return a.x-b.x;});
+        if (anchors.every(function(a,k){return !k || a.x>anchors[k-1].x;})) background = RVCore.splineValues(c.tth,anchors.map(function(a){return a.x;}),anchors.map(function(a){return a.y;}));
+      }
       for (var k = 0; k < ds.tth.length; k++) (ds.tth[k] >= lo && ds.tth[k] <= hi ? inI : outI).push(k);
       main.push({ name: ds.name, group: 'ds' + ds.id, x: pick(ds.tth, inI), y: Float64Array.from(inI,function(k){return st.noBackground ? c ? ds.y[k]-backgroundAt(ds,ds.tth[k]) : NaN : ds.y[k];}), color: col, mode: 'markers', size: 2.6,
                   hover: true, legend: named.indexOf(n)>=0, ds: ds, idx: inI, kind: 'obs' });
       if (outI.length) main.push({ name: ds.name, group: 'ds' + ds.id, x: pick(ds.tth, outI), y: Float64Array.from(outI,function(k){return st.noBackground ? c ? ds.y[k]-backgroundAt(ds,ds.tth[k]) : NaN : ds.y[k];}), color: col, mode: 'markers',
                                    size: 2.6, hollow: true, alpha: 0.5, noAuto: true, hover: true, ds: ds, idx: outI, kind: 'obs', out: true });
       if (!c) return;
-      main.push({ name: 'Calculated', group: 'calc', x: c.tth, y: st.noBackground ? Float64Array.from(c.ycalc,function(y,k){return y-c.bkg[k];}) : c.ycalc, color: one ? T.calc : col, mode: 'lines', width: 1.5, legend: n === 0 });
-      if (st.showBkg && !st.noBackground) main.push({ name: 'Background', group: 'bkg', x: c.tth, y: c.bkg, color: one ? T.bkg : col, mode: 'lines', width: 1.1, dash: [6, 4], legend: n === 0 });
+      main.push({ name: 'Calculated', group: 'calc', x: c.tth, y: st.noBackground ? Float64Array.from(c.ycalc,function(y,k){return y-c.bkg[k];}) : preview ? Float64Array.from(c.ycalc,function(y,k){return y-c.bkg[k]+background[k];}) : c.ycalc, color: one ? T.calc : col, mode: 'lines', width: 1.5, legend: n === 0 });
+      if (st.showBkg && !st.noBackground) main.push({ name: 'Background', group: 'bkg', x: c.tth, y: background, color: one ? T.bkg : col, mode: 'lines', width: 1.1, dash: [6, 4], legend: n === 0 });
       if (st.showBkg && !st.noBackground && ds.inst.bkgType === 'spline' && ds.inst.bkgX.length) {
-        var ax = [], ay = [], ai = [];
-        ds.inst.bkgX.forEach(function (x, k) { var v = ds.p['bga' + k]; if (Number.isFinite(v)) { ax.push(x); ay.push(v); ai.push(k); } });
-        main.push({ name: 'Anchors', group: 'bkg', x: Float64Array.from(ax), y: Float64Array.from(ay), idxs: ai, color: one ? T.ink : col, mode: 'markers', size: 6.5,
-                    hollow: true, lineWidth: 1.5, hover: true, noAuto: true, ds: ds, kind: 'anchor' });
+        [true,false].forEach(function(fit){
+          var ax=[],ay=[],ai=[];
+          ds.inst.bkgX.forEach(function(x,k){var v=ds.p['bga'+k];if(!!ds.fit['bga'+k]!==fit || !Number.isFinite(v))return;if(preview && k===anchorDrag.index){x=anchorDrag.x;v=anchorDrag.y;}ax.push(x);ay.push(v);ai.push(k);});
+          main.push({name:fit?'Refinable anchors':'Fixed anchors',group:'bkg',x:Float64Array.from(ax),y:Float64Array.from(ay),idxs:ai,color:fit?T.anchorRefinable:T.anchorFixed,mode:'markers',size:6.5,
+                     hollow:!fit,lineWidth:1.5,hover:true,noAuto:true,ds:ds,kind:'anchor'});
+        });
+      }
+      var active=preview?anchorDrag:anchorFocus;
+      if(active && active.dsId===ds.id && active.index<ds.inst.bkgX.length){
+        var ax=preview?active.x:ds.inst.bkgX[active.index],ay=preview?active.y:ds.p['bga'+active.index];
+        main.push({name:'Active background anchor',group:'anchor-edit',x:[ax],y:[0],color:T.anchorActive,mode:'vline',noAuto:true,width:1.5});
+        if(!st.noBackground)main.push({name:'Active background anchor',group:'anchor-edit',x:[ax],y:[ay],color:T.anchorActive,mode:'markers',noAuto:true,size:9,hollow:true,lineWidth:2});
       }
       S.phases.forEach(function (ph, pi) {
         var part = c.phases[pi];
@@ -104,7 +118,7 @@ RV.plots = (function () {
         var pc = phaseColor(pi), g = 'ph:' + ph.key;
         if (st.showPhases && S.phases.length) {
           var yy = new Float64Array(c.tth.length);
-          for (var q = 0; q < yy.length; q++) yy[q] = (st.noBackground ? 0 : c.bkg[q]) + part.y[q];
+          for (var q = 0; q < yy.length; q++) yy[q] = (st.noBackground ? 0 : background[q]) + part.y[q];
           main.push({ name: ph.name, group: g, x: c.tth, y: yy, color: pc, mode: 'lines', width: 1.1, dash: [4, 3], legend: src[pi] === ds });
         }
         if (st.showTicks) {
@@ -114,7 +128,7 @@ RV.plots = (function () {
         }
       });
       var dy = new Float64Array(c.tth.length);
-      for (var j = 0; j < dy.length; j++) dy[j] = c.yobs[j] - c.ycalc[j];
+      for (var j = 0; j < dy.length; j++) dy[j] = c.yobs[j] - c.ycalc[j] - (preview ? background[j]-c.bkg[j] : 0);
       diff.push({ name: ds.name, group: 'ds' + ds.id, x: c.tth, y: dy, color: one ? T.diff : col, mode: 'lines', width: 1, hover: true, ds: ds, calc: c, kind: 'diff' });
     });
     return { main: main, diff: diff };
@@ -174,12 +188,46 @@ RV.plots = (function () {
   }
   function redrawAll() { if (P.pat) { P.pat.draw(); P.diff.draw(); } }
 
+  function anchorAt(px,py,ds) {
+    if(!P.pat || !P.pat.view || S.busy)return null;
+    var best=null,distance=100;
+    P.pat.visibleSeries().forEach(function(s){if(s.kind!=='anchor' || ds && s.ds!==ds)return;s.x.forEach(function(x,i){var point=P.pat._xy(s,i);if(!point)return;var d=Math.pow(point[0]-px,2)+Math.pow(point[1]-py,2);if(d<distance){distance=d;best={dsId:s.ds.id,index:s.idxs[i],x:x,y:s.y[i]};}});});
+    return best;
+  }
+  function focusAnchor(info) {
+    var ds=RV.state.first(),match=info && /^bga(\d+)$/.exec(info.name || '');
+    anchorFocus=ds && match?{dsId:ds.id,index:+match[1]}:null;
+    refresh(false);
+  }
+  function startAnchor(px,py) {
+    var hit=anchorAt(px,py);if(!hit)return null;
+    var input=document.activeElement;if(input && input.matches('#param-list .pv'))input.blur();
+    anchorDrag=Object.assign({},hit);refresh(false);return hit;
+  }
+  function dragAnchor(hit,x,y) {
+    var ds=RV.state.byId(hit.dsId);if(!ds || S.busy)return;
+    anchorDrag={dsId:hit.dsId,index:hit.index,x:Math.max(ds.tth[0],Math.min(ds.tth[ds.tth.length-1],x)),y:y};refresh(false);
+  }
+  function endAnchor(hit,x,y,moved) {
+    var ds=RV.state.byId(hit.dsId),preview=anchorDrag;anchorDrag=null;
+    if(moved && ds && preview)preview={x:Math.max(ds.tth[0],Math.min(ds.tth[ds.tth.length-1],x)),y:y};
+    if(moved && ds && !S.busy && preview && (preview.x!==ds.inst.bkgX[hit.index] || preview.y!==ds.p['bga'+hit.index])){
+      if(ds.inst.bkgX.some(function(a,k){return k!==hit.index && Math.abs(a-preview.x)<=1e-6;}))RV.ui.toast('Keep background anchors at distinct angles.','info');
+      else{RV.history.take('moving background anchor of '+ds.name);RV.state.moveBackgroundAnchor(ds,hit.index,preview.x,preview.y);}
+    }
+    refresh(false);
+  }
+
   function init() {
     P.pat = new RV.Plot2D($('#pat-host'), { ylabel: 'Intensity /counts', tooltip: tooltip, legendMax: 10 + S.phases.length, empty: '', band: 0,
-                                             onMark: function (x, y, px) { RV.cmd.markAt(x, px); }, onRegion: function (x0, x1) { RV.cmd.regionAt(x0, x1); } });
+                                             onMark: function (x, y, px, py) { RV.cmd.markAt(x, y, px, py); }, onRegion: function (x0, x1) { RV.cmd.regionAt(x0, x1); },
+                                             onAnchorStart:startAnchor,onAnchorDrag:dragAnchor,onAnchorEnd:endAnchor });
     P.diff = new RV.Plot2D($('#diff-host'), { xlabel: '2θ /°', ylabel: 'obs − calc', legend: false, tooltip: tooltip });
     linkX(P.pat, P.diff);
     RV.bus.on('phaseStyle', function () { refresh(false); });
+    RV.bus.on('paramFocus',focusAnchor);
+    ['selection','calculation'].forEach(function(ev){RV.bus.on(ev,function(){anchorFocus=null;anchorDrag=null;if(P.pat && P.pat.drag && P.pat.drag.mode==='anchor')P.pat.drag=null;});});
+    RV.bus.on('busy',function(busy){if(busy){anchorDrag=null;anchorFocus=null;if(P.pat)P.pat.drag=null;refresh(false);}});
     ['selection', 'datasets', 'phases'].forEach(function (ev) { RV.bus.on(ev, function () { refresh(true); }); });
     ['params', 'stats', 'data', 'theme', 'tables'].forEach(function (ev) { RV.bus.on(ev, function () { refresh(false); }); });
     RV.bus.on('settings', function (k) { refresh(k === 'yscale' || k === 'maxPlots' || k === '*'); });
@@ -194,6 +242,6 @@ RV.plots = (function () {
 
   // the pixel of a 2theta on the pattern plot (NaN before it is drawn)
   function pxOf(x) { return P.pat && P.pat.view ? P.pat.px(x) : NaN; }
-  return { init: init, refresh: refresh, show: show, autoscale: autoscale, exportPNG: exportPNG, redrawAll: redrawAll, plotted: plotted, build: build, legendIndices:legendIndices, backgroundAt:backgroundAt, pxOf: pxOf,
+  return { init: init, refresh: refresh, show: show, autoscale: autoscale, exportPNG: exportPNG, redrawAll: redrawAll, plotted: plotted, build: build, legendIndices:legendIndices, backgroundAt:backgroundAt, pxOf: pxOf, anchorAt:anchorAt,
            color: color, colorVar: colorVar, phaseColor: phaseColor, phaseVar: phaseVar, phaseIndex: phaseIndex, _plots: P };
 })();

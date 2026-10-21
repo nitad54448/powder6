@@ -36,7 +36,7 @@ RV.theme = (function () {
       fontSize: num('--plot-font-size', 11), titleSize: num('--plot-title-size', 12),
       marker: num('--plot-marker-size', 3.2), line: num('--plot-line-width', 1.5), area: num('--plot-area-opacity', 0.3),
       series: list('--series-'), phases: list('--phase-'),
-      calc: col('--calc-line'), bkg: col('--bkg-line'), diff: col('--diff-line'), excluded: col('--excluded-fill')
+      calc: col('--calc-line'), bkg: col('--bkg-line'), diff: col('--diff-line'), excluded: col('--excluded-fill'), anchorActive:col('--anchor-active'), anchorFixed:col('--anchor-fixed'), anchorRefinable:col('--anchor-refinable')
     };
     if (!t.series.length) t.series = [t.ink];
     if (!t.phases.length) t.phases = [t.ink2];

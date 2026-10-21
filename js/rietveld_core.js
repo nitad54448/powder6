@@ -239,18 +239,20 @@ function cellOf(system, uniqueAxis, get) {
  * merged), systematic absences removed with the operators, sorted by
  * decreasing d. Each carries its multiplicity and its equivalents (for the
  * preferred-orientation average).
+ * Optional box: maximum absolute Miller indices, without the initial metric
+ * cutoff. GPU PT uses this complete envelope and filters it at each trial cell.
  * @returns {{h:number,k:number,l:number,m:number,eq:Int16Array}[]}
  */
-function generateReflections(cell, ops, dmin) {
+function generateReflections(cell, ops, dmin, box) {
     var f = buildInvDsq(cell);
     if (!f || !(dmin > 0)) return [];
     var lim = 1 / (dmin * dmin) * (1 + 1e-9), rots = laueRotations(ops);
-    var hmax = Math.floor(cell.a / dmin), kmax = Math.floor(cell.b / dmin), lmax = Math.floor(cell.c / dmin);
+    var hmax = box ? box[0] : Math.floor(cell.a / dmin), kmax = box ? box[1] : Math.floor(cell.b / dmin), lmax = box ? box[2] : Math.floor(cell.c / dmin);
     var seen = new Set(), out = [];
     for (var h = -hmax; h <= hmax; h++) for (var k = -kmax; k <= kmax; k++) for (var l = -lmax; l <= lmax; l++) {
         if (!h && !k && !l) continue;
         var q = invDsq(f, h, k, l);
-        if (!(q > 0) || q > lim) continue;
+        if (!(q > 0) || (!box && q > lim)) continue;
         // canonical member: the most non-negative indices, then the largest (H, K, L) -- (1 1 0) rather than (2 -1 0)
         // in a hexagonal cell, (0 1 2) rather than (1 0 -2), the indices the literature uses
         var ch = -1e9, ck = 0, cl = 0, cp = -1, orbit = new Map();
@@ -1498,7 +1500,7 @@ function precisionBlock(ev, pi, maxRefl, cov) {
  * block of that phase's WPPF intensities as well.
  * Returns { ok, msg, iter, chi2, dof, values, esd, stats, intensities, ms }.
  */
-function refine(problem, opts) {
+function* refineSteps(problem, opts) {
     opts = opts || {};
     var t0 = Date.now();
     try {
@@ -1533,11 +1535,11 @@ function refine(problem, opts) {
         model.datasets.forEach(function (D) { nPts += D.nFit; });
         if (!(nPts > 0)) throw new Error('every point of the fitted range is excluded');
         // chi^2 at vals; held: per dataset, the areas at which to hold Le Bail phases (a Le Bail cycle)
-        function cost(vals, held) {
+        function cost(vals, held, engine) {
             if(constraints && !constraints.valid(vals))return Infinity;
-            var s = 0;
+            var s = 0, costModel = engine || model;
             for (var d = 0; d < nd; d++) {
-                var ev = model.evalDataset(d, vals[d], { held: held ? held[d] : null }), y = model.datasets[d].def.y, w = model.datasets[d].def.w;
+                var ev = costModel.evalDataset(d, vals[d], { held: held ? held[d] : null }), y = costModel.datasets[d].def.y, w = costModel.datasets[d].def.w;
                 for (var i = 0; i < ev.y.length; i++) { if (!(w[i] > 0)) continue; var r = y[i] - ev.y[i]; s += w[i] * r * r; }
                 if (!(s < Infinity)) return Infinity;
             }
@@ -1682,7 +1684,9 @@ function refine(problem, opts) {
         // Each replica uses symmetric random-walk proposals with reflecting box
         // bounds. Only the declared variables move; apply() keeps global/local
         // dataset sharing identical to the LM path. Best-so-far is never lost.
-        function temper(maxIt, stages) {
+        var ptSetup = null;
+        function preparePT() {
+            if (ptSetup) return ptSetup;
             var config = problem.pt || {};
             var sweeps = config.sweeps == null ? 200 : config.sweeps;
             var chains = config.chains == null ? 6 : config.chains;
@@ -1692,6 +1696,21 @@ function refine(problem, opts) {
                 !Number.isInteger(chains) || chains < 2 || chains > 16 ||
                 !Number.isFinite(maxTemp) || maxTemp <= 1 || maxTemp > 1e6 ||
                 !Number.isInteger(seed) || seed < 1 || seed > 2147483647) throw new Error('invalid parallel-tempering settings');
+            model.dynamicReflections = true;
+            var initialCost = cost(apply(x), null);
+            if (!Number.isFinite(initialCost)) throw new Error('non-finite starting cost for PT');
+            var curvature = normal(x).A, scales = new Float64Array(nv);
+            for (var q = 0; q < nv; q++) {
+                var cap = stepCap(info[q].c, x[q]);
+                var natural = Number.isFinite(cap) ? 0.15 * cap : 0.1 * Math.max(1, Math.abs(x[q]));
+                var sensitivity = curvature[q * nv + q] > 0 ? 1 / Math.sqrt(curvature[q * nv + q]) : natural;
+                scales[q] = Math.max(natural, Math.min(4 * natural, sensitivity), 1e-8);
+            }
+            ptSetup = { sweeps:sweeps, chains:chains, maxTemp:maxTemp, seed:seed, initialCost:initialCost, scales:scales };
+            return ptSetup;
+        }
+        function temper(maxIt, stages) {
+            var setup = preparePT(), sweeps = setup.sweeps, chains = setup.chains, maxTemp = setup.maxTemp, seed = setup.seed, scales = setup.scales;
             var randomState = seed >>> 0;
             function random() {
                 randomState ^= randomState << 13; randomState ^= randomState >>> 17; randomState ^= randomState << 5;
@@ -1710,22 +1729,13 @@ function refine(problem, opts) {
                 if (value > high) return high - (value - high);
                 return value;
             }
-            model.dynamicReflections = true;
-            var initialCost = cost(apply(x), null);
-            if (!Number.isFinite(initialCost)) throw new Error('non-finite starting cost for PT');
+            var initialCost = setup.initialCost;
             var bestCost = initialCost, best = Float64Array.from(x), replicas = [], temperatures = [];
-            var curvature = normal(x).A, scales = new Float64Array(nv);
-            for (var q = 0; q < nv; q++) {
-                var cap = stepCap(info[q].c, x[q]);
-                var natural = Number.isFinite(cap) ? 0.15 * cap : 0.1 * Math.max(1, Math.abs(x[q]));
-                var sensitivity = curvature[q * nv + q] > 0 ? 1 / Math.sqrt(curvature[q * nv + q]) : natural;
-                scales[q] = Math.max(natural, Math.min(4 * natural, sensitivity), 1e-8);
-            }
             for (var r = 0; r < chains; r++) {
                 temperatures[r] = Math.pow(maxTemp, r / (chains - 1));
                 replicas[r] = { x: Float64Array.from(x), cost: initialCost };
             }
-            ptInfo = { chains: chains, sweeps: 0, requestedSweeps: sweeps, maxTemp: maxTemp, seed: seed,
+            ptInfo = { backend:'cpu', chains: chains, sweeps: 0, requestedSweeps: sweeps, maxTemp: maxTemp, seed: seed,
                        proposals: 0, accepted: 0, swapAttempts: 0, swaps: 0, initialChi2: initialCost, bestChi2: initialCost };
             progressTotal = sweeps + maxIt * stages;
             for (var sweep = 0; sweep < sweeps; sweep++) {
@@ -1783,7 +1793,34 @@ function refine(problem, opts) {
                 }
             }
             progressTotal = maxIt * nStages;
-            var continueFit = algorithm !== 'pt' || temper(maxIt, nStages);
+            var continueFit = true;
+            if (algorithm === 'pt') {
+                var setup = preparePT();
+                var ptModel = model;
+                var accelerated = yield { problem:problem, model:model, constraints:constraints, x:Float64Array.from(x), info:info, setup:setup,
+                    apply:apply, cost:function (xv) { return cost(apply(xv), null, ptModel); },
+                    shouldStop:opts.shouldStop, onIter:function (p) { if (opts.onIter) opts.onIter(p); }, maxIter:setup.sweeps+maxIt*nStages };
+                if (accelerated && accelerated.x) {
+                    var candidate = accelerated.x;
+                    if (candidate.length !== nv || !Array.from(candidate).every(function(v,j){return Number.isFinite(v) && v>=info[j].lo && v<=info[j].hi;})) throw new Error('Invalid WebGPU PT result');
+                    // Re-score on the CPU before the double-precision LM finish.
+                    var checked = cost(apply(candidate), null);
+                    if (!Number.isFinite(checked)) throw new Error('Non-finite WebGPU PT result');
+                    if (checked <= setup.initialCost) x = Float64Array.from(candidate);
+                    ptInfo = accelerated.pt; ptInfo.bestChi2 = Math.min(checked, setup.initialCost);
+                    itTotal += ptInfo.sweeps; progressTotal = setup.sweeps + maxIt * nStages;
+                    continueFit = !accelerated.stopped;
+                } else {
+                    // A failed GPU attempt may have populated the CPU validator's
+                    // intensity caches. Restart PT with a fresh model and scales.
+                    if (accelerated && accelerated.fallbackReason) {
+                        model = new Model(Object.assign({}, problem, {values:apply(x)}));
+                        model.lbAsWppf = hasLB; ptSetup = null;
+                    }
+                    continueFit = temper(maxIt, nStages);
+                    if (accelerated && accelerated.fallbackReason) ptInfo.fallbackReason = accelerated.fallbackReason;
+                }
+            }
             if (algorithm === 'pt') {
                 model = new Model(Object.assign({}, problem, {values:apply(x)}));
                 model.lbAsWppf = hasLB;
@@ -1853,6 +1890,28 @@ function refine(problem, opts) {
     }
 }
 
+// The synchronous entry point remains available to plots, Node and CPU-only callers.
+// Only the worker's async entry point awaits GPU dispatch/readback at the PT boundary.
+function refine(problem, opts) {
+    var run = refineSteps(problem, opts), step = run.next();
+    while (!step.done) step = run.next();
+    return step.value;
+}
+async function refineAsync(problem, opts) {
+    opts = opts || {};
+    var run = refineSteps(problem, opts), step = run.next();
+    while (!step.done) {
+        var accelerated = null;
+        try {
+            var backend = opts.ptBackend || (root.RVPTGPU && root.RVPTGPU.run);
+            if (backend) accelerated = await backend(step.value);
+            else accelerated = { fallbackReason:'WebGPU PT module is unavailable.' };
+        } catch (e) { accelerated = { fallbackReason:String(e && e.message || e) }; }
+        step = run.next(accelerated);
+    }
+    return step.value;
+}
+
 /**
  * The calculated pattern of one dataset, with everything a plot or a table
  * needs. The intensities of Le Bail and WPPF phases are extracted at these
@@ -1885,7 +1944,7 @@ root.RVCore = {
     VERSION: VERSION, METHODS: METHODS, METHOD_LABELS: METHOD_LABELS, expandOps: expandOps, cosets: cosets, laueRotations: laueRotations, isAllowed: isAllowed,
     cellParams: cellParams, cellOf: cellOf, generateReflections: generateReflections, siteSymmetry: siteSymmetry,
     sitePosition: sitePosition, formFactor: formFactor, profileParamsFor: profileParamsFor, INSTRUMENT_PROFILE: INSTRUMENT_PROFILE, ALL_INSTRUMENT_PROFILE: ALL_INSTRUMENT_PROFILE, instrumentProfileParams: instrumentProfileParams, usesSeparatedProfile: usesSeparatedProfile, SAMPLE_PROFILE: SAMPLE_PROFILE, broadeningConfig: broadeningConfig, sampleProfileNames: sampleProfileNames, PROFILE_PARAMS: PROFILE_PARAMS, PROFILE_LABELS: PROFILE_LABELS,
-    classify: classify, defaultLimits: defaultLimits, methodAllows: methodAllows, Model: Model, refine: refine, evaluate: evaluate,
+    classify: classify, defaultLimits: defaultLimits, methodAllows: methodAllows, Model: Model, refine: refine, refineAsync:refineAsync, evaluate: evaluate,
     datasetStats: datasetStats, solveSPD: solveSPD, invSPD: invSPD, fracText: fracText, splineValues: splineValues,
     selectedInverse: selectedInverse
 };

@@ -27,6 +27,9 @@
   --plot-grid: #DEDEDE;
   --plot-minor: #EFEFEF;
   --plot-axis: #818181;
+  --anchor-active: #D5A500;
+  --anchor-fixed: #8A8E93;
+  --anchor-refinable: #B000B5;
   --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --font-code: "Cascadia Mono", ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
   --control-bg: #F1F3F4; --control-border: #B3BAC0; --control-ink: #303030;
@@ -89,6 +92,7 @@
   --rule: #3C4247; --rule-2: #2F343A; --blue: #8FB6E0; --blue-2: #B0CCEA; --blue-tint: #26323F; --on-blue: #172431;
   --amber: #D9B56B; --amber-tint: #3E3525; --ok: #9BC6A4; --warn: #DEBB7B; --err: #E5A0A0;
   --plot-bg: #242424; --plot-grid: #3D3D3D; --plot-minor: #303030; --plot-axis: #888888;
+  --anchor-active: #F3CF3E; --anchor-fixed: #969BA0; --anchor-refinable: #F06FFF;
   --control-bg: #2B2F34; --control-border: #5A6168; --control-ink: #E0E0E0;
   --chrome: #1A1D20; --selection: #34475B; --selection-ink: #EAF2FA;
   --shadow: rgba(0, 0, 0, 0.32);
@@ -147,6 +151,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--blue); text-
   border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 24%, transparent);
 }
 :where(input:disabled, select:disabled, textarea:disabled) { background: var(--paper); color: var(--ink-3); }
+.atoms input[readonly] { background: var(--paper); color: var(--ink-3); cursor: default; }
 :where(input:not([type=checkbox], [type=radio]):enabled:hover, select:enabled:hover, textarea:enabled:hover) { border-color: var(--control-border); }
 input.invalid { border-color: var(--err); background: color-mix(in srgb, var(--err) 8%, var(--panel)); }
 :where(input[type=checkbox], input[type=radio]) { accent-color: var(--blue); width: 14px; height: 14px; margin: 0; }

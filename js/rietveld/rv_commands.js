@@ -35,14 +35,16 @@ RV.pool = (function () {
     var promise = new Promise(function (resolve) {
       settle = resolve;
       init();
-      function put(k, r) { onResult(r, k); results[k] = opts.compactResults ? {ok:r.ok,msg:r.msg,iter:r.iter} : r; state.done++; onProgress(state.done, jobs.length); }
+      function put(k, r) { if(r.pt)RV.ui.log('PT backend: '+(r.pt.backend || 'cpu')+(r.pt.fallbackReason ? ' — '+r.pt.fallbackReason : '')+'.',r.pt.fallbackReason?'warn':'info'); onResult(r, k); results[k] = opts.compactResults ? {ok:r.ok,msg:r.msg,iter:r.iter} : r; state.done++; onProgress(state.done, jobs.length); }
       if (broken || !workers.length) {
         var i = 0;
-        (function next() {
+        (async function next() {
           if (state.cancelled || i >= jobs.length) { resolve(results); return; }
           var k = i++;
           var job=jobAt(k);
-          put(k, RVCore.refine(job, { evaluateOnly: job.type === 'extract', precision: job.precision || null, onIter: function (p) { onIter(k, p.it, p.maxIter); } }));
+          var result = await RVCore.refineAsync(job, { evaluateOnly: job.type === 'extract', precision: job.precision || null, shouldStop:function(){return state.cancelled;}, onIter: function (p) { onIter(k, p.it, p.maxIter); } });
+          if (state.cancelled) { resolve(results); return; }
+          put(k, result);
           setTimeout(next, 0);
         })();
         return;
@@ -745,7 +747,7 @@ RV.cmd = (function () {
     var v = await ui.prompt('Background', [
       { key: 'type', label: 'Background', type: 'select', value: i.bkgType, options: [['cheb', 'Chebyshev polynomials over the fitted range'], ['spline', 'Spline through anchors (monotone cubic)']] },
       { key: 'bkgN', label: 'Terms', type: 'number', value: i.bkgN, when: 'type:cheb', hint: 'A whole number from 0 to 24.' },
-      { key: 'anchors', label: 'Anchors at 2θ /°', type: 'text', value: i.bkgX.map(fmt6).join(' '), when: 'type:spline', hint: 'Separated by spaces. Empty: placed automatically in each dataset. Ctrl+click on the pattern adds an anchor, or removes the one under the cursor; the height of each anchor is a parameter (Parameters).' },
+      { key: 'anchors', label: 'Anchors at 2θ /°', type: 'text', value: i.bkgX.map(fmt6).join(' '), when: 'type:spline', hint: 'Separated by spaces. Empty: placed automatically in each dataset. Ctrl+click on the pattern places an anchor at both cursor coordinates, or removes the one under the cursor. Right-drag an anchor to move it; its height is a parameter (Parameters).' },
       { key: 'nAuto', label: 'Anchors to place', type: 'number', value: S.settings.nAnchors, when: 'type:spline', hint: 'Place puts them at the two ends of the fitted range and at the lowest point of equal stretches between them, never in an excluded region.' }
     ], 'Apply', (list.length > 1 ? 'For the ' + plural(list.length, 'selected dataset') + ' (the values shown are those of ' + ui.esc(d.name) + '). ' : '') +
        'The heights of new anchors start at the data; anchors that stay where they were keep their values.', {
@@ -811,20 +813,23 @@ RV.cmd = (function () {
     ui.toast(v.length ? 'Excluded in ' + plural(list.length, 'dataset') + ': ' + v.map(function (r) { return fmt6(r[0]) + '–' + fmt6(r[1]) + '°'; }).join(', ') + '.' : 'No excluded region in ' + plural(list.length, 'dataset') + '.', 'ok');
   }
   // Ctrl+click on the pattern: an anchor of the spline background of the first selected dataset, or off the one under the cursor
-  function markAt(x, px) {
+  function markAt(x, y, px, py) {
     var ds = St.first();
     if (!ds) { ui.toast('Select the dataset whose background anchors to edit.', 'warn'); return; }
     if (S.busy) { ui.toast('A fit is running. Wait for it to finish or press Stop.', 'warn'); return; }
+    if (S.settings.noBackground) { ui.toast('Turn off No background to edit background anchors.', 'info'); return; }
     var i = ds.inst;
-    if (!(x >= ds.tth[0] && x <= ds.tth[ds.tth.length - 1])) return;
+    if (!(x >= ds.tth[0] && x <= ds.tth[ds.tth.length - 1]) || !Number.isFinite(y)) return;
+    St.setSetting('showBkg', true);
     if (i.bkgType !== 'spline') {
       snapshot('spline background of ' + ds.name);
       St.setInstrument([ds], { bkgType: 'spline', bkgX: [i.tthMin, x, i.tthMax] });
-      ui.toast('The background of ' + ds.name + ' is now a spline through 3 anchors (the ends of the fitted range and ' + fmt6(x) + '°). Ctrl+click adds more; Background… places them automatically.', 'ok');
+      var inserted = ds.inst.bkgX.indexOf(x);
+      if (inserted >= 0) St.setParam('bga'+inserted, y, [ds]);
+      ui.toast('The background of ' + ds.name + ' is now a spline through ' + plural(ds.inst.bkgX.length, 'anchor') + '. The anchor at ' + fmt6(x) + '° uses the cursor height. Ctrl+click adds more; right-drag an anchor to move it.', 'ok');
       return;
     }
-    var near = -1, best = 7;
-    i.bkgX.forEach(function (a, k) { var d = Math.abs(RV.plots.pxOf(a) - px); if (d < best) { best = d; near = k; } });
+    var hit = RV.plots.anchorAt(px, py, ds), near = hit ? hit.index : -1;
     if (near >= 0) {
       if (i.bkgX.length <= 2) { ui.toast('A spline background keeps at least two anchors; Background… turns it back into polynomials.', 'warn'); return; }
       snapshot('background anchor of ' + ds.name);
@@ -835,7 +840,9 @@ RV.cmd = (function () {
     }
     snapshot('background anchor of ' + ds.name);
     St.setInstrument([ds], { bkgX: i.bkgX.concat([x]) });
-    ui.toast('Background anchor at ' + fmt6(x) + '° added to ' + ds.name + ' (' + plural(ds.inst.bkgX.length, 'anchor') + '), its height from the data.', 'info');
+    var index = ds.inst.bkgX.indexOf(x);
+    if (index >= 0) St.setParam('bga'+index, y, [ds]);
+    ui.toast('Background anchor at ' + fmt6(x) + '°, height ' + fmt(y) + ', placed in ' + ds.name + '.', 'info');
   }
   // Ctrl+Shift+drag: an excluded region of the first selected dataset; Ctrl+Shift+click in one removes it
   function regionAt(x0, x1) {
@@ -1072,6 +1079,8 @@ RV.cmd = (function () {
   // Independent group toggles used by Solve. Preserve all other fit flags.
   function fitGroup(name) {
     var c = C.classify(name);
+    if (c.kind === 'instrument') return 'resolution';
+    if (c.kind === 'profile') return 'profile';
     if (c.kind === 'atom') return c.comp === 'occ' ? 'occupancy' : c.comp === 'B' ? 'adp' : 'atoms';
     var step = stepOf(name);
     return step >= 0 && step < 3 ? STEPS[step] : null;
@@ -1080,7 +1089,7 @@ RV.cmd = (function () {
     var total = 0, ticked = 0;
     sel().forEach(function (ds) {
       Object.keys(ds.fit).forEach(function (name) {
-        if (fitGroup(name) !== kind || !St.isVariable(name)) return;
+        if (fitGroup(name) !== kind || !groupEligible(ds,name)) return;
         total++; if (ds.fit[name]) ticked++;
       });
     });
@@ -1088,15 +1097,18 @@ RV.cmd = (function () {
   }
   function setFitGroup(kind, on) {
     if (!idle() || !haveSel()) return;
-    if (STEPS.concat(['adp','occupancy']).indexOf(kind) < 0) return;
+    if (STEPS.concat(['adp','occupancy','resolution']).indexOf(kind) < 0) return;
     if (['atoms','adp','occupancy'].indexOf(kind) >= 0 && S.calculation !== 'rietveld') return;
     snapshot('refinement group ' + kind + (on ? ' on' : ' off'));
     sel().forEach(function (ds) {
       Object.keys(ds.fit).forEach(function (name) {
-        if (fitGroup(name) === kind && St.isVariable(name)) ds.fit[name] = !!on;
+        if (fitGroup(name) === kind && groupEligible(ds,name)) ds.fit[name] = !!on;
       });
     });
     RV.bus.emit('params', {});
+  }
+  function groupEligible(ds,name) {
+    return St.isVariable(name) && (C.classify(name).kind !== 'instrument' || St.instrumentParamsFor(ds).some(function(p){return 'inst.'+p[0]===name;}));
   }
 
   // ---------------------------------------------------------------- refining

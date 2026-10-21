@@ -8,6 +8,7 @@
  *         double-click = autoscale, click on a legend entry = hide or show that group.
  *         With opts.onMark / opts.onRegion (data coordinates): Ctrl (or Cmd) + click = onMark(x, y);
  *         Ctrl + Shift + drag = onRegion(x0, x1), Ctrl + Shift + click = onRegion(x, x).
+ *         Right-drag on an anchor uses onAnchorStart/Drag/End; otherwise it pans.
  *  The view is stored in axis units (log10 or sqrt for those axes). Colours, fonts and sizes come from the CSS.
  */
 RV.Plot2D = (function () {
@@ -185,6 +186,7 @@ RV.Plot2D = (function () {
     var vis = this.visibleSeries();
     vis.forEach(function (s) { if (s.mode === 'shade') self._shade(c, s); });
     vis.forEach(function (s) { if (s.mode === 'lines') self._line(c, s); });
+    vis.forEach(function (s) { if (s.mode === 'vline') self._vline(c, s); });
     vis.forEach(function (s) { if (s.mode === 'markers') self._markers(c, s); });
     vis.forEach(function (s) { if (s.mode === 'ticks') self._ticks(c, s); });
     c.restore();
@@ -260,8 +262,10 @@ RV.Plot2D = (function () {
       var p = pos(e);
       if (!self.view || !inBox(p)) return;
       var mod = (e.ctrlKey || e.metaKey) && (e.button === 0 || e.button === 2) && (self.o.onMark || self.o.onRegion);
+      var anchor = !mod && e.button === 2 && self.o.onAnchorStart ? self.o.onAnchorStart(p[0], p[1]) : null;
       var pan = !mod && (e.button === 2 || e.shiftKey || e.button === 1);
-      self.drag = { mode: mod ? (e.shiftKey ? 'region' : 'mark') : (pan ? 'pan' : 'zoom'), x: p[0], y: p[1], cx: p[0], cy: p[1], v: Object.assign({}, self.view), moved: false };
+      self.drag = { mode: anchor ? 'anchor' : mod ? (e.shiftKey ? 'region' : 'mark') : (pan ? 'pan' : 'zoom'), anchor:anchor, x: p[0], y: p[1], cx: p[0], cy: p[1], v: Object.assign({}, self.view), moved: false };
+      if (anchor) { self.auto = false; self.tip.hidden = true; self.hoverPt = null; }
       e.preventDefault();
     });
     window.addEventListener('mousemove', self._winMove = function (e) {
@@ -270,6 +274,9 @@ RV.Plot2D = (function () {
       var p = pos(e);
       d.cx = Math.max(self.box.x0, Math.min(self.box.x1, p[0])); d.cy = Math.max(self.box.y0, Math.min(self.box.y1, p[1]));
       if (Math.abs(p[0] - d.x) + Math.abs(p[1] - d.y) > 3) d.moved = true;
+      if (d.mode === 'anchor' && d.moved && self.o.onAnchorDrag) {
+        var at = self.dataAt(d.cx, d.cy); self.o.onAnchorDrag(d.anchor, at[0], at[1]);
+      }
       if (d.mode === 'pan' && d.moved) {
         var b = self.box, v = d.v, dx = (p[0] - d.x) / (b.x1 - b.x0) * (v.x1 - v.x0), dy = (p[1] - d.y) / (b.y1 - b.y0) * (v.y1 - v.y0);
         self.view = { x0: v.x0 - dx, x1: v.x1 - dx, y0: v.y0 + dy, y1: v.y1 + dy };
@@ -278,10 +285,17 @@ RV.Plot2D = (function () {
       }
       self.draw();
     });
-    window.addEventListener('mouseup', self._winUp = function () {
+    window.addEventListener('mouseup', self._winUp = function (e) {
       var d = self.drag;
       if (!d) return;
       self.drag = null;
+      if (d.mode === 'anchor') {
+        var p = pos(e);
+        d.cx = Math.max(self.box.x0, Math.min(self.box.x1, p[0])); d.cy = Math.max(self.box.y0, Math.min(self.box.y1, p[1]));
+        if (Math.abs(p[0] - d.x) + Math.abs(p[1] - d.y) > 3) d.moved = true;
+        if (self.o.onAnchorEnd) { var at = self.dataAt(d.cx, d.cy); self.o.onAnchorEnd(d.anchor, at[0], at[1], d.moved); }
+        self.draw(); return;
+      }
       if (d.mode === 'region' || d.mode === 'mark') {
         self.draw();
         if (d.mode === 'region' && self.o.onRegion) { var a0 = self.ix(Math.min(d.x, d.cx)), a1 = self.ix(Math.max(d.x, d.cx)); self.o.onRegion(d.moved ? a0 : self.ix(d.x), d.moved ? a1 : self.ix(d.x)); }
@@ -304,6 +318,12 @@ RV.Plot2D = (function () {
       }
     });
     cv.addEventListener('dblclick', function () { self.hidden.clear(); self.autoscale(); });
+    window.addEventListener('keydown', self._winKey = function (e) {
+      if (e.key !== 'Escape' || !self.drag || self.drag.mode !== 'anchor') return;
+      var d = self.drag; self.drag = null;
+      if (self.o.onAnchorEnd) self.o.onAnchorEnd(d.anchor, 0, 0, false);
+      self.draw(); e.preventDefault();
+    });
     cv.addEventListener('wheel', function (e) {
       if (!self.view) return;
       var p = pos(e);
@@ -377,6 +397,12 @@ RV.Plot2D = (function () {
     }
     c.stroke(); c.setLineDash([]); c.globalAlpha = 1;
   };
+  P._vline = function (c, s) {
+    c.strokeStyle = s.color; c.lineWidth = (s.width || 1.5) * this._T.ls;
+    c.setLineDash(s.dash || []); c.beginPath();
+    for (var i=0;i<s.x.length;i++) { var x=this.px(s.x[i]); c.moveTo(x,this.box.y0); c.lineTo(x,this.box.y1); }
+    c.stroke(); c.setLineDash([]);
+  };
   P._markers = function (c, s) {
     var T = this._T, sz = (s.size || 3.2) * T.ms, h = sz / 2, i, p, x0 = this.view.x0, x1 = this.view.x1;
     c.fillStyle = s.color; c.globalAlpha = s.alpha != null ? s.alpha : 1;
@@ -417,6 +443,7 @@ RV.Plot2D = (function () {
   P.destroy = function () {
     if (this._winMove) window.removeEventListener('mousemove', this._winMove);
     if (this._winUp) window.removeEventListener('mouseup', this._winUp);
+    if (this._winKey) window.removeEventListener('keydown', this._winKey);
     if (this.ro) this.ro.disconnect();
   };
   return Plot2D;

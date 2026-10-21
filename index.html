@@ -47,14 +47,14 @@
         <button type="button" data-yscale="lin" aria-pressed="true" title="Linear intensity">Linear</button><button type="button" data-yscale="sqrt" aria-pressed="false" title="Square-root intensity: weak peaks next to strong ones">√I</button><button type="button" data-yscale="log" aria-pressed="false" title="Logarithmic intensity">log I</button>
       </div>
       <span class="tool-sep" aria-hidden="true"></span>
-      <label class="chk" title="Background of each dataset, dashed; the anchors of a spline background as open squares"><input type="checkbox" id="show-bkg"> Background</label>
+      <label class="chk" title="Background of each dataset, dashed. Spline anchors: filled magenta squares are refinable; hollow grey squares are fixed."><input type="checkbox" id="show-bkg"> Background</label>
       <label class="chk" title="The pattern of each phase on top of the background, in the colour of the phase"><input type="checkbox" id="show-phases"> Phases</label>
       <label class="chk" title="One row of reflection ticks per phase, at the bottom of the plot"><input type="checkbox" id="show-ticks"> Reflections</label>
       <label class="chk" title="Subtract the calculated background from all plotted observations and curves. Display only; fits retain the original observations. Linear scale keeps negative intensities visible."><input type="checkbox" id="no-background"> No backgrnd</label>
       <span class="tool-sep" aria-hidden="true"></span>
       <button type="button" data-plot-action="auto">Autoscale</button>
       <button type="button" data-plot-action="png">Save PNG</button>
-      <span class="phint" title="A thin box zooms one axis only; Alt + wheel zooms the intensity. The anchors and regions go to the first selected dataset.">Drag to zoom, shift-drag to pan, double-click resets. Ctrl+click: background anchor; Ctrl+Shift+drag: excluded region.</span>
+      <span class="phint" title="Right-drag a background anchor to move it; right-drag elsewhere or Shift-drag pans. Ctrl+click places an anchor at the cursor or removes an anchor under it. Ctrl+Shift+drag selects an excluded region. Alt + wheel zooms intensity.">Drag: zoom; Shift-drag: pan; double-click: reset. Ctrl+click: anchor; right-drag anchor: move; Ctrl+Shift+drag: exclusion.</span>
       <span class="note" id="plot-note"></span>
     </div>
     <div class="pane plot-pane" id="pane-pattern" role="tabpanel" aria-labelledby="tab-pattern"><div class="plot-host" id="pat-host"></div><div class="plot-host res" id="diff-host"></div></div>
@@ -138,12 +138,13 @@
             <div class="fit-groups" role="group" aria-label="Refinement parameter groups">
               <label><input type="checkbox" data-fit-group="scale"><span id="fit-background-label">Background</span></label>
               <label><input type="checkbox" data-fit-group="cell">Zero / lattice</label>
-              <label><input type="checkbox" data-fit-group="profile">Sample / peak shape</label>
+              <label title="Refine sample size and strain, or effective peak-shape parameters for legacy profiles"><input type="checkbox" data-fit-group="profile">Sample</label>
+              <label title="Refine instrumental resolution coefficients separately from sample broadening"><input type="checkbox" data-fit-group="resolution">Resolution</label>
               <label data-rietveld-only><input type="checkbox" data-fit-group="atoms">Atomic positions</label>
               <label data-rietveld-only title="Isotropic displacement parameter B = 8π² Uiso"><input type="checkbox" data-fit-group="adp">B (Å²; Uiso × 8π²)</label>
               <label data-rietveld-only><input type="checkbox" data-fit-group="occupancy">Fractional occupancies</label>
             </div>
-            <p class="hint">Each checkbox changes only its group in the selected datasets. A dash means some parameters are ticked. Set individual parameters, preferred orientation and instrument calibration in Parameters. Click Fit selected datasets above or press F9 to refine the selected datasets.</p>
+            <p class="hint">Each checkbox changes only its group in the selected datasets. Sample selects phase broadening; Resolution selects instrument broadening. A dash means some parameters are ticked. Set individual values and preferred orientation in Parameters. Click Fit selected datasets above or press F9 to refine the selected datasets.</p>
           </div>
         </section>
 
@@ -199,7 +200,7 @@
           <li>File, read powder patterns from the Datasets tab, or drop them on the window (Bruker, PANalytical, Rigaku, Philips, GSAS, CIF, two-column ASCII). New datasets appear at the top of the list. Set the wavelength, the polarisation and the fitted range in Instrument (Datasets tab), the background in Background, the regions to leave out in Exclude.</li>
           <li>Read a structure CIF for each phase, or make a new phase from its space group and cell: without atoms it is fitted by Le Bail or WPPF.</li>
           <li>In Datasets, use <b>Phases…</b> (or <b>Refine → Phases of the datasets…</b>) to define which phases each dataset contains.</li>
-          <li>Tick what to refine in Parameters, or use the group checkboxes in Solve: background/scales, zero/lattice, peak shape; Rietveld also offers positions, B and occupancies. Press Fit (F9). Le Bail or WPPF first, to settle the cell and the peak shape, is the usual start. Global fits the selected patterns together: select A and C to refine what they share with those two only.</li>
+          <li>Tick what to refine in Parameters, or use the group checkboxes in Solve: background/scales, zero/lattice, Sample and Resolution; Rietveld also offers positions, B and occupancies. Sample selects phase broadening; Resolution selects instrument broadening independently. Press Fit (F9). Le Bail or WPPF first, to settle the cell and the peak shape, is the usual start. Global fits the selected patterns together: select A and C to refine what they share with those two only.</li>
           <li>With a WPPF fit done, open Solve → WPPF: test the space group, solve the structure, export the atoms to the phase, switch to Rietveld and fit again.</li>
           <li>Solve includes the results of the active calculation: R factors, weight fractions, atoms, reflections and extracted intensities; File saves them, the calculated patterns and the whole project; Report writes a PDF.</li>
         </ol>
@@ -208,7 +209,7 @@
         <h2>Mouse and keys</h2>
         <table class="grid">
           <tr><td>Plots</td><td>drag to zoom, shift-drag or right-drag to pan, wheel zooms 2θ about the cursor (Alt: intensity), double-click to autoscale; the difference plot follows</td></tr>
-          <tr><td>Background, regions</td><td>Ctrl+click on the pattern adds a background anchor (on an anchor: removes it) and makes the background a spline; Ctrl+Shift+drag marks an excluded region, Ctrl+Shift+click in one removes it. They go to the first selected dataset.</td></tr>
+          <tr><td>Background, regions</td><td>Ctrl+click places a background anchor at both cursor coordinates (on an anchor: removes it) and makes the background a spline. Right-drag an anchor to move it; Escape cancels the move. Filled magenta anchors are refinable; hollow grey anchors are fixed. A yellow vertical line marks the anchor being edited in Parameters. Ctrl+Shift+drag marks an excluded region; Ctrl+Shift+click in one removes it. Placement and exclusions use the first selected dataset; dragging edits the anchor under the cursor.</td></tr>
           <tr><td>Parameter</td><td>mouse wheel or arrow keys change the value; Shift for larger steps, Alt for smaller ones</td></tr>
           <tr><td>Parameters</td><td>← → next to the dataset name show the previous or next dataset; a group header folds the group, its box ticks the whole group; in Global mode a padlock shares the parameter (closed) or not (open), right-click on it for the datasets that share it</td></tr>
           <tr><td>Phases list</td><td>click or use ↑ ↓ to select the active phase; double-click or press Enter to open it in the Phases tab. Assign phases to datasets with Datasets → Phases… or Refine → Phases of the datasets…</td></tr>
@@ -314,6 +315,7 @@
 <!-- the fit (also run by js/rietveld_worker.js) and the program -->
 <script src="js/atomic_constraints.js"></script>
 <script src="js/rietveld_core.js"></script>
+<script src="js/pt_gpu.js"></script>
 <script src="js/rietveld/rv_ui.js"></script>
 <script src="js/rietveld/rv_plot2d.js"></script>
 <script src="js/rietveld/rv_state.js"></script>

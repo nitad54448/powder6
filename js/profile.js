@@ -839,8 +839,10 @@ function getPseudoVoigtArea(tth_peak, hkl, params) {
 //  kernel as well: a second implementation that returned f32 into an f64
 //  pipeline made every refined parameter depend on whether WebGPU happened to
 //  initialise, and it could only be kept honest by a test that cannot run in
-//  a browser. WebGPU is retained where the result is not a refined number
-//  with an uncertainty attached: charge flipping and the Wyckoff swarm.
+//  a browser. Preview, LM and reported uncertainties still use this f64
+//  implementation. pt_gpu.js now has an f32 profile for exploratory PT only:
+//  it validates trial costs against this model, rechecks candidates in f64,
+//  and returns to this implementation for the final LM fit and covariance.
 //
 //  The decomposition into "contributions" is what makes the analytic WPPF
 //  Jacobian possible: a contribution already carries the prepared profile and

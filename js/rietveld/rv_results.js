@@ -64,8 +64,9 @@ RV.results = (function () {
   }
   // among the Rietveld phases of the dataset; NaN for the others, and for a phase the dataset does not hold
   function weights(ds) {
+    var atoms = St.atomicValues(ds);
     var parts = S.phases.map(function (ph) {
-      var ct = RV.phasesTab.content(ph, ds.p), s = ph.method === 'rietveld' && St.hasPhase(ds, ph) ? ds.p[ph.key + '.scale'] : NaN;
+      var ct = RV.phasesTab.content(ph, ds.p, atoms), s = ph.method === 'rietveld' && St.hasPhase(ds, ph) ? ds.p[ph.key + '.scale'] : NaN;
       return { ph: ph, ct: ct, smv: s * ct.mass * ct.V };
     });
     if (St.calculationIssue([ds]) || parts.some(function(p){return St.hasPhase(ds,p.ph) && p.ph.method==='rietveld' && (!(p.ct.mass>0) || !(p.ct.V>0) || (p.ct.missing || []).length);})) return parts.map(function (p) { return { ph: p.ph, ct: p.ct, w: NaN }; });
@@ -93,6 +94,8 @@ RV.results = (function () {
     if(Number.isFinite(e) && e>0)return ui.fmt(St.toDisplay(n,v),10)+' ± '+ui.fmt(St.toDisplay(n,e),4);
     return text;
   }
+  // Free-intensity methods display the Rietveld model without assigning their fit uncertainties to it.
+  function atomicModel(ds) { return S.calculation === 'rietveld' ? ds : { p: St.atomicValues(ds) }; }
   function cellSource(ph,c) {
     var free=C.cellParams(ph.sg.system,ph.sg.uniqueAxis);
     if(free.indexOf(c)>=0)return c;
@@ -111,13 +114,14 @@ RV.results = (function () {
      blocks); fill() puts them into every [data-res-part] host of the active layout (WPPF shows some of them twice:
      under charge flipping and under the Wyckoff search). Rietveld adds the 3D structure and the constraints. */
   function atomsHTML(ph, ds) {
+    var atoms = atomicModel(ds);
     return ph.atoms.length ?
         '<div class="table-wrap"><table class="grid compact"><thead><tr><th>Label</th><th>Scatterer</th><th>Site</th><th>x</th><th>y</th><th>z</th><th>Occ.</th><th>B /Å²</th></tr></thead><tbody>' +
         ph.atoms.map(function (at) {
           var pre = ph.key + '.' + at.label + '.';
           return '<tr><td>' + esc(at.label) + '</td><td>' + esc(at.type) + '</td><td>' + esc(at.site.wyck) + ' <code>' + esc(at.site.expr) + '</code></td>' +
-            ['x', 'y', 'z', 'occ', 'B'].map(function (c) { return '<td>' + val(ds, pre + c, c === 'occ' || c === 'B' ? 4 : 6) + '</td>'; }).join('') + '</tr>';
-        }).join('') + '</tbody></table></div>' + (ph.method !== 'rietveld' ? '<p class="hint">' + esc(C.METHOD_LABELS[ph.method]) + ' uses the cell, not the atoms: these are kept, not refined.</p>' : '') : '<p class="hint">No atoms.</p>';
+            ['x', 'y', 'z', 'occ', 'B'].map(function (c) { return '<td>' + val(atoms, pre + c, c === 'occ' || c === 'B' ? 4 : 6) + '</td>'; }).join('') + '</tr>';
+        }).join('') + '</tbody></table></div>' + (ph.method !== 'rietveld' ? '<p class="hint">Rietveld atomic model. Unused by ' + esc(C.METHOD_LABELS[ph.method]) + '; switch to Rietveld to edit or refine these values.</p>' : '') : '<p class="hint">No atoms.</p>';
   }
   function reflHTML(ph, ds) {
       var pi = S.phases.indexOf(ph), refl = reflOf(ds, pi).filter(function (r) { return r.inRange; }), rv = ph.method === 'rietveld';
@@ -153,7 +157,7 @@ RV.results = (function () {
         var s = statsOf(d);
         if (!s) return '<tr><td>' + esc(d.name) + '</td><td colspan="7" class="hint">' + esc(d.calcErr || 'no calculated pattern') + '</td></tr>';
         return '<tr><td>' + esc(d.name) + '</td><td>' + s.n + '</td><td>' + (s.fitted ? s.nVar : '—') + '</td><td>' + pct(s.Rp) + '</td><td>' + pct(s.Rwp) + '</td><td>' + pct(s.Rexp) + '</td>' +
-          '<td>' + ui.fmt(s.fitted ? s.chi2red : s.gof, 4) + '</td><td>' + (s.fitted ? esc((s.effectiveAlgorithm || 'lm') + ', ' + (s.global ? 'global, ' : '') + s.iter + ' it, ' + s.msg) : '<span class="why">'+(s.fitError ? 'Last fit failed: '+esc(s.fitError)+'. ' : '')+'Current values, not fitted</span>') + '</td></tr>';
+          '<td>' + ui.fmt(s.fitted ? s.chi2red : s.gof, 4) + '</td><td>' + (s.fitted ? esc((s.effectiveAlgorithm || 'lm') + (s.pt ? ' (PT: ' + (s.pt.backend || 'cpu') + ')' : '') + ', ' + (s.global ? 'global, ' : '') + s.iter + ' it, ' + s.msg) + (s.pt && s.pt.fallbackReason ? '<span class="why" title="'+esc(s.pt.fallbackReason)+'"> · CPU fallback</span>' : '') : '<span class="why">'+(s.fitError ? 'Last fit failed: '+esc(s.fitError)+'. ' : '')+'Current values, not fitted</span>') + '</td></tr>';
       }).join('') + '</tbody></table></div></section>';
     if (S.phases.length) {
       h += '<section class="block"><h2>Phases</h2><div class="table-wrap"><table class="grid compact"><thead><tr><th>Dataset</th><th>Phase</th><th>Method</th><th>Scale</th><th title="Mass fraction, not mole fraction. Hill and Howard: S·Mcell·V over the sum for all Rietveld phases">Mass (wt%)</th>' +
@@ -236,7 +240,7 @@ RV.results = (function () {
     var L = ['# ' + C.METHOD_LABELS[S.calculation] + ' calculation, ' + RV.version, '# ' + ui.stamp(), '# Phases: ' + S.phases.map(function (p) { return p.name + ' (' + St.sgText(p.sg) + ')'; }).join(', '), ''];
     if (!skipGlobal) { var overall = globalReportText(list); if (overall) L.push(overall); var cons = constraintsText(list); if (cons) L.push(cons); }
     list.forEach(function (d) {
-      var s = statsOf(d), i = d.inst, W = weights(d);
+      var s = statsOf(d), i = d.inst, W = weights(d), atoms = atomicModel(d);
       L.push('## Dataset ' + d.name, 'method\t'+C.METHOD_LABELS[S.calculation], 'uncertainties\tValues with available standard uncertainties are written value ± esd. Symmetry-equivalent cell lengths share their esd; fixed parameters have none.');
       L.push('instrument resolution (dataset)\t' + St.instrumentParamsFor(d).map(function(p){return p[0]+' = '+reportVal(d,'inst.'+p[0],6);}).join('\t'));
       L.push('width units\tU,V,W: Gaussian variance (cdeg²); X,Y,Z: Lorentzian width (cdeg); size: nm; strain: ppm');
@@ -246,7 +250,7 @@ RV.results = (function () {
       if (s) {
         L.push('Rp %\t' + pct(s.Rp) + '\nRwp %\t' + pct(s.Rwp) + '\nRexp %\t' + pct(s.Rexp) + '\nchi2\t' + ui.fmt(s.fitted ? s.chi2red : s.gof, 6));
         if (s.startingModel)L.push('phase starting model\t'+s.startingModel.name+' (topmost selected dataset at fit time)');
-        if (s.fitted) L.push('algorithm\t' + (s.effectiveAlgorithm || 'lm') + (s.pt ? '\nPT replicas\t' + s.pt.chains + '\nPT sweeps\t' + s.pt.sweeps + '\nPT seed\t' + s.pt.seed : ''));
+        if (s.fitted) L.push('algorithm\t' + (s.effectiveAlgorithm || 'lm') + (s.pt ? '\nPT backend\t' + (s.pt.backend || 'cpu') + '\nPT replicas\t' + s.pt.chains + '\nPT sweeps\t' + s.pt.sweeps + '\nPT seed\t' + s.pt.seed + (s.pt.fallbackReason ? '\nPT CPU fallback\t' + s.pt.fallbackReason : '') : ''));
         (s.constraintWarnings || []).forEach(function(w){L.push('constraint warning\t'+w);});
         Object.keys(s.uncertaintyIssues || {}).forEach(function(n){L.push('uncertainty warning\t'+n+': '+s.uncertaintyIssues[n]);});
         L.push('fit\t' + (s.fitted ? (s.global ? 'global, ' : '') + s.iter + ' iterations, ' + s.msg : s.fitError ? 'last fit failed: '+s.fitError+'; current values' : 'not fitted (current values)'));
@@ -270,10 +274,10 @@ RV.results = (function () {
         if(C.usesSeparatedProfile(ph)){var b=C.broadeningConfig(ph.broadening);L.push('sample model\tsize: '+b.size+'; axis '+b.sizeAxis.join(' ')+'\tstrain: '+b.strain+'; axis '+b.strainAxis.join(' '));}
         L.push((C.usesSeparatedProfile(ph)?'sample broadening\t':'legacy effective profile\t') + St.profileNames(ph).map(function (n) { return n + ' = ' + reportVal(d, ph.key + '.' + n, 5); }).join('\t'));
         if (ph.method !== 'rietveld') { var nr = reflOf(d, pi).filter(function (q) { return q.inRange; }).length; L.push('intensities\t' + nr + ' reflections in the fitted range (Save reflections writes them, with their uncertainties)'); }
-        if (ph.method === 'rietveld' || ph.atoms.length) L.push(line(['atom', 'type', 'site', 'x', 'y', 'z', 'occ', 'B']) + (ph.method === 'rietveld' ? '' : '\t(kept, not refined)'));
+        if (ph.method === 'rietveld' || ph.atoms.length) L.push(line(['atom', 'type', 'site', 'x', 'y', 'z', 'occ', 'B']) + (ph.method === 'rietveld' ? '' : '\t(Rietveld atomic model; unused by '+C.METHOD_LABELS[ph.method]+')'));
         ph.atoms.forEach(function (at) {
           var pre = ph.key + '.' + at.label + '.';
-          L.push(line([at.label, at.type, at.site.wyck + ' ' + at.site.expr.replace(/ /g, '')].concat(['x', 'y', 'z', 'occ', 'B'].map(function (c) { return reportVal(d, pre + c, c === 'occ' || c === 'B' ? 4 : 6); }))));
+          L.push(line([at.label, at.type, at.site.wyck + ' ' + at.site.expr.replace(/ /g, '')].concat(['x', 'y', 'z', 'occ', 'B'].map(function (c) { return reportVal(atoms, pre + c, c === 'occ' || c === 'B' ? 4 : 6); }))));
         });
         var rows=reflectionRows(d,pi);
         L.push('', '### Reflections of '+ph.name+' in '+d.name+' · '+C.METHOD_LABELS[ph.method],
@@ -358,7 +362,7 @@ RV.results = (function () {
   function cifText(list,powder,onlyPhaseKey) {
     var L=['#\\#CIF_1.1','# Powder 6 calculation export; numerical values belong to each dataset and active method.'];
     list.forEach(function(d,di){
-      var ids=[],phaseNames=[];
+      var ids=[],phaseNames=[],atoms=atomicModel(d);
       St.phasesIn(d).filter(function(ph){return !onlyPhaseKey || ph.key===onlyPhaseKey;}).forEach(function(ph){
         var key='d'+(di+1)+'_'+ph.key,cell=St.cellOf(ph,d.p),pre=ph.key+'.',es=d.esd||{},issues=d.stats && d.stats.uncertaintyIssues || {};
         ids.push(key);phaseNames.push(ph.name);
@@ -368,8 +372,9 @@ RV.results = (function () {
         L.push('_cell_volume '+cifNumber(cell && C.cellVolume ? C.cellVolume(cell) : contentVolume(cell)),'loop_','_space_group_symop_id','_space_group_symop_operation_xyz');
         ph.ops.forEach(function(op,i){L.push((i+1)+' '+cifQuote(opXYZ(op)));});
         if(ph.atoms.length){
+          if(S.calculation!=='rietveld')L.push('# Rietveld atomic model; unused by '+C.METHOD_LABELS[S.calculation]+'.');
           L.push('loop_','_atom_site_label','_atom_site_type_symbol','_atom_site_fract_x','_atom_site_fract_y','_atom_site_fract_z','_atom_site_occupancy','_atom_site_B_iso_or_equiv');
-          ph.atoms.forEach(function(at){var k=pre+at.label+'.';L.push([cifQuote(at.label),cifQuote(at.type)].concat(['x','y','z','occ','B'].map(function(c){return cifNumber(d.p[k+c],issues[k+c]?NaN:es[k+c]);})).join(' '));});
+          ph.atoms.forEach(function(at){var k=pre+at.label+'.';L.push([cifQuote(at.label),cifQuote(at.type)].concat(['x','y','z','occ','B'].map(function(c){return cifNumber(atoms.p[k+c],S.calculation==='rietveld' && !issues[k+c]?es[k+c]:NaN);})).join(' '));});
         }else L.push('# Atomless phase: no atomic coordinates have been invented.');
         if(ph.method==='rietveld' && S.calculation==='rietveld' && ph.constraints && ph.constraints.length)AtomicConstraints.normalizeAll(ph.constraints).forEach(function(c){L.push('# Atomic constraint ('+AtomicConstraints.label(c.kind)+'): '+AtomicConstraints.text(c));});
         Object.keys(issues).filter(function(n){return n.indexOf(pre)===0;}).forEach(function(n){L.push('# Uncertainty unavailable for '+n+': '+issues[n]);});

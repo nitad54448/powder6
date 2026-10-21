@@ -15,10 +15,11 @@ RV.phasesTab = (function () {
   function fmtCount(n) { var r = Math.round(n); return Math.abs(n - r) < 1e-6 ? (r === 1 ? '' : String(r)) : String(+n.toFixed(3)); }
 
   // cell volume, content, mass and density of a phase with the values v
-  function content(ph, v) {
+  function content(ph, v, atoms) {
+    atoms = atoms || v;
     var cell = St.cellOf(ph, v), counts = {}, order = [], mass = 0, missing = [];
     ph.atoms.forEach(function (at) {
-      var pre = ph.key + '.' + at.label + '.', n = (Number.isFinite(v[pre + 'occ']) ? v[pre + 'occ'] : 1) * at.site.mult;
+      var pre = ph.key + '.' + at.label + '.', n = (Number.isFinite(atoms[pre + 'occ']) ? atoms[pre + 'occ'] : 1) * at.site.mult;
       var el = St.elementOf(at.type) || at.type, w = St.atomicWeight(el);
       if (!(el in counts)) { counts[el] = 0; order.push(el); }
       counts[el] += n;
@@ -103,7 +104,7 @@ RV.phasesTab = (function () {
         }).join('') + '</div><dl class="cell-info" id="ph-cell-info"></dl></section>' +
       '</div>' +
       '<section class="pblock atoms-block"><h2>Atoms <span class="sub" id="ph-atoms-n"></span></h2>' +
-        '<p class="hint">Atomic model of the selected calculation dataset (or the starting model when no dataset holds the selection). Le Bail and WPPF use the cell; Rietveld uses the atoms.</p>' +
+        '<p class="hint" id="ph-atom-src"></p>' +
         '<div class="table-wrap"><table class="grid atoms"><thead><tr><th>Label</th><th>Scatterer</th><th>x</th><th>y</th><th>z</th><th>Occ.</th><th>B /Å²</th>' +
         '<th title="Wyckoff position (multiplicity and letter) and the coordinates it allows">Site</th><th></th></tr></thead><tbody id="ph-atoms">' +
         (ph.atoms.map(atomRow).join('') || '<tr><td colspan="9" class="hint">No atoms: Le Bail and WPPF use the cell and space group. Add atoms or import a CIF for Rietveld.</td></tr>') +
@@ -124,6 +125,7 @@ RV.phasesTab = (function () {
     var ph = St.currentPhase();
     if (!ph || !$('#ph-name')) return;
     var s = src(), e = srcEsd(), act = document.activeElement, ds = srcDs(ph), list = St.selected(), n = list.filter(function (d) { return St.hasPhase(d, ph); }).length, k = ph.key + '.';
+    var atoms = ds ? St.atomicValues(ds) : s, inactive = !!ds && S.calculation !== 'rietveld';
     function put(el, v, dec, esd) {
       if (!el) return;
       if (el !== act) { el.value = fmtNum(v, dec); el.classList.remove('invalid'); }
@@ -132,7 +134,8 @@ RV.phasesTab = (function () {
       el.title = esd > 0 ? (el.dataset.tip ? el.dataset.tip + '. ' : '') + 'Standard uncertainty ' + ui.fmt(esd, 2) : el.dataset.tip;
     }
     var held = St.holdersOf(ph), others = list.length - n;
-    $('#phase-src').textContent = ds ? C.METHOD_LABELS[S.calculation] + ' · ' + ds.name + ' · Same numerical values as Parameters. Edits affect this dataset; phase definitions are shared.' : 'Starting model · Select a dataset holding this phase to edit or inspect its calculation values.';
+    $('#phase-src').textContent = ds ? C.METHOD_LABELS[S.calculation] + ' · ' + ds.name + ' · Cell and profile match Parameters. Edits affect this dataset; phase definitions are shared.' : 'Starting model · Select a dataset holding this phase to edit or inspect its calculation values.';
+    $('#ph-atom-src').textContent = inactive ? 'Rietveld atomic model of '+ds.name+' · Unused by '+C.METHOD_LABELS[S.calculation]+'. Switch to Rietveld to edit or refine atomic values.' : ds ? 'Rietveld atomic model of '+ds.name+'. Atomic values are used and refined in Rietveld.' : 'Atomic starting model. Rietveld uses the atoms; Le Bail and WPPF use the cell and space group.';
     if (act !== $('#ph-name')) $('#ph-name').value = ph.name;
     if (act !== $('#ph-color')) $('#ph-color').value = RV.plots.phaseColor(S.phases.indexOf(ph));
     if (act !== $('#ph-sg')) { $('#ph-sg').value = ph.sg.symbol; $('#ph-sg').classList.remove('invalid'); }
@@ -140,7 +143,7 @@ RV.phasesTab = (function () {
       (ph.sg.setting ? ', setting ' + ph.sg.setting : '') + ', ' + ph.ops.length + ' operators' + (ph.sg.hall ? ', Hall ' + ph.sg.hall : '');
     var cell = St.cellOf(ph, s);
     CELL.forEach(function (c) { var el = $('#ph-c-' + c); put(el, cell ? cell[c] : s[k + c], DEC.cell, e[k + c]); });
-    var ct = content(ph, s);
+    var ct = content(ph, s, atoms);
     $('#ph-cell-info').innerHTML = '<dt>Volume</dt><dd>' + (Number.isFinite(ct.V) ? ct.V.toFixed(3) + ' Å³' : '—') + '</dd>' +
       '<dt>Cell content</dt><dd>' + (esc(ct.formula) || '—') + '</dd>' +
       '<dt>Cell mass</dt><dd>' + (ct.mass > 0 ? ct.mass.toFixed(2) + ' g/mol' : '—') + '</dd>' +
@@ -154,12 +157,12 @@ RV.phasesTab = (function () {
       ['x', 'y', 'z'].forEach(function (c, i) {
         var el = tr.querySelector('[data-at="' + c + '"]'), role = St.coordRole(at.site, i);
         el.classList.toggle('linked', role !== 'free');
-        el.dataset.tip = role === 'free' ? '' : (role === 'fixed' ? c + ' is fixed' : c + ' follows the free coordinates') + ' by site ' + at.site.wyck + ' (' + at.site.expr + '). ' + (ds ? 'This is a shared site definition; deselect datasets to move the atom off the site in the starting model.' : 'Type a value to move the atom off this site.');
-        put(el, s[pre + c], DEC[c], e[pre + c]);
-        if(ds && ds.stats && ds.stats.uncertaintyIssues && ds.stats.uncertaintyIssues[pre+c])el.title=ds.stats.uncertaintyIssues[pre+c];
+        el.readOnly = inactive;
+        el.dataset.tip = inactive ? 'Rietveld atomic value; unused by '+C.METHOD_LABELS[S.calculation]+'.' : role === 'free' ? '' : (role === 'fixed' ? c + ' is fixed' : c + ' follows the free coordinates') + ' by site ' + at.site.wyck + ' (' + at.site.expr + '). ' + (ds ? 'This is a shared site definition; deselect datasets to move the atom off the site in the starting model.' : 'Type a value to move the atom off this site.');
+        put(el, atoms[pre + c], DEC[c], inactive ? null : e[pre + c]);
+        if(!inactive && ds && ds.stats && ds.stats.uncertaintyIssues && ds.stats.uncertaintyIssues[pre+c])el.title=ds.stats.uncertaintyIssues[pre+c];
       });
-      put(tr.querySelector('[data-at="occ"]'), s[pre + 'occ'], DEC.occ, e[pre + 'occ']);
-      put(tr.querySelector('[data-at="B"]'), s[pre + 'B'], DEC.B, e[pre + 'B']);
+      ['occ','B'].forEach(function(comp){var el=tr.querySelector('[data-at="'+comp+'"]');el.readOnly=inactive;el.dataset.tip=inactive?'Rietveld atomic value; unused by '+C.METHOD_LABELS[S.calculation]+'.':'';put(el,atoms[pre+comp],DEC[comp],inactive?null:e[pre+comp]);});
       var ty = tr.querySelector('[data-at="type"]'), f = St.scatterer(at.type);
       if (ty !== act) ty.value = at.type;
       var miss = S.tables && (rad === 'neutron' ? !f.nlabel : !f.xray);
@@ -266,6 +269,7 @@ RV.phasesTab = (function () {
       var fallback=S.tables && sc.xray && /\d[+-]$|[+-]\d+$/.test(raw) && sc.xlabel===St.elementOf(raw);
       ui.toast(at.label + ' requests ' + raw + (S.tables && !sc.xray ? ', which is not in the X-ray table' : fallback ? '; the loaded table has no ionic entry, so X-rays use neutral '+sc.xlabel : sc.xray ? '; X-rays use '+sc.xlabel : '') + '.', S.tables && (!sc.xray || fallback) ? 'warn' : 'info');
     } else {
+      if (srcDs() && S.calculation !== 'rietveld') { ui.toast('Switch to Rietveld to edit atomic values. They are unused by '+C.METHOD_LABELS[S.calculation]+'.','info'); values(); return; }
       var v = ui.parseNum(raw);
       if (!Number.isFinite(v)) { bad(el, 'Not a number: ' + raw + '.'); return; }
       if ('xyz'.indexOf(f) >= 0) { coordField(ph, at, f, v); return; }

@@ -391,8 +391,8 @@ RV.panels = (function () {
   }
   function bindParams() {
     var host = $('#param-list');
-    host.addEventListener('focusin', function (e) { if (e.target.classList.contains('pv')) editing = e.target.closest('.prow').getAttribute('data-name'); });
-    host.addEventListener('focusout', function (e) { if (e.target.classList.contains('pv')) { commitInput(e.target); editing = null; renderValues(); } });
+    host.addEventListener('focusin', function (e) { if (e.target.classList.contains('pv')) { editing = e.target.closest('.prow').getAttribute('data-name'); RV.bus.emit('paramFocus',{name:editing}); } });
+    host.addEventListener('focusout', function (e) { if (e.target.classList.contains('pv')) { commitInput(e.target); editing = null; renderValues(); RV.bus.emit('paramFocus',null); } });
     host.addEventListener('keydown', function (e) {
       if (!e.target.classList.contains('pv')) return;
       var n = e.target.closest('.prow').getAttribute('data-name');
@@ -521,7 +521,7 @@ RV.panels = (function () {
   function syncAlgorithm() {
     var a = $('#fit-algorithm');
     a.textContent = S.settings.algorithm === 'pt' ? 'PT + LM finish' : 'LM';
-    a.parentNode.title = S.settings.algorithm === 'pt' ? 'Parallel tempering (' + S.settings.ptChains + ' replicas, ' + S.settings.ptSweeps + ' sweeps), then Levenberg–Marquardt' : 'Levenberg–Marquardt';
+    a.parentNode.title = S.settings.algorithm === 'pt' ? 'Parallel tempering (' + S.settings.ptChains + ' replicas, ' + S.settings.ptSweeps + ' sweeps), WebGPU when available, then double-precision Levenberg–Marquardt' : 'Levenberg–Marquardt';
   }
   function initFit() {
     document.querySelectorAll('[data-fitmode]').forEach(function (b) {
@@ -540,11 +540,11 @@ RV.panels = (function () {
   // ================================================================ Settings tab
   var FIELDS = [
     { legend: 'Refinement', fields: [
-      { key: 'algorithm', label: 'Algorithm', type: 'select', options: [['lm', 'LM · Levenberg–Marquardt'], ['pt', 'PT · parallel tempering + LM finish']], hint: 'PT searches across replicas at different temperatures, then LM converges locally and estimates uncertainties. PT usually costs more model evaluations.' },
+      { key: 'algorithm', label: 'Algorithm', type: 'select', options: [['lm', 'LM · Levenberg–Marquardt'], ['pt', 'PT · parallel tempering + LM finish']], hint: 'PT uses WebGPU when available, with automatic CPU fallback. LM then converges in double precision and estimates uncertainties. Results record which PT backend ran.' },
       { key: 'ptSweeps', label: 'PT sweeps', type: 'int', pt: true, hint: '10 to 100000 sweeps; one proposal per replica per sweep.' },
       { key: 'ptChains', label: 'PT replicas', type: 'int', pt: true, hint: '2 to 16 replicas within each fit worker.' },
       { key: 'ptMaxTemp', label: 'PT highest temperature', type: 'num', pt: true, hint: 'Geometric temperature ladder from 1 to this value (greater than 1).' },
-      { key: 'ptSeed', label: 'PT random seed', type: 'int', pt: true, hint: 'Repeat a run with the same seed and starting values for reproducible proposals.' },
+      { key: 'ptSeed', label: 'PT random seed', type: 'int', pt: true, hint: 'Repeat proposals with the same seed, backend and starting values. CPU and GPU searches use different random streams; floating-point behavior can vary between GPUs.' },
       { key: 'maxIter', label: 'Maximum iterations', type: 'int', hint: 'LM iterations per stage, 1 to 10000. Also in Solve. PT sweeps are additional.' },
       { key: 'tol', label: 'Stop when χ² changes less than', type: 'num', hint: 'Relative change, twice in a row.' },
       { key: 'weight', label: 'Weight of each point', type: 'select', options: [['poisson', 'File weights or 1/σ² (counts if no σ supplied)'], ['unit', '1 (no weighting)']] }] },

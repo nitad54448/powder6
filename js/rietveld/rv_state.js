@@ -567,6 +567,32 @@ RV.state = (function () {
     RV.bus.emit('data'); RV.bus.emit('params', {});
   }
 
+  // Move one spline anchor without assigning its height/fit flag to a different
+  // point when the sorted anchor indices change. Saved method banks stay intact.
+  function moveBackgroundAnchor(ds, index, x, y) {
+    if (!ds || ds.inst.bkgType !== 'spline' || !Number.isInteger(index) || index < 0 || index >= ds.inst.bkgX.length ||
+        !Number.isFinite(x) || !Number.isFinite(y) || x < ds.tth[0] || x > ds.tth[ds.tth.length - 1]) return -1;
+    var anchors = ds.inst.bkgX.map(function (a, k) { return { x:k === index ? x : a, y:k === index ? y : ds.p['bga'+k], fit:!!ds.fit['bga'+k], moved:k === index }; });
+    anchors.sort(function (a,b) { return a.x-b.x; });
+    if (anchors.some(function (a,k) { return k && a.x-anchors[k-1].x <= 1e-6; })) return -1;
+    setInstrument([ds], { bkgX:anchors.map(function(a){return a.x;}) });
+    var at = -1;
+    anchors.forEach(function (a,k) { ds.p['bga'+k] = a.y; ds.fit['bga'+k] = a.fit; if(a.moved)at=k; });
+    invalidate(ds); RV.bus.emit('params', {});
+    return at;
+  }
+
+  // Le Bail/WPPF do not own an atomic model. Display the Rietveld bank when
+  // available; new atoms and datasets without a Rietveld bank use their starts.
+  function atomicValues(ds) {
+    var out = {}, bank = ds && S.calculation !== 'rietveld' && ds.calculations && ds.calculations.rietveld;
+    S.phases.forEach(function (ph) { ph.atoms.forEach(function (at) { ['x','y','z','occ','B'].forEach(function (comp) {
+      var name = ph.key+'.'+at.label+'.'+comp;
+      out[name] = bank && Number.isFinite(bank.p[name]) ? bank.p[name] : ds && Number.isFinite(ds.p[name]) ? ds.p[name] : ph.v[name];
+    }); }); });
+    return out;
+  }
+
   // ---------------------------------------------------------------- selection
   function selectIds(ids, keepAnchor) {
     S.sel = new Set(ids); S.focus = null;
@@ -1235,7 +1261,7 @@ RV.state = (function () {
     phaseByKey: phaseByKey, cellOf: cellOf, siteOf: siteOf, coordRole: coordRole, syncSites: syncSites, syncTemplate: syncTemplate,
     isSizeParam: isSizeParam, toDisplay: toDisplay, fromDisplay: fromDisplay, instrumentParamsFor: instrumentParamsFor, dsNames: dsNames, phaseNames: phaseNames, profileNames: profileNames, namesFor: namesFor, isVariable: isVariable, remap: remap, remapAll: remapAll,
     shareable: shareable, isShared: isShared, setShared: setShared, isApart: isApart, setApart: setApart, shareOf: shareOf, limitsOf: limitsOf, setLimit: setLimit, clearLimit: clearLimit,
-    makeDataset: makeDataset, addDatasets: addDatasets, insertDatasets: insertDatasets, byId: byId, removeDatasets: removeDatasets, rename: rename, move: move, setInstrument: setInstrument,
+    makeDataset: makeDataset, addDatasets: addDatasets, insertDatasets: insertDatasets, byId: byId, removeDatasets: removeDatasets, rename: rename, move: move, setInstrument: setInstrument, moveBackgroundAnchor:moveBackgroundAnchor, atomicValues:atomicValues,
     selectIds: selectIds, toggle: toggle, setFocus: setFocus, range: range, selectAll: selectAll, selected: selected, first: first,
     currentPhase: currentPhase, selectPhase: selectPhase, makePhase: makePhase, addAtomTo: addAtomTo, addPhase: addPhase, removePhase: removePhase,
     hasPhase: hasPhase, phasesIn: phasesIn, holdersOf: holdersOf, setPhaseIn: setPhaseIn,
