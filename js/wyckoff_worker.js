@@ -17,7 +17,7 @@
 //  there, because importing it would put the coupling straight back.
 //
 //  Messages in:   'wyckoff-search', 'cancel-wyckoff'
-//  Messages out:  'wy-start', 'wy-progress', 'wy-log', 'wy-info', 'wy-error',
+//  Messages out:  'wy-start', 'wy-progress', 'wy-partial', 'wy-log', 'wy-info', 'wy-error',
 //                 'wy-structure'  -- powder5.html listens for these names, not
 //                 the old 'cf-*' ones.
 // ---------------------------------------------------------------------------
@@ -1596,6 +1596,14 @@ if (constraintBreak) {
         sol.vpa = Number.isFinite(zPlan[idx].vpa) ? zPlan[idx].vpa : null;
         sol.nAtoms = zPlan[idx].nAtoms ?? null;
         solutions.push(sol);
+        // Sent as soon as it exists: if the run is then stopped hard (the
+        // worker terminated) or fails on a later Z, the host still holds it.
+        postMessage({ type: 'wy-partial', solution: {
+            z: sol.z, rho: sol.rho, vpa: sol.vpa, nAtoms: sol.nAtoms,
+            assignment: sol.assignment, searchCC: sol.searchCC, searchScore: sol.searchScore,
+            refinement: sol.refinement, sites: sol.sites, searchSites: sol.searchSites,
+            ranked: sol.ranked, obsPerParam: sol.obsPerParam, stopped: !!sol.stopped,
+            distanceConstraints: job.distanceConstraints || [] } });
 
         const rTxt = (sol.refinement && Number.isFinite(sol.refinement.R))
             ? `wR(F^2) = ${(sol.refinement.R * 100).toFixed(2)}%`
@@ -1709,6 +1717,7 @@ if (constraintBreak) {
             searchCC: s.searchCC, searchScore: s.searchScore,
             refinement: s.refinement,
             sites: s.sites, searchSites: s.searchSites,
+            ranked: s.ranked, thin: s.thin, obsPerParam: s.obsPerParam,
             stopped: !!s.stopped,
             distanceConstraints: job.distanceConstraints || []
         })),

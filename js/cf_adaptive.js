@@ -35,8 +35,9 @@
     result.weakHighAngleData=reliable && shells[2].sigmaCount>=3 && shells[2].medianISigma<2;
     return {quality:result,rows:rows};
   }
+  var MIN_STARTS=6,MAX_STARTS=128;
   function plan(assessment,starts,haveSymmetry){
-    if(!Number.isSafeInteger(starts) || starts<6 || starts>12)throw Error('Adaptive CF needs 6–12 random starts so each setting is tried with independent seeds.');
+    if(!Number.isSafeInteger(starts) || starts<MIN_STARTS || starts>MAX_STARTS)throw Error('Adaptive CF needs '+MIN_STARTS+'–'+MAX_STARTS+' random starts so each setting is tried with independent seeds.');
     var q=assessment.quality,reasons=[];
     if(q.lowSignal)reasons.push('low median I/σ');if(q.weakHighAngleData)reasons.push('weak high-angle shell');if(q.limitedResolution)reasons.push('limited measured resolution');if(q.heavyOverlap)reasons.push('heavy profile overlap');if(!q.uncertaintiesReliable)reasons.push('uncertainties unavailable or conditional');
     var difficult=reasons.length>0;
@@ -46,6 +47,6 @@
     var trials=[];for(var i=0;i<starts;i++){var setting=settings[i%settings.length];setting.starts++;trials.push(Object.assign({},setting,{seedSlot:Math.floor(i/settings.length)}));}
     return {version:1,quality:q,settings:settings,trials:trials,grouping:q.grouping,difficult:difficult,reasons:reasons};
   }
-  var api={median:median,overlap:overlap,assess:assess,plan:plan};root.CFAdaptive=api;
+  var api={median:median,overlap:overlap,assess:assess,plan:plan,MIN_STARTS:MIN_STARTS,MAX_STARTS:MAX_STARTS};root.CFAdaptive=api;
   if(typeof module!=='undefined' && module.exports)module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

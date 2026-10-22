@@ -95,6 +95,7 @@ RV.layout=(function(){
     picker.value=structureRuns[structure] || 'latest';
   }
   function structureResult(k,id){if(!['sgt','cf','wy'].includes(k))return;if(arguments.length>1)structureRuns[k]=id==='latest'?null:id;structure=k;RV.app.showTab('structure-results');syncStructure();if(RV.solve)RV.solve.renderSelectedSolution(k,structureRuns[k]);}
+  function latestStructure(k){structureRuns[k]=null;syncStructure();}
   function structureRecord(){var list=structure==='sgt'?[]:records('wppf',structure);return list.find(function(r){return r.id===structureRuns[structure];}) || list[0] || null;}
   function init(){
     $('#result-tabs').addEventListener('click',function(e){var b=e.target.closest('[data-result-method]');if(b)showResult(b.dataset.resultMethod);});
@@ -108,5 +109,5 @@ RV.layout=(function(){
     swap(!!St.load('panelsSwapped'));
   }
   function restore(){method=St.load('resultMethod');if(!RVCore.METHODS.includes(method))method=S.calculation;RV.app.showTab(commands.includes(St.load('commandTab'))?St.load('commandTab'):'datasets');RV.app.showTab(['pattern','solve','structure-results','log','history','about'].includes(St.load('resultTab'))?St.load('resultTab'):'pattern');syncRunPicker();}
-  return {prepare:prepare,init:init,restore:restore,showTab:showTab,showResult:showResult,commandTab:function(){return command;},resultTab:function(){return result;},resultMethod:function(){return method;},record:record,selectRun:selectRun,syncRunPicker:syncRunPicker,syncResultLayouts:syncResultLayouts,swap:swap,splitStructure:splitStructure,structureResult:structureResult,structureRecord:structureRecord,structureKind:function(){return structure;}};
+  return {prepare:prepare,init:init,restore:restore,showTab:showTab,showResult:showResult,commandTab:function(){return command;},resultTab:function(){return result;},resultMethod:function(){return method;},record:record,selectRun:selectRun,syncRunPicker:syncRunPicker,syncResultLayouts:syncResultLayouts,swap:swap,splitStructure:splitStructure,structureResult:structureResult,latestStructure:latestStructure,structureRecord:structureRecord,structureKind:function(){return structure;}};
 })();

@@ -441,10 +441,11 @@ RV.solve = (function () {
   }
 
   // ---------------------------------------------------------------- 3a. charge flipping
+  var CF_COMPARE_MAPS = 12;
   function readNum(v, lo, hi, int) { var x = typeof v === 'number' ? v : ui.parseNum(v); if (!Number.isFinite(x)) return NaN; if (int) x = Math.round(x); return Math.min(hi, Math.max(lo, x)); }
   function cfOptions() {
     var o = SV.opts.cf, g = String(o.grid);
-    var r = { adaptive:o.adaptive===true,grid: g === 'auto' ? 'auto' : parseInt(g, 10), threshold: ui.parseNum(o.threshold), iterations: readNum(o.iterations, 10, 100000, true), trials: readNum(o.trials, 1, 100, true),
+    var r = { adaptive:o.adaptive===true,grid: g === 'auto' ? 'auto' : parseInt(g, 10), threshold: ui.parseNum(o.threshold), iterations: readNum(o.iterations, 10, 100000, true), trials: readNum(o.trials, 1, CFAdaptive.MAX_STARTS, true),
               symLambda: ui.parseNum(o.symLambda), weakFraction: readNum(o.weakFraction, 0, 0.33), weakGrouping: o.weakGrouping === 'individual' ? 'individual' : 'cluster',
               overlapTol: ui.parseNum(o.overlapTol), peakMerge: ui.parseNum(o.peakMerge) };
     if(r.adaptive){r.threshold=1.1;r.weakFraction=.15;r.symLambda=.5;r.weakGrouping='cluster';if(!Number.isFinite(r.overlapTol))r.overlapTol=.05;}
@@ -456,7 +457,8 @@ RV.solve = (function () {
     else if (!(r.overlapTol >= 0)) r.error = 'The overlap tolerance is a non-negative number of degrees 2θ.';
     else if (!(r.peakMerge > 0)) r.error = 'The peak merge distance is a positive number of ångström.';
     else if (!Number.isFinite(r.weakFraction)) r.error = 'The fraction of weak reflections is a number from 0 to 0.33.';
-    if(r.adaptive && (!Number.isSafeInteger(ui.parseNum(o.trials)) || r.trials<6 || r.trials>12))r.error='Adaptive CF needs 6–12 random starts.';
+    if(r.adaptive && (!Number.isSafeInteger(ui.parseNum(o.trials)) || r.trials<CFAdaptive.MIN_STARTS || r.trials>CFAdaptive.MAX_STARTS))r.error='Adaptive CF needs '+CFAdaptive.MIN_STARTS+'–'+CFAdaptive.MAX_STARTS+' random starts.';
+    else if(!r.adaptive && ui.parseNum(o.trials)>CFAdaptive.MAX_STARTS)r.error='At most '+CFAdaptive.MAX_STARTS+' random starts.';
     return r;
   }
   function cfAssessment(I){return CFAdaptive.assess(I,SV.opts.cf,function(r){return reflectionWidth(I,r);});}
@@ -521,6 +523,7 @@ RV.solve = (function () {
     function logTrial(result,error){var c=run.current,entry={start:run.trial,seed:run.currentSeed,threshold:c.threshold,weakFraction:c.weakFraction,symLambda:I.symops?c.symLambda:0,bestR:result?result.bestR:null,backend:result?result.backend:null,error:error || null};run.trialLog.push(entry);return entry;}
     function compareNext(){
       while(run.compareIndex<run.candidates.length){var candidate=run.candidates[run.compareIndex];if(candidate.start===run.bestTrial){candidate.entry.mapCorrelation=1;run.compareIndex++;continue;}
+        if(!candidate.map){run.compareIndex++;continue;}
         progress('cf',run.compareIndex/run.candidates.length,'comparing maps '+(run.compareIndex+1)+'/'+run.candidates.length);
         try{run.worker.postMessage({type:'compare-cf-maps',gridSize:grid,mapA:run.best.map,mapB:candidate.map});}catch(e){ui.log('CF map comparison: '+e.message,'warn');build();}return;
       }build();
@@ -541,8 +544,13 @@ RV.solve = (function () {
       } else if (m.type === 'cf-result') {
         run.done = run.trial;
         var entry=logTrial(m.results);
-        if(search)run.candidates.push({start:run.trial,map:m.results.map,entry:entry});
         if (!run.best || m.results.bestR < run.best.bestR) { run.best = m.results; run.bestTrial = run.trial;run.bestOptions=Object.assign({},o,run.current); }
+        if(search){
+          run.candidates.push({start:run.trial,map:m.results.map,R:m.results.bestR,entry:entry});
+          // Maps are grid³ floats; with up to 128 starts only the lowest-R ones are kept for the agreement check.
+          var mapped=run.candidates.filter(function(c){return c.map;});
+          if(mapped.length>CF_COMPARE_MAPS){var worst=mapped.reduce(function(a,c){return c.R>a.R?c:a;});worst.map=null;worst.entry.mapCorrelation=null;}
+        }
         if (run.stopped || run.trial >= o.trials) trialsDone(); else trial();
       } else if(m.type==='cf-comparison'){
         var candidate=run.candidates[run.compareIndex];candidate.entry.mapCorrelation=m.results.correlation;candidate.map=null;run.compareIndex++;compareNext();
@@ -607,6 +615,7 @@ RV.solve = (function () {
     if(run.search)SV.cf.search=Object.assign({},run.search,{seed:run.seed,trials:run.trialLog,mapAgreementThreshold:.9,selectionRule:'Lowest CF R using the same observations and overlap groups'});
     var asg = assignCf();
     if(RV.fitHistory)RV.fitHistory.solution('cf',SV.cf);
+    solutionSelection.cf = null; if (RV.layout && RV.layout.latestStructure) RV.layout.latestStructure('cf');
     var msg = 'Charge flipping of ' + I.phaseName + (run.stopped ? ' (stopped)' : '') + ': best R = ' + f(run.best.bestR, 4) + ' after ' + plural(SV.cf.trialsDone, 'random start') + ', ' + dt + ' s; ' +
               (run.structure ? plural(sites.length, 'site') + ', symmetry correlation ' + f(run.structure.symmetryCorrelation, 3) : 'no sites (' + (err || 'no symmetry to place the map on') + ')') +
               (asg ? '; ' + asg : '') + '.';
@@ -677,7 +686,7 @@ RV.solve = (function () {
     }
     var o = wyOptions(), inp = solveInput(I), W;
     try { W = new Worker('js/wyckoff_worker.js'); } catch (e) { ui.toast('Could not start js/wyckoff_worker.js: ' + e.message, 'err'); return; }
-    var run = SV.wyRun = { worker: W, stopped: false, formula: formula, vc: vc, o: o, I: I, inp: inp, t0: performance.now(), log: [] };
+    var run = SV.wyRun = { worker: W, stopped: false, formula: formula, vc: vc, o: o, I: I, inp: inp, t0: performance.now(), log: [], partials: [], live: null };
     W.onmessage = function (e) {
       var m = e.data || {};
       if (run !== SV.wyRun) return;
@@ -685,7 +694,10 @@ RV.solve = (function () {
       else if (m.type === 'wy-info' || m.type === 'cf-info') ui.log('Wyckoff search: ' + m.message, 'info');
       else if (m.type === 'wy-log') { run.log.push(m.message); ui.log('  ' + m.message, 'info'); }
       else if (m.type === 'wy-start' || m.type === 'cf-wyckoff-start') progress('wy', -1, zTag(m) + 'preparing…');
+      else if (m.type === 'wy-partial') { if (m.solution) run.partials.push(m.solution); }
       else if (m.type === 'wy-progress') {
+        if (Array.isArray(m.bestSites) && m.bestSites.length && Number.isFinite(m.best))
+          run.live = { z: m.z, assignment: m.assignment, best: m.best, cc: m.cc, sites: m.bestSites };
         var frac = (m.wave - 1 + (m.restart - 1 + m.generation / m.generations) / m.restarts) / m.waves;
         progress('wy', Number.isFinite(frac) ? frac : -1, zTag(m) + (m.waves > 1 ? 'wave ' + m.wave + '/' + m.waves + ', ' : '') + 'restart ' + m.restart + '/' + m.restarts + ', gen ' + m.generation + '/' + m.generations +
                  (Number.isFinite(m.best) ? ', wR2 ' + ((1 - m.best) * 100).toFixed(1) + ' %' : ''));
@@ -713,8 +725,22 @@ RV.solve = (function () {
       run.stopped = true;
       try { run.worker.postMessage({ type: 'cancel-wyckoff' }); } catch (e) { /* gone */ }
       progress('wy', -1, 'stopping: the best structure so far comes back…');
-      ui.toast('Stopping the Wyckoff search: it returns the best structure found so far. Stop again to end it without waiting.', 'info');
-    } else finishWy('Stopped.');
+      ui.toast('Stopping the Wyckoff search: it returns the best structure found so far. Stop again to end it now and keep the best structure already received.', 'info');
+    } else finishWy('Stopped before the search returned its final result.');
+  }
+  // What the page already holds when the worker gives no final result: every Z it finished
+  // (refined) and the best structure of the Z still running (search coordinates, not refined).
+  function salvagedWy(run, why) {
+    var sols = run.partials.slice(), live = run.live;
+    if (live && !sols.some(function (s) { return s.z === live.z; }))
+      sols.push({ z: live.z, assignment: live.assignment, searchCC: Number.isFinite(live.cc) ? live.cc : live.best, refinement: null, ranked: false, unrefined: true, stopped: true,
+                  sites: live.sites.map(function (s) { return { element: s.element, wyckoff: s.wyckoff, multiplicity: s.multiplicity, siteSymmetry: s.siteSymmetry, x: s.x, y: s.y, z: s.z }; }) });
+    if (!sols.length) return null;
+    function merit(s) { var R = s.refinement && Number.isFinite(s.refinement.R) ? s.refinement.R : null; return R !== null ? [0, R] : [1, Number.isFinite(s.searchCC) ? -s.searchCC : Infinity]; }
+    sols.sort(function (p, q) { var a = merit(p), b = merit(q); return (a[0] - b[0]) || (a[1] - b[1]); });
+    var s0 = sols[0];
+    return { sites: s0.sites, refinement: s0.refinement, z: s0.z, solutions: sols, stopped: true, salvaged: why || 'Stopped.',
+             wyckoffResult: { assignment: s0.assignment, searchCC: s0.searchCC, ranked: s0.ranked }, distanceConstraints: run.vc ? run.vc.windows : [] };
   }
   function finishWy(err) {
     var run = SV.wyRun;
@@ -726,14 +752,19 @@ RV.solve = (function () {
     syncRun();
     var dt = ((performance.now() - run.t0) / 1000).toFixed(1), r = run.results;
     if (err || !r) {
+      var kept = salvagedWy(run, err);
+      if (kept) { r = kept; ui.log('Wyckoff search: ' + (err || 'no final result') + ' Kept the best structure already received (' + plural(kept.solutions.length, 'solution') + ').', 'warn'); err = null; }
+    }
+    if (err || !r) {
       SV.wy = { error: err || 'No structure.', stamp: run.I.stamp, log: run.log };
       ui.toast('Wyckoff search: ' + (err || 'no structure.'), run.stopped ? 'info' : 'err');
       renderWyOut();
       return;
     }
     var sols = Array.isArray(r.solutions) && r.solutions.length ? r.solutions : [{ z: r.z, sites: r.sites, refinement: r.refinement, assignment: (r.wyckoffResult || {}).assignment, searchCC: (r.wyckoffResult || {}).searchCC, ranked: (r.wyckoffResult || {}).ranked }];
-    SV.wy = { results: r, sols: sols, pick: 0, formula: run.formula, vc: run.vc, o: run.o, I: run.I, stamp: run.I.stamp, stopped: !!r.stopped, seconds: dt, note: run.inp.note, n: run.inp.hklList.length, log: run.log };
+    SV.wy = { results: r, sols: sols, pick: 0, formula: run.formula, vc: run.vc, o: run.o, I: run.I, stamp: run.I.stamp, stopped: !!r.stopped, salvaged: r.salvaged || null, seconds: dt, note: run.inp.note, n: run.inp.hklList.length, log: run.log };
     if(RV.fitHistory)RV.fitHistory.solution('wy',SV.wy);
+    solutionSelection.wy = null; if (RV.layout && RV.layout.latestStructure) RV.layout.latestStructure('wy');
     var s0 = sols[0], R = s0.refinement && Number.isFinite(s0.refinement.R) ? s0.refinement.R : NaN;
     ui.toast('Wyckoff search of ' + run.I.phaseName + (r.stopped ? ' (stopped)' : '') + ': ' + (prettyAssign(s0.assignment) || '?') + (Number.isFinite(s0.z) ? ', Z = ' + s0.z : '') + (Number.isFinite(R) ? ', wR(F²) = ' + pct(R) : '') +
              (sols.length > 1 ? '; ' + sols.length + ' solutions, one per Z' : '') + ', ' + dt + ' s.', 'ok');
@@ -970,7 +1001,7 @@ RV.solve = (function () {
             select('sv-cf-grid', 'Grid', o.cf.grid, [['auto', 'Auto'], ['32', '32³'], ['64', '64³'], ['128', '128³']], 'Points per axis; Auto: the smallest power of two that holds every reflection.', 'data-cf="grid"') +
             field('sv-cf-threshold', 'Threshold δ (σ)', o.cf.threshold, 'Density below δ, in standard deviations of the map, is flipped.', 'class="num" data-cf="threshold" inputmode="decimal"') +
             field('sv-cf-iterations', 'Cycles', o.cf.iterations, '', 'class="num" data-cf="iterations" inputmode="numeric"') +
-            field('sv-cf-trials', 'Random starts', o.cf.trials, 'The best R is kept. Adaptive mode uses 6–12 starts across three settings.', 'class="num" data-cf="trials" inputmode="numeric"') +
+            field('sv-cf-trials', 'Random starts', o.cf.trials, 'The best R is kept. 1–128 starts; adaptive mode uses 6–128 starts across three settings.', 'class="num" data-cf="trials" inputmode="numeric"') +
             field('sv-cf-symLambda', 'Symmetry in the loop', o.cf.symLambda, '0: none (P1), 1: strict.', 'class="num" data-cf="symLambda" inputmode="decimal"') +
             field('sv-cf-weakFraction', 'Weak reflections', o.cf.weakFraction, 'Fraction (0–0.33) of the weakest whose phase is shifted by π/2 instead (Oszlányi and Sütő 2005).', 'class="num" data-cf="weakFraction" inputmode="decimal"') +
             select('sv-cf-weakGrouping', 'Weak, by', o.cf.weakGrouping, [['cluster', 'overlap cluster'], ['individual', 'reflection']], '', 'data-cf="weakGrouping"') +
@@ -1216,7 +1247,8 @@ RV.solve = (function () {
     if (R.error) { none('<p class="sv-warn">' + esc(R.error) + '</p>'); return; }
     var sol = R.sols[R.pick] || R.sols[0], ref = sol.refinement || {};
     if (sum) sum.textContent = (prettyAssign(sol.assignment) || '?') + (Number.isFinite(sol.z) ? ', Z = ' + sol.z : '') + ', wR(F²) ' + pct(ref.R);
-    var h = (R.stopped ? '<p class="sv-warn">Stopped early: the quench was skipped, the choice is provisional.</p>' : '') +
+    var h = (R.salvaged ? '<p class="sv-warn">' + esc(R.salvaged) + ' Kept the best structure received before the search ended' + (sol.unrefined ? '; this one has search coordinates only (no quench, no refinement)' : '') + '. The choice is provisional.</p>' :
+             R.stopped ? '<p class="sv-warn">Stopped early: the quench was skipped, the choice is provisional.</p>' : '') +
       '<dl class="sv-dl"><dt>Formula unit</dt><dd>' + esc(R.formula) + (Number.isFinite(sol.z) ? ', Z = ' + sol.z : '') + (Number.isFinite(sol.rho) ? ', ρ = ' + f(sol.rho, 3) + ' g/cm³' : '') + '</dd>' +
         '<dt>Assignment</dt><dd>' + esc(prettyAssign(sol.assignment) || '?') + '</dd>' +
         '<dt>wR(F²)</dt><dd>' + pct(ref.R) + (Number.isFinite(sol.searchCC) ? ', search wR2 ' + pct(1 - sol.searchCC, 1) : '') + '</dd>' +
@@ -1226,7 +1258,7 @@ RV.solve = (function () {
       h += '<h3>One solution per Z</h3><div class="table-wrap"><table class="grid compact"><thead><tr><th></th><th>Z</th><th>ρ g/cm³</th><th>wR(F²)</th><th>Assignment</th><th>Atoms</th></tr></thead><tbody>' +
         R.sols.map(function (s, i) {
           return '<tr' + (i === R.pick ? ' class="best"' : '') + '><td><input type="radio" name="sv-wy-pick" data-wypick="' + i + '"' + (i === R.pick ? ' checked' : '') + ' aria-label="Solution with Z = ' + s.z + '"></td><td>' + s.z + '</td><td>' + f(s.rho, 2) + '</td><td>' +
-                 pct(s.refinement && s.refinement.R) + '</td><td>' + esc(prettyAssign(s.assignment)) + '</td><td>' + (s.nAtoms != null ? s.nAtoms : (s.sites || []).length) + '</td></tr>';
+                 (s.unrefined ? 'not refined' : pct(s.refinement && s.refinement.R)) + '</td><td>' + esc(prettyAssign(s.assignment)) + '</td><td>' + (s.nAtoms != null ? s.nAtoms : (s.sites || []).length) + '</td></tr>';
         }).join('') + '</tbody></table></div>';
     }
     el.innerHTML = h;
@@ -1317,7 +1349,7 @@ RV.solve = (function () {
       return;
     }
     if ((k = t.getAttribute('data-cf'))) {
-      if(k==='adaptive'){SV.opts.cf.adaptive=t.checked;if(t.checked){SV.opts.cf.trials=Math.min(12,Math.max(6,Math.round(ui.parseNum(SV.opts.cf.trials)) || 6));$('#sv-cf-trials').value=SV.opts.cf.trials;}}
+      if(k==='adaptive'){SV.opts.cf.adaptive=t.checked;if(t.checked){SV.opts.cf.trials=Math.min(CFAdaptive.MAX_STARTS,Math.max(CFAdaptive.MIN_STARTS,Math.round(ui.parseNum(SV.opts.cf.trials)) || 6));$('#sv-cf-trials').value=SV.opts.cf.trials;}}
       else SV.opts.cf[k] = t.tagName === 'SELECT' ? t.value : t.value.trim();
       saveOpts();renderCfPlan();syncAble();return;
     }
