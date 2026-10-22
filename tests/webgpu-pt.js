@@ -57,6 +57,14 @@
             const ctx=await context(problem('rietveld','simple_pvoigt',options)),gpu=await RVPTGPU.create(ctx,{device});
             try{const costs=await gpu.costs([ctx.x]);const cpu=ctx.cost(ctx.x),relative=Math.abs(costs[0]-cpu)/Math.max(1,cpu);check(relative<.001,'Broadening/spline cost mismatch '+relative);record('extra '+JSON.stringify(options),{pass:true,relativeError:relative});}finally{gpu.close();}
         }
+        // Negative trial variances must use the same stable continuation on
+        // the CPU and GPU, including well beyond float32 cancellation.
+        for(const U of [3.96361,-1e5]){
+            const job=problem('rietveld','gsas_cw');
+            Object.assign(job.values[0],{'inst.U':U,'inst.V':-43.01288,'inst.W':18.71003,'inst.X':1.40615,'inst.Y':4.800405,'inst.Z':.01277393});
+            const ctx=await context(job),gpu=await RVPTGPU.create(ctx,{device});
+            try{const costs=await gpu.costs([ctx.x]),cpu=ctx.cost(ctx.x),relative=Math.abs(costs[0]-cpu)/Math.max(1,cpu);check(relative<.001,'Negative variance continuation mismatch '+relative);record('negative Gaussian variance U='+U,{pass:true,relativeError:relative});}finally{gpu.close();}
+        }
         // Dataset sharing, dependent coordinates, occupancy sums, held values,
         // mixed phases and a phase absent from one dataset share one GPU job.
         const joint=problem('rietveld','gsas_cw'),ph=joint.phases[0],v=joint.values[0];
@@ -76,6 +84,12 @@
         try{const probes=[Array.from(jc.x),Array.from(jc.x,(v,j)=>Math.max(jc.info[j].lo,Math.min(jc.info[j].hi,v+.1*jc.setup.scales[j])))];const costs=await jg.costs(probes);let worst=0;
             for(let i=0;i<costs.length;i++){const cpu=jc.cost(probes[i%probes.length]),relative=Math.abs(costs[i]-cpu)/Math.max(1,cpu);check(relative<.001,'Global/constraint cost mismatch '+relative);worst=Math.max(worst,relative);}record('global sharing, atomic constraints and mixed phases',{pass:true,relativeError:worst});
         }finally{jg.close();}
+        const scoped=problem('rietveld','gsas_cw'),sd=structuredClone(scoped.datasets[0]);sd.id=2;sd.resolutionType='split_pvoigt';scoped.datasets[0].resolutionType='simple_pvoigt';scoped.datasets.push(sd);scoped.values.push({...scoped.values[0]});
+        scoped.values.forEach(v=>RVCore.ALL_INSTRUMENT_PROFILE.forEach(([n,value])=>v['inst.'+n]=value));
+        scoped.vars=scoped.vars.filter(v=>['bkg0','zero','p1.C1.B'].includes(v.name));scoped.vars.push({name:'bkg0',d:1},{name:'zero',d:1},{name:'p1.C1.B',d:1});
+        scoped.parameterLinks=[{source:{datasetId:1,name:'p1.C1.B'},target:{datasetId:2,name:'p1.C1.B'},factor:1.2,offset:.1}];scoped.values[1]['p1.C1.B']=.7;
+        const sm=new RVCore.Model(scoped);scoped.datasets.forEach((d,i)=>d.y=Float64Array.from(sm.evalDataset(i,scoped.values[i]).y,(y,j)=>y+1+Math.sin(j*.13)));
+        const sc=await context(scoped),sgpu=await RVPTGPU.create(sc,{device});try{const probes=[Array.from(sc.x),Array.from(sc.x,(v,j)=>Math.max(sc.info[j].lo,Math.min(sc.info[j].hi,v+.1*sc.setup.scales[j])))],costs=await sgpu.costs(probes);let worst=0;for(let i=0;i<probes.length;i++){const cpu=sc.cost(probes[i]),relative=Math.abs(costs[i]-cpu)/Math.max(1,cpu);check(relative<.001,'Dataset profile / cross-dataset link mismatch '+relative);worst=Math.max(worst,relative);}record('dataset-specific resolution functions and exact cross-dataset links',{pass:true,relativeError:worst});}finally{sgpu.close();}
         // A centered high-symmetry phase exercises coset weights and fixed sites.
         const sg=await (await fetch('../sg/225.json')).json(),setting=sg.settings[0],centered=problem('rietveld','gsas_cw');
         const cp=centered.phases[0];cp.ops=RVCore.expandOps(setting.sym_ops,setting.centring_translations);cp.system='cubic';

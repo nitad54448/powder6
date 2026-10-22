@@ -416,7 +416,8 @@ var PROFILE_PARAMS = {
     tch_aniso: [['U', 17.4], ['V', -45.2], ['W', 16.5], ['X', 6.7], ['Y', 3.0], ['SL', 0.1], ['HL', -0.25]],
     split_pvoigt: [['GU_L', 2], ['GV_L', -2], ['GW_L', 5], ['LX_L', 1], ['GU_R', 2], ['GV_R', -2], ['GW_R', 5], ['LX_R', 1], ['eta_split', 0.5]]
 };
-var PROFILE_LABELS = { gsas_cw: 'TCH · separated instrument + sample (CW)', simple_pvoigt: 'Simple pseudo-Voigt', tch_aniso: 'Thompson-Cox-Hastings', split_pvoigt: 'Split pseudo-Voigt' };
+var PROFILE_LABELS = { gsas_cw: 'Thompson-Cox-Hastings', simple_pvoigt: 'Pseudo-Voigt', tch_aniso: 'Thompson-Cox-Hastings', split_pvoigt: 'Split pseudo-Voigt' };
+var INSTRUMENT_PROFILE_TYPES = ['tch_aniso','simple_pvoigt','split_pvoigt'];
 
 // Canonical instrument coefficients. X always means /cos(theta), Y tan(theta).
 // Voigt retains its independent mixture; Split retains each flank separately.
@@ -620,8 +621,9 @@ Model.prototype.profileParams = function (P, D, v) {
               minFwhm: D.def.minFwhm > 0 ? D.def.minFwhm : (typeof getMinProfileFwhmDeg === 'function' ? getMinProfileFwhmDeg() : MIN_PROFILE_FWHM_DEG) };
     P.profNames.forEach(function (n) { o[n] = v[P.prefix + n]; });
     if (usesSeparatedProfile(P.def)) {
-        instrumentProfileParams(P.def.profileType).forEach(function (p) { o[p[0]] = Number.isFinite(v['inst.' + p[0]]) ? v['inst.' + p[0]] : p[1]; });
-        o.profileType = P.def.profileType === 'gsas_cw' ? 'tch_aniso' : P.def.profileType; o.separated = true;
+        var instrumentType=D.def.resolutionType || P.def.profileType;
+        instrumentProfileParams(instrumentType).forEach(function (p) { o[p[0]] = Number.isFinite(v['inst.' + p[0]]) ? v['inst.' + p[0]] : p[1]; });
+        o.profileType = instrumentType === 'gsas_cw' ? 'tch_aniso' : instrumentType; o.separated = true;
         o.broadening = broadeningConfig(P.def.broadening);
         o.cell = cellOf(P.def.system, P.def.uniqueAxis, function (c) { return v[P.prefix + c]; });
         o.uniqueAxis = P.def.uniqueAxis;
@@ -1239,6 +1241,61 @@ function invSPD(A, n) {
     return inv;
 }
 
+/** Diagnose failed joint covariance without inventing uncertainties from a
+ * ridge or pseudoinverse. Pivoted Cholesky of the unit-diagonal normal matrix
+ * finds dependent combinations, including those involving more than two
+ * variables. Names are attached by the caller, with dataset scope. */
+function normalDependence(A, n) {
+    var order = Array.from({length:n}, function(_,i){return i;}), diag = new Float64Array(n),
+        scale = new Float64Array(n), L = new Float64Array(n*n), rank = 0;
+    for(var i=0;i<n;i++){scale[i]=A[i*n+i]>0?1/Math.sqrt(A[i*n+i]):0;diag[i]=scale[i]?1:0;}
+    for(var k=0;k<n;k++){
+        var best=k;
+        for(i=k+1;i<n;i++)if(diag[i]>diag[best])best=i;
+        if(!(diag[best]>1e-10))break;
+        var tmp=order[k];order[k]=order[best];order[best]=tmp;
+        var td=diag[k];diag[k]=diag[best];diag[best]=td;
+        for(var j=0;j<k;j++){tmp=L[k*n+j];L[k*n+j]=L[best*n+j];L[best*n+j]=tmp;}
+        L[k*n+k]=Math.sqrt(diag[k]);
+        for(i=k+1;i<n;i++){
+            var s=A[order[i]*n+order[k]]*scale[order[i]]*scale[order[k]];
+            for(j=0;j<k;j++)s-=L[i*n+j]*L[k*n+j];
+            L[i*n+k]=s/L[k*n+k];diag[i]-=L[i*n+k]*L[i*n+k];
+        }
+        rank++;
+    }
+    var groups=[];
+    for(var t=rank;t<n;t++){
+        var weights=new Float64Array(rank), largest=1;
+        for(i=rank-1;i>=0;i--){var r=L[t*n+i];for(j=i+1;j<rank;j++)r-=L[j*n+i]*weights[j];weights[i]=r/L[i*n+i];largest=Math.max(largest,Math.abs(weights[i]));}
+        var group=[order[t]];
+        for(i=0;i<rank;i++)if(Math.abs(weights[i])>largest*1e-4)group.push(order[i]);
+        groups.push(group.sort(function(a,b){return a-b;}));
+    }
+    return {rank:rank,groups:groups};
+}
+
+/** Validate the instrument's Gaussian polynomial over the fitted angular
+ * range, including an interior minimum. Negative V is allowed; it is the
+ * combined variance that must be non-negative. This is a diagnostic only:
+ * never silently reset fitted values or refinement choices. */
+function instrumentProfileWarnings(model, di, v) {
+    var D=model.datasets[di], active=model.phases.find(function(P,i){return D.has[i] && usesSeparatedProfile(P.def);});
+    if(!active || !D.n)return [];
+    var type=D.def.resolutionType || active.def.profileType, suffixes=type==='split_pvoigt'?['_L','_R']:[''], out=[];
+    var lo=Math.tan(Math.max(1e-6,Math.min(179.999999,D.def.tth[0]))*Math.PI/360),
+        hi=Math.tan(Math.max(1e-6,Math.min(179.999999,D.def.tth[D.n-1]))*Math.PI/360);
+    suffixes.forEach(function(suffix){
+        var keys=['U','V','W'].map(function(k){return k+suffix;}), defaults=instrumentProfileParams(type),
+            p=keys.map(function(k){var fallback=defaults.find(function(p){return p[0]===k;});return Number.isFinite(v['inst.'+k])?v['inst.'+k]:fallback?fallback[1]:0;}),
+            candidates=[lo,hi];
+        if(p[0]>0){var vertex=-p[1]/(2*p[0]);if(vertex>lo && vertex<hi)candidates.push(vertex);}
+        var worst=candidates.map(function(t){return {t:t,value:(p[0]*t+p[1])*t+p[2]};}).sort(function(a,b){return a.value-b.value;})[0];
+        if(worst.value < -1e-9)out.push('Instrument Gaussian variance ('+keys.join(', ')+') is negative: minimum '+worst.value.toPrecision(5)+' cdeg^2 at 2theta '+(2*Math.atan(worst.t)*180/Math.PI).toFixed(2)+' deg. Sample broadening or the width floor can hide this invalid instrument profile and make its coefficients poorly determined. Check the resolution calibration; negative V alone is allowed.');
+    });
+    return out;
+}
+
 /**
  * The entries of Z = (L L')^-1 inside the envelope of a skyline Cholesky
  * factor L (Takahashi, Fagan & Chen 1973), from L' Z = L^-1:
@@ -1444,13 +1501,16 @@ function intensityTables(ev, s2, cov, D) {
  * In height units, not divided by s2. Returns { index (reflections of the
  * phase), Q (n x n) }.
  */
+var MAX_PRECISION_REFLECTIONS=600;
 function precisionBlock(ev, pi, maxRefl, cov) {
+    maxRefl=Number.isSafeInteger(maxRefl) && maxRefl>0?Math.min(maxRefl,MAX_PRECISION_REFLECTIONS):MAX_PRECISION_REFLECTIONS;
     var ws = ev.ws;
     if (!ws || !ws.m) return null;
     var R = [];
     for (var j = 0; j < ws.m; j++) if (ws.items[j].pi === pi && !ws.undet[j]) R.push(j);
     var ph = ev.phases[pi];
     R.sort(function (a, b) { return ph.geo.hkl[ws.items[a].k].tth - ph.geo.hkl[ws.items[b].k].tth; });
+    var available=R.length;
     if (R.length > maxRefl) R.length = maxRefl;
     var n = R.length, Q = new Float64Array(n * n), A = ws.A;
     for (var a = 0; a < n; a++) for (var b = 0; b <= a; b++) {
@@ -1479,7 +1539,7 @@ function precisionBlock(ev, pi, maxRefl, cov) {
             }
         }
     }
-    return { index: R.map(function (jj) { return ws.items[jj].k; }), Q: Q, n: n };
+    return { index: R.map(function (jj) { return ws.items[jj].k; }), Q: Q, n: n, available:available };
 }
 
 // ---------------------------------------------------------------------------
@@ -1505,7 +1565,7 @@ function* refineSteps(problem, opts) {
     var t0 = Date.now();
     try {
         var constraints=null,originalVariableCount=(problem.vars || []).length;
-        if(problem.phases.some(function(p){return p.method==='rietveld' && p.constraints && p.constraints.length;})){
+        if((problem.parameterLinks || []).length || problem.phases.some(function(p){return p.method==='rietveld' && p.constraints && p.constraints.length;})){
             if(typeof AtomicConstraints==='undefined')throw new Error('Atomic constraint module is not loaded.');
             constraints=AtomicConstraints.prepare(problem);
             problem=Object.assign({},problem,{vars:constraints.vars,values:constraints.values});
@@ -1838,10 +1898,11 @@ function* refineSteps(problem, opts) {
         // of Le Bail and WPPF phases counted among the parameters)
         var fin = normal(x, null, true, true), nInt = 0;
         fin.evs.forEach(function (ev) { nInt += intensityCount(ev); });
-        var dof = Math.max(1, nPts - nv - nInt), chi2red = fin.f / dof, esdX = new Float64Array(nv).fill(NaN), idxE = [], inv = null;
+        var dof = Math.max(1, nPts - nv - nInt), chi2red = fin.f / dof, esdX = new Float64Array(nv).fill(NaN), idxE = [], inactive = [], onBounds = [], inv = null;
         for (j = 0; j < nv; j++) {
             var onB = x[j] <= info[j].lo + 1e-9 * (1 + Math.abs(info[j].lo)) || x[j] >= info[j].hi - 1e-9 * (1 + Math.abs(info[j].hi));
-            if (!onB && fin.A[j * nv + j] > 0) idxE.push(j);
+            onBounds[j]=onB;
+            if (!onB) { if(fin.A[j * nv + j] > 0)idxE.push(j);else inactive.push(j); }
         }
         var ne = idxE.length, Ms = new Float64Array(ne * ne);
         if (ne) {
@@ -1850,7 +1911,25 @@ function* refineSteps(problem, opts) {
             if (inv) for (a = 0; a < ne; a++) { var vv = chi2red * inv[a * ne + a]; if (vv >= 0) esdX[idxE[a]] = Math.sqrt(vv); }
         }
         var outVals = apply(x), esd = model.datasets.map(function () { return {}; }), uncertaintyIssues = model.datasets.map(function(){return {};});
-        vars.forEach(function (vr, jj) { info[jj].ds.forEach(function (d) { var e=esdX[jj], c=info[jj].c; if(c.kind==='atom' && /^[xyz]$/.test(c.comp) && e>=0.5){uncertaintyIssues[d][vr.name]='Coordinate is not constrained within half a unit cell'; e=NaN;} else if(!Number.isFinite(e) && !(x[jj]<=info[jj].lo || x[jj]>=info[jj].hi))uncertaintyIssues[d][vr.name]='Uncertainty unavailable: singular or ill-conditioned refinement'; esd[d][vr.name] = e; }); });
+        var fitWarnings=model.datasets.map(function(_,d){return instrumentProfileWarnings(model,d,outVals[d]);}), dependentIssues={};
+        function variableLabel(jj){return vars[jj].name+(nd>1?(info[jj].ds.length>1?' (shared)':' (dataset '+(info[jj].ds[0]+1)+')'):'');}
+        if(!inv && ne){
+            var dependence=normalDependence(Ms,ne), diagnostics=[];
+            dependence.groups.forEach(function(group){
+                var slots=group.map(function(i){return idxE[i];}), message='Cannot distinguish the combined effects of '+slots.map(variableLabel).join(', ')+'. Fix redundant variables or supply independent calibration/data.';
+                slots.forEach(function(jj){dependentIssues[jj]=message;});
+                if(diagnostics.indexOf(message)<0)diagnostics.push(message);
+            });
+            var headline='Joint uncertainties unavailable: singular or ill-conditioned refinement'+(diagnostics.length?' ('+dependence.rank+' independent directions among '+ne+' interior variables).':'.');
+            fitWarnings.forEach(function(w){w.push(headline);diagnostics.slice(0,8).forEach(function(s){w.push(s);});if(diagnostics.length>8)w.push((diagnostics.length-8)+' additional dependent combinations.');});
+        }
+        inactive.forEach(function(jj){info[jj].ds.forEach(function(d){fitWarnings[d].push(variableLabel(jj)+' has no measurable effect at the current values (zero derivative). Hold it fixed or check the model and width floor.');});});
+        vars.forEach(function (vr, jj) { info[jj].ds.forEach(function (d) {
+            var e=esdX[jj], c=info[jj].c;
+            if(c.kind==='atom' && /^[xyz]$/.test(c.comp) && e>=0.5){uncertaintyIssues[d][vr.name]='Coordinate is not constrained within half a unit cell';e=NaN;}
+            else if(!Number.isFinite(e) && !onBounds[jj])uncertaintyIssues[d][vr.name]=inactive.indexOf(jj)>=0?'Uncertainty unavailable: this variable has zero derivative at the current values.':dependentIssues[jj] || 'Joint covariance unavailable because other refined variables cannot be distinguished; this does not establish that this parameter is unconstrained.';
+            esd[d][vr.name]=e;
+        }); });
         if(constraints)constraints.links.forEach(function(l){
             var variance=0,available=true;
             l.terms.forEach(function(t){var a=idxE.indexOf(t[0]);if(a<0){available=false;return;}l.terms.forEach(function(u){var b=idxE.indexOf(u[0]);if(b<0)available=false;else if(inv)variance+=t[1]*u[1]*inv[a*ne+b]*chi2red;else available=false;});});
@@ -1878,12 +1957,12 @@ function* refineSteps(problem, opts) {
             var cov = inv ? { inv: inv, ne: ne, S: Ms, slots: slots } : null;
             intensities.push(intensityTables(ev, chi2red, cov, D));
             if (opts.precision && opts.precision.dataset === d) {
-                precision = precisionBlock(ev, opts.precision.phase, opts.precision.maxRefl || 220, cov);
+                precision = precisionBlock(ev, opts.precision.phase, opts.precision.maxRefl, cov);
                 if (precision) precision.s2 = chi2red;
             }
         });
         return { ok: true, algorithm: only ? 'evaluate' : algorithm, effectiveAlgorithm: only ? 'evaluate' : algorithm === 'pt' ? 'pt+lm' : 'lm', pt: ptInfo, msg: msg, iter: it, chi2: fin.f, chi2red: chi2red, dof: dof, nPts: nPts, nVar: nv, nInt: nInt,
-                 constraintWarnings:constraints ? constraints.warnings : [], constraintNames:constraints ? constraints.names : [], values: outVals, esd: esd, covarianceOK:!nv || !!inv, uncertaintyIssues:uncertaintyIssues, stats: stats, intensities: intensities, precision: precision, ms: Date.now() - t0 };
+                 constraintWarnings:constraints ? constraints.warnings : [], constraintNames:constraints ? constraints.names : [], values: outVals, esd: esd, covarianceOK:!nv || !!inv && !inactive.length, uncertaintyIssues:uncertaintyIssues, fitWarnings:fitWarnings, stats: stats, intensities: intensities, precision: precision, ms: Date.now() - t0 };
     } catch (e) {
         if (opts.rethrow) throw e;
         return { ok: false, msg: String((e && e.message) || e), ms: Date.now() - t0 };
@@ -1918,9 +1997,9 @@ async function refineAsync(problem, opts) {
  * values, with uncertainties conditional on them (a fit gives marginal ones).
  */
 function evaluate(problem, di) {
-    if(problem.phases.some(function(p){return p.method==='rietveld' && p.constraints && p.constraints.length;})){
+    if((problem.parameterLinks || []).length || problem.phases.some(function(p){return p.method==='rietveld' && p.constraints && p.constraints.length;})){
         if(typeof AtomicConstraints==='undefined')throw new Error('Atomic constraint module is not loaded.');
-        problem=Object.assign({},problem,{values:AtomicConstraints.values(problem.phases,problem.values,problem.datasets)});
+        problem=Object.assign({},problem,{values:AtomicConstraints.prepare(problem).values});
     }
     var model = new Model(problem), d = di || 0, v = problem.values[d], ev = model.evalDataset(d, v);
     var D = model.datasets[d], nInt = intensityCount(ev), st = datasetStats(D, ev, nInt);
@@ -1943,9 +2022,9 @@ function evaluate(problem, di) {
 root.RVCore = {
     VERSION: VERSION, METHODS: METHODS, METHOD_LABELS: METHOD_LABELS, expandOps: expandOps, cosets: cosets, laueRotations: laueRotations, isAllowed: isAllowed,
     cellParams: cellParams, cellOf: cellOf, generateReflections: generateReflections, siteSymmetry: siteSymmetry,
-    sitePosition: sitePosition, formFactor: formFactor, profileParamsFor: profileParamsFor, INSTRUMENT_PROFILE: INSTRUMENT_PROFILE, ALL_INSTRUMENT_PROFILE: ALL_INSTRUMENT_PROFILE, instrumentProfileParams: instrumentProfileParams, usesSeparatedProfile: usesSeparatedProfile, SAMPLE_PROFILE: SAMPLE_PROFILE, broadeningConfig: broadeningConfig, sampleProfileNames: sampleProfileNames, PROFILE_PARAMS: PROFILE_PARAMS, PROFILE_LABELS: PROFILE_LABELS,
+    sitePosition: sitePosition, formFactor: formFactor, profileParamsFor: profileParamsFor, INSTRUMENT_PROFILE: INSTRUMENT_PROFILE, INSTRUMENT_PROFILE_TYPES:INSTRUMENT_PROFILE_TYPES, ALL_INSTRUMENT_PROFILE: ALL_INSTRUMENT_PROFILE, instrumentProfileParams: instrumentProfileParams, usesSeparatedProfile: usesSeparatedProfile, SAMPLE_PROFILE: SAMPLE_PROFILE, broadeningConfig: broadeningConfig, sampleProfileNames: sampleProfileNames, PROFILE_PARAMS: PROFILE_PARAMS, PROFILE_LABELS: PROFILE_LABELS,
     classify: classify, defaultLimits: defaultLimits, methodAllows: methodAllows, Model: Model, refine: refine, refineAsync:refineAsync, evaluate: evaluate,
-    datasetStats: datasetStats, solveSPD: solveSPD, invSPD: invSPD, fracText: fracText, splineValues: splineValues,
+    datasetStats: datasetStats, solveSPD: solveSPD, invSPD: invSPD, normalDependence:normalDependence, fracText: fracText, splineValues: splineValues, MAX_PRECISION_REFLECTIONS:MAX_PRECISION_REFLECTIONS,
     selectedInverse: selectedInverse
 };
 })(typeof self !== 'undefined' ? self : (typeof window !== 'undefined' ? window : globalThis));

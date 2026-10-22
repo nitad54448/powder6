@@ -1,7 +1,7 @@
 /* Phase-level exact atomic relationships (GSAS-II rules), used only by Rietveld calculations.
  *
- * One editor, mounted wherever it is needed: the Phases tab (below the atoms), the Constraints block of the
- * Rietveld calculation in Solve (one per phase) and the Atomic constraints… dialog. Every change is validated
+ * One editor, mounted in Commands and the Atomic constraints… dialog. Results lists saved relationships
+ * read-only. Every change is validated
  * and applied at once (with Undo); all mounted editors follow.
  *   RV.constraints = { init, edit(), mount(host, ph), refreshAll(), apply(ph, rules), align(ph, map, rules), text(c) }
  */
@@ -141,16 +141,16 @@ RV.constraints = (function(){
   // ---------------------------------------------------------------- the dialog (button "Atomic constraints…")
   async function edit(){
     if(S.busy)return;var ph=St.currentPhase();if(!ph || !ph.atoms.length){ui.toast('Select a phase with atoms.','warn');return;}
-    await ui.modal({title:'Atomic constraints · '+ph.name,wide:true,body:'<p class="hint">GSAS-II relationships of '+esc(ph.name)+', applied by Rietveld in each dataset. They are also listed, and editable, in Phases below the atoms and in Solve → Rietveld.</p><div data-ac-host></div>',
+    await ui.modal({title:'Atomic constraints · '+ph.name,wide:true,body:'<p class="hint">GSAS-II relationships of '+esc(ph.name)+', applied by Rietveld in each dataset. Edit relationships in Commands; Results lists those saved with the selected run.</p><div data-ac-host></div>',
       buttons:[{label:'Close',primary:true,value:null}],onOpen:function(b){mount(b.querySelector('[data-ac-host]'),ph);}});
   }
-  // the Constraints block of Solve → Rietveld: one editor per phase with atoms
+  // Saved Rietveld relationships are read-only in Results.
   function renderSolve(host){
     if(!host)return 0;
     var list=S.phases.filter(function(ph){return ph.atoms.length;});
     if(!list.length){host.innerHTML='<p class="hint">No phase with atoms.</p>';return 0;}
     host.innerHTML=list.map(function(ph,i){return '<section class="ac-phase"><h3><i class="sw-inline" style="background:'+RV.plots.phaseVar(S.phases.indexOf(ph))+'"></i>'+esc(ph.name)+' <span class="sub">'+esc(RVCore.METHOD_LABELS[ph.method])+(ph.method==='rietveld'?'':', constraints unused')+'</span></h3><div data-ac-solve="'+esc(ph.key)+'"></div></section>';}).join('');
-    list.forEach(function(ph){mount(host.querySelector('[data-ac-solve="'+ph.key+'"]'),ph);});
+    list.forEach(function(ph){var rules=AC.normalizeAll(ph.constraints);host.querySelector('[data-ac-solve="'+ph.key+'"]').innerHTML=rules.length?'<ul>'+rules.map(function(c){return '<li><code>'+esc(text(c))+'</code></li>';}).join('')+'</ul>':'<p class="hint">No atomic constraints in this run.</p>';});
     return list.reduce(function(n,ph){return n+(ph.constraints||[]).length;},0);
   }
   function init(){

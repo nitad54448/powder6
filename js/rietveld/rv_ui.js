@@ -171,7 +171,7 @@ RV.ui = (function () {
     var result = null;
     return modal({
       title: title, wide: extra && extra.wide,
-      body: (intro ? '<p class="intro">' + intro + '</p>' : '') + '<div class="form-grid">' + fields.map(fieldHTML).join('') + '</div>' + ((extra && extra.after) || ''),
+      body: (intro ? '<p class="intro">' + intro + '</p>' : '') + ((extra && extra.before) || '') + '<div class="form-grid">' + fields.map(fieldHTML).join('') + '</div>' + ((extra && extra.after) || ''),
       onOpen: function (body) { showWhen(body); body.addEventListener('change', function () { showWhen(body); }); if (extra && extra.onOpen) extra.onOpen(body); },
       buttons: [{ label: 'Cancel', value: null },
                 { label: okLabel || 'OK', primary: true, onClick: function (body) { result = collect(body, fields); if (result && extra && extra.check) { var why = extra.check(result, body); if (why) { toast(why, 'warn'); return false; } } return !!result; },
@@ -209,7 +209,7 @@ RV.ui = (function () {
     var li = h('li', { class: kind || 'info' });
     if (merge) li.setAttribute('data-merge', merge);
     li.innerHTML = '<time>' + now.toLocaleTimeString() + '</time><span>' + esc(msg) + '</span>' +
-      (snap ? '<button type="button" class="restore" data-restore="' + snap + '" title="Bring back the datasets, the phases and the selection as they were just before this action">Restore before</button>' : '');
+      '';
     list.insertBefore(li, list.firstChild);
     while (list.children.length > 500) list.removeChild(list.lastChild);
   }

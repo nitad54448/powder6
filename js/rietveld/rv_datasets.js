@@ -4,17 +4,15 @@ RV.datasets = (function () {
   'use strict';
   var St=RV.state,S=St.S,ui=RV.ui,esc=ui.esc,dirty=true,lastRender=0,queued=0;
   function $(q){return document.querySelector(q);}
-  function active(){return RV.app && RV.app.tab()==='datasets';}
-  function status(d){return !d.stats?'Not fitted':d.stats.ok===false?'Failed':d.stats.msg||'Fitted';}
+  function active(){return RV.app && RV.app.commandTab()==='datasets';}
   function render(force){
     dirty=true;if(!active())return;
     if(S.busy && !force && performance.now()-lastRender<1000)return;
     lastRender=performance.now();dirty=false;
-    $('#dataset-table').innerHTML=S.datasets.length?'<table class="grid compact"><thead><tr><th>Use</th><th>Dataset</th><th>Points</th><th>λ1 /Å</th><th>Phases</th><th>Fit</th><th>Rwp /%</th></tr></thead><tbody>'+S.datasets.map(function(d){
-      var fitted=!!d.stats && d.stats.ok!==false,rwp=d.stats && Number.isFinite(d.stats.Rwp)?(100*d.stats.Rwp).toFixed(3):'—';
-      return '<tr><td><input type="checkbox" data-dataset-select="'+d.id+'" aria-label="Select '+esc(d.name)+'"'+(S.sel.has(d.id)?' checked':'')+'></td><td><input data-dataset-name="'+d.id+'" value="'+esc(d.name)+'" aria-label="Dataset name"></td><td>'+d.tth.length+'</td><td>'+d.inst.lambda1+'</td><td>'+esc(St.phasesIn(d).map(function(p){return p.name;}).join(', '))+'</td><td title="'+esc(status(d))+'">'+(fitted?'Fitted':d.stats?'Failed':'Not fitted')+'</td><td>'+rwp+'</td></tr>';
+    $('#dataset-table').innerHTML=S.datasets.length?'<table class="grid compact"><thead><tr><th>Use</th><th>Dataset</th><th>Points</th><th>λ1 /Å</th><th>Phases</th></tr></thead><tbody>'+S.datasets.map(function(d){
+        return '<tr><td><input type="checkbox" data-dataset-select="'+d.id+'" aria-label="Select '+esc(d.name)+'"'+(S.sel.has(d.id)?' checked':'')+'></td><td><input data-dataset-name="'+d.id+'" value="'+esc(d.name)+'" aria-label="Dataset name"></td><td>'+d.tth.length+'</td><td>'+d.inst.lambda1+'</td><td>'+esc(St.phasesIn(d).map(function(p){return p.name;}).join(', '))+'</td></tr>';
     }).join('')+'</tbody></table>':'<p class="hint">Read patterns or simulate a phase with atoms to begin.</p>';
-    $('#dataset-summary').textContent=S.sel.size+' selected / '+S.datasets.length+' datasets. Results shown for '+RVCore.METHOD_LABELS[S.calculation]+'.';
+    $('#dataset-summary').textContent=S.sel.size+' selected / '+S.datasets.length+' datasets for fitting and plotting.';
   }
   function schedule(){dirty=true;if(!active() || queued)return;queued=requestAnimationFrame(function(){queued=0;render(false);});}
   function init(){
@@ -22,7 +20,7 @@ RV.datasets = (function () {
     RV.bus.on('phases',simulationButtons);RV.bus.on('busy',simulationButtons);simulationButtons();
     var pane=$('#pane-datasets');
     pane.addEventListener('click',function(e){var b=e.target.closest('[data-dataset-action]');if(!b || S.busy)return;switch(b.dataset.datasetAction){
-      case 'read':RV.cmd.readData();break;case 'simulate':RV.cmd.simulate();break;case 'delete':RV.cmd.deleteDatasets();break;case 'all':St.selectAll();break;case 'none':St.selectIds([]);break;case 'parameters':RV.app.showSide('params');break;
+      case 'read':RV.cmd.readData();break;case 'demo':RV.cmd.demo();break;case 'simulate':RV.cmd.simulate();break;case 'delete':RV.cmd.deleteDatasets();break;case 'all':St.selectAll();break;case 'none':St.selectIds([]);break;case 'parameters':RV.app.showSide('params');break;
       case 'individual':St.store('fitmode','single');RV.bus.emit('fitmode');RV.cmd.fitSelected();break;
     }});
     pane.addEventListener('change',function(e){if(S.busy)return;var el=e.target,id,d;

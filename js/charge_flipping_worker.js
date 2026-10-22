@@ -29,10 +29,11 @@ if (typeof importScripts === 'function') {
     // wyckoff_assign, scatterers, contacts, swarm_wyckoff, coord_refine) moved
     // to wyckoff_worker.js with the search that used them, so this worker no
     // longer pays to parse them.
-    importScripts('constants.js', 'crystal.js');
+    importScripts('constants.js', 'crystal.js', 'cf_adaptive.js');
 } else if (typeof require === 'function' && typeof module !== 'undefined') {
 
     Object.assign(globalThis, require('./constants.js'), require('./crystal.js'));
+    globalThis.CFAdaptive=require('./cf_adaptive.js');
 }
 
 // ---------------------------------------------------------------------------
@@ -707,7 +708,8 @@ const systematicallyAbsent = members.some(p => {
         : I,
     sigma: Number.isFinite(peak.sigma) && peak.sigma > 0
         ? Number(peak.sigma)
-        : null
+        : null,
+    fwhm: Number.isFinite(peak.fwhm) && peak.fwhm>0 ? peak.fwhm : null
 });
     }
 
@@ -725,12 +727,7 @@ const systematicallyAbsent = members.some(p => {
     for (let i = 0; i < refs.length; i++) {
         if (i === 0) { clusterOf[i] = nClusters; continue; }
         const prev = refs[i - 1], cur = refs[i];
-        let same = false;
-        if (prev.tth !== null && cur.tth !== null) {
-            same = Math.abs(cur.tth - prev.tth) <= tolTth;
-        } else if (prev.d !== null && cur.d !== null) {
-            same = Math.abs(cur.d - prev.d) <= 1e-4 * Math.max(1e-9, prev.d);
-        }
+        const same = CFAdaptive.overlap(prev,cur,{overlapTolTth:tolTth,overlapFwhmFraction:job.overlapFwhmFraction});
         if (!same) nClusters++;
         clusterOf[i] = nClusters;
 
@@ -1554,6 +1551,23 @@ reflections: modelReport(model)
 // ===========================================================================
 //  DISPATCH
 // ===========================================================================
+// Maximum mean-centred map correlation over periodic grid translations and
+// inversion. Density scale and origin/hand choices must not look like different
+// solutions. This is a reproducibility diagnostic, not a structure proof.
+function compareCFMaps(mapA,mapB,N) {
+    if(!Number.isInteger(N) || N<8 || N>128 || (N & (N-1)) || !mapA || !mapB || mapA.length!==N*N*N || mapB.length!==N*N*N)throw Error('Invalid CF map comparison grid.');
+    const n=mapA.length,ar=new Float64Array(n),ai=new Float64Array(n),br=new Float64Array(n),bi=new Float64Array(n);
+    let ma=0,mb=0;for(let i=0;i<n;i++){if(!Number.isFinite(mapA[i]) || !Number.isFinite(mapB[i]))throw Error('Nonfinite CF density.');ma+=mapA[i];mb+=mapB[i];}ma/=n;mb/=n;
+    let ea=0,eb=0;for(let i=0;i<n;i++){ar[i]=mapA[i]-ma;br[i]=mapB[i]-mb;ea+=ar[i]*ar[i];eb+=br[i]*br[i];}
+    if(!(ea>0) || !(eb>0))return {correlation:null,reason:'No density contrast'};
+    const norm=Math.sqrt(ea*eb);fft3d(ar,ai,N,false);fft3d(br,bi,N,false);
+    const cr=new Float64Array(n),ci=new Float64Array(n);let best=-Infinity,hand=1,index=0;
+    for(const sign of [1,-1]){
+        for(let i=0;i<n;i++){cr[i]=ar[i]*br[i]+sign*ai[i]*bi[i];ci[i]=ai[i]*br[i]-sign*ar[i]*bi[i];}
+        fft3d(cr,ci,N,true);for(let i=0;i<n;i++)if(cr[i]>best){best=cr[i];hand=sign;index=i;}
+    }
+    return {correlation:Math.max(0,Math.min(1,best/norm)),hand:hand,shift:[index%N,Math.floor(index/N)%N,Math.floor(index/(N*N))].map(function(v){return v/N;})};
+}
 async function runChargeFlipping(job) {
     const wantGPU = job.backend !== 'cpu';
     if (wantGPU && typeof runChargeFlippingGPU === 'function') {
@@ -1576,6 +1590,9 @@ globalThis.onmessage = async function (e) {
     const job = e.data || {};
 
     try {
+        if(job.type==='compare-cf-maps'){
+            postMessage({type:'cf-comparison',results:compareCFMaps(job.mapA,job.mapB,job.gridSize)});return;
+        }
         if (job.type === 'run-charge-flipping') {
             const out = await runChargeFlipping(job);
             if (out.error) { postMessage({ type: 'cf-error', message: out.error }); return; }
@@ -2466,7 +2483,7 @@ if (typeof module !== 'undefined' && module.exports) {
         fft1d, fft3d, buildReflectionModel, findSystematicAbsences,
         lorentzPolarization, polarizationK, describePolarization,
         normalizeSymops, findPeaks,
-        runChargeFlipping: runChargeFlippingCPU, runChargeFlippingCPU,
+        runChargeFlipping: runChargeFlippingCPU, runChargeFlippingCPU, compareCFMaps,
         metricTensor, fracDistance, buildStructure, findOriginShift,
         symmetryAverage, reduceToAsymmetricUnit, applyOp, LAUE_OPS
     };
@@ -2517,7 +2534,7 @@ function findOriginShift(re, im, N, symops, opts) {
 
     const cRe = new Float64Array(N3);
     const cIm = new Float64Array(N3);
-    let contributions = 0;
+    let contributions = 0,informativeOps=0;
     let sumW = 0;
 
     for (const op of symops) {
@@ -2526,6 +2543,7 @@ function findOriginShift(re, im, N, symops, opts) {
             r[1] === 0 && r[2] === 0 && r[3] === 0 &&
             r[5] === 0 && r[6] === 0 && r[7] === 0 &&
             Math.abs(t[0]) < 1e-9 && Math.abs(t[1]) < 1e-9 && Math.abs(t[2]) < 1e-9) continue;
+        informativeOps++;
 
         for (let ml = 0; ml < N; ml++) {
             const hl = signedIndex(ml, N);
@@ -2565,6 +2583,9 @@ function findOriginShift(re, im, N, symops, opts) {
         }
     }
 
+    // In P1 every origin is valid. No symmetry phase relation is available to
+    // optimize, so retaining the map's origin is the correct result.
+    if(!informativeOps)return {candidates:[{shift:[0,0,0],score:1}],sumW:0,contributions:0,unconstrainedOrigin:true};
     if (contributions === 0) return { candidates: [], sumW: 0, contributions: 0 };
 
     fft3d(cRe, cIm, N, false);

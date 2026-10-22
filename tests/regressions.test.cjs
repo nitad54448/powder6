@@ -17,7 +17,7 @@ function app(withTables = true) {
   const storage = new Map(), messages = [];
   const context = vm.createContext({
     console: { log() {}, warn() {}, error() {} }, TextDecoder, TextEncoder,
-    performance, setTimeout, clearTimeout, navigator: { hardwareConcurrency: 2 },
+    performance, setTimeout, clearTimeout, setImmediate, clearImmediate, navigator: { hardwareConcurrency: 2 },
     localStorage: { getItem: k => storage.get(k) || null, setItem: (k, v) => storage.set(k, v) },
     document: { getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] },
     RV: { version: '2.6', bus: { emit() {}, on() {} }, ui: {
@@ -33,7 +33,7 @@ function app(withTables = true) {
   }
   context.SG_DATABASE = database;
   for (const file of ['js/sg_engine.js', 'js/rietveld/rv_state.js', 'js/rietveld/rv_commands.js',
-    'js/rietveld/rv_phases.js', 'js/rietveld/rv_results.js', 'js/rietveld/rv_gsas2.js']) {
+    'js/rietveld/rv_phases.js', 'js/rietveld/rv_results.js', 'js/rietveld/rv_gsas2.js', 'lib/jszip.min.js', 'js/rietveld/rv_fit_history.js', 'js/rietveld/rv_project.js']) {
     vm.runInContext(read(file), context, { filename: file });
   }
   const state = context.RV.state;
@@ -70,6 +70,108 @@ function fitted(a = model()) {
   return a;
 }
 
+test('the positive width continuation retains negative-tail precision and avoids overflow', () => {
+  const a=app();
+  assert.ok(Math.abs(a.run('softPositive(-1e10,1e-3)')/1e-16-1)<1e-14);
+  assert.equal(a.run('softPositive(0,0.25)'),0.25);
+  assert.equal(a.run('softPositive(1e308,0.25)'),1e308);
+  assert.ok(a.run('softPositive(-1e308,0.25)')>0);
+  for(const x of [-100,-1,1,100]){
+    const actual=a.run('softPositive('+x+',0.5)'),expected=(x+Math.sqrt(x*x+1))/2;
+    assert.ok(Math.abs(actual-expected)<1e-12);
+  }
+});
+
+test('normal-matrix diagnostics find joint dependencies despite unequal parameter units', () => {
+  const a=app(),base=[1,0,1,0,1,1,1,1,2],scales=[1e-9,1e6,.03];
+  const A=base.map((x,i)=>x*scales[Math.floor(i/3)]*scales[i%3]);
+  const diagnostic=a.core.normalDependence(A,3);
+  assert.equal(diagnostic.rank,2);
+  assert.deepEqual(plain(diagnostic.groups),[[0,1,2]]);
+  assert.deepEqual(plain(a.core.normalDependence([1,0,0,1],2)),{rank:2,groups:[]});
+  assert.deepEqual(plain(a.core.normalDependence([1,0,0,0],2)),{rank:1,groups:[[1]]});
+});
+
+test('joint instrument/sample size ambiguity is diagnosed in all three fit methods', () => {
+  for(const method of ['rietveld','lebail','wppf']){
+    const a=model();a.state.setCalculation(method);
+    const job=a.state.problemFor([a.ds]);
+    job.vars=['zero','inst.X','p1.size','p2.size'].map(name=>({d:0,name}));
+    const result=a.core.refine(job,{evaluateOnly:true});
+    assert.equal(result.ok,true,result.msg);assert.equal(result.covarianceOK,false,method);
+    const warnings=result.fitWarnings[0].join('\n');
+    assert.match(warnings,/inst\.X, p1\.size, p2\.size/);
+    assert.match(result.uncertaintyIssues[0].zero,/does not establish/);
+    assert.match(result.uncertaintyIssues[0]['inst.X'],/Cannot distinguish/);
+    job.vars=job.vars.filter(v=>v.name!=='inst.X');
+    const calibrated=a.core.refine(job,{evaluateOnly:true});
+    assert.equal(calibrated.covarianceOK,true,method+': fixed instrument should resolve the sample ambiguity');
+    assert.equal(calibrated.fitWarnings[0].length,0);
+  }
+});
+
+test('instrument diagnostics test the full Gaussian variance rather than the sign of V', () => {
+  const a=model(),job=a.state.problemFor([a.ds]);job.vars=[];
+  assert.deepEqual(plain(a.core.refine(job,{evaluateOnly:true}).fitWarnings),[[]]);
+  job.datasets[0].tth=Float64Array.from({length:6001},(_,i)=>10+.025*i);
+  job.datasets[0].y=new Float64Array(6001).fill(100);job.datasets[0].w=new Float64Array(6001).fill(.01);
+  Object.assign(job.values[0],{'inst.U':3.96361,'inst.V':-43.01288,'inst.W':18.71003});
+  // The reported setup: instrument coefficients, zero, cell and background;
+  // specimen size/strain are held fixed.
+  job.vars=['zero','p1.a','p2.a','bkg0',...['U','V','W','X','Y','Z','SL','HL'].map(k=>'inst.'+k)].map(name=>({name,d:0}));
+  const result=a.core.refine(job,{evaluateOnly:true});
+  assert.equal(result.ok,true,result.msg);
+  assert.match(result.fitWarnings[0][0],/Gaussian variance \(U, V, W\) is negative/);
+  assert.match(result.fitWarnings[0][0],/negative V alone is allowed/);
+  assert.match(result.fitWarnings[0][0],/159\.12 deg/);
+  assert.equal(result.values[0]['p1.size'],job.values[0]['p1.size']);
+  assert.equal(result.values[0]['p1.strain'],job.values[0]['p1.strain']);
+  assert.ok(!result.fitWarnings[0].some(s=>/Cannot distinguish.*p[12]\.(?:size|strain)/.test(s)));
+  // Both end points are positive, but the polynomial is negative inside.
+  job.datasets[0].tth=Float64Array.from({length:150},(_,i)=>20+i*100/149);
+  job.datasets[0].y=new Float64Array(150).fill(100);job.datasets[0].w=new Float64Array(150).fill(.01);
+  Object.assign(job.values[0],{'inst.U':1,'inst.V':-2,'inst.W':.9});
+  assert.match(a.core.refine(job,{evaluateOnly:true}).fitWarnings[0][0],/90\.00 deg/);
+});
+
+test('an inactive refined variable cannot silently pass the covariance quality flag', () => {
+  const a=model();a.ds.inst.resolutionType='simple_pvoigt';
+  const job=a.state.problemFor([a.ds]);job.vars=[{d:0,name:'bkg0'},{d:0,name:'inst.HL'}];
+  const result=a.core.refine(job,{evaluateOnly:true});
+  assert.equal(result.ok,true,result.msg);assert.equal(result.covarianceOK,false);
+  assert.match(result.uncertaintyIssues[0]['inst.HL'],/zero derivative/);
+  assert.match(result.fitWarnings[0].join('\n'),/inst.HL has no measurable effect/);
+  assert.ok(Number.isFinite(result.esd[0].bkg0));
+});
+
+test('local variables with the same name are distinguished in global covariance diagnostics', () => {
+  const a=model(),other=a.state.makeDataset({name:'other',tth:a.ds.tth,y:a.ds.y,inst:a.ds.inst});
+  a.S.datasets.push(other);
+  const job=a.state.problemFor([a.ds,other]);
+  job.vars=[0,1].flatMap(d=>['inst.X','p1.size','p2.size'].map(name=>({d,name})));
+  const result=a.core.refine(job,{evaluateOnly:true});
+  assert.equal(result.ok,true,result.msg);assert.equal(result.covarianceOK,false);
+  assert.match(result.uncertaintyIssues[0]['inst.X'],/inst.X \(dataset 1\)/);
+  assert.doesNotMatch(result.uncertaintyIssues[0]['inst.X'],/dataset 2/);
+  assert.match(result.uncertaintyIssues[1]['inst.X'],/inst.X \(dataset 2\)/);
+});
+
+test('fit diagnostics and truthful uncertainty labels survive reports, history and projects', () => {
+  const a=model(),job=a.state.problemFor([a.ds]);
+  job.vars=['zero','inst.X','p1.size','p2.size'].map(name=>({d:0,name}));
+  const result=a.core.refine(job,{evaluateOnly:true});a.state.applyResult([a.ds],result,job,false);
+  const expected=plain(result.fitWarnings[0]),report=a.context.RV.results.reportText([a.ds]);
+  assert.match(report,/fit warning\tCannot distinguish/);
+  assert.match(report,/X = .*\(uncertainty unavailable\)/);
+  assert.doesNotMatch(report,/\(unconstrained\)/);
+  const record=a.context.RV.fitHistory.complete(a.context.RV.fitHistory.begin([a.ds],false),[a.ds]);
+  a.state.commitProject(a.state.prepareProject(JSON.parse(a.state.projectJSON([]))));
+  assert.deepEqual(plain(a.S.datasets[0].stats.fitWarnings),expected);
+  assert.equal(a.S.datasets[0].stats.covarianceOK,false);
+  a.context.RV.fitHistory.restore(record.id);
+  assert.deepEqual(plain(a.S.datasets[0].stats.fitWarnings),expected);
+});
+
 test('scale estimation recovers both phase scales and the constant background', () => {
   const a = model();
   a.ds.p['p1.scale'] = 1e-9; a.ds.p['p2.scale'] = 1e-9; a.ds.p.bkg0 = 1;
@@ -77,6 +179,29 @@ test('scale estimation recovers both phase scales and the constant background', 
   assert.ok(Math.abs(a.ds.p['p1.scale'] - 0.002) < 1e-10);
   assert.ok(Math.abs(a.ds.p['p2.scale'] - 0.003) < 1e-10);
   assert.ok(Math.abs(a.ds.p.bkg0 - 17) < 1e-8);
+});
+
+test('space-group precision limits the tested reflections and reports the available count', () => {
+  const a=model();a.state.setCalculation('wppf');
+  const job=a.state.jobFor(a.ds);
+  const all=a.core.refine(job,{evaluateOnly:true,precision:{dataset:0,phase:0}});
+  assert.equal(all.ok,true,all.msg);
+  assert.ok(all.precision.available>4);
+  assert.equal(all.precision.n,Math.min(all.precision.available,a.core.MAX_PRECISION_REFLECTIONS));
+  const limited=a.core.refine(job,{evaluateOnly:true,precision:{dataset:0,phase:0,maxRefl:4}});
+  assert.equal(limited.ok,true,limited.msg);
+  assert.equal(limited.precision.n,4);
+  assert.equal(limited.precision.Q.length,16);
+  assert.equal(limited.precision.available,all.precision.available);
+  assert.deepEqual(Array.from(limited.precision.index),Array.from(all.precision.index).slice(0,4));
+});
+
+test('intensity extraction rejects malformed and excessive reflection limits before dispatch', async () => {
+  const a=model();a.state.setCalculation('wppf');
+  for(const maxRefl of ['10k','1000k',1e6,0,-1,4.5,NaN,Infinity]){
+    await assert.rejects(a.context.RV.cmd.extract(a.ds,{phase:0,maxRefl}),/whole number/);
+    assert.equal(a.S.busy,false);
+  }
 });
 
 test('ESD, FXYE and XYE uncertainties reach the fit weights', async () => {
@@ -465,4 +590,187 @@ test('Le Bail and WPPF exports retain their cell and use the Rietveld atomic mod
     assert.match(report, /content\tSi0\.6/);
     assert.equal(a.ds.p[B], 8.5, 'Export changed a saved method value');
   }
+});
+
+test('completed fits keep immutable models and observations shared across checkpoints', () => {
+  const a=fitted(),h=a.context.RV.fitHistory;
+  const first=h.complete(h.begin([a.ds],false),[a.ds]);
+  const json=JSON.stringify(first),key=a.ds.dataKey;
+  a.state.setParam('bkg0',91,[a.ds]);
+  assert.equal(JSON.stringify(first),json);assert.equal(h.changed(first),true);
+  assert.equal(first.datasets[0].tth,undefined);
+  assert.equal(h.observations()[key].tth,a.ds.tth);
+  const second=h.complete(h.begin([a.ds],false),[Object.assign({},a.ds,{stats:{ok:true,msg:'converged'}})]);
+  assert.equal(first.model,second.model);
+  assert.equal(Object.keys(h.observations()).length,1);
+});
+
+test('Set restores a calculation, its model and uncertainties without dropping other methods or history', () => {
+  const a=fitted(),h=a.context.RV.fitHistory;
+  a.state.setCalculation('lebail');a.state.setParam('bkg0',23,[a.ds]);a.state.saveCalculation();
+  a.state.setCalculation('rietveld');
+  const r=h.complete(h.begin([a.ds],false),[a.ds]),saved=r.datasets[0].p.bkg0;
+  a.state.setParam('bkg0',93,[a.ds]);
+  h.restore(r.id);
+  const d=a.state.byId(a.ds.id);
+  assert.equal(d.p.bkg0,saved);assert.equal(d.stats.msg,r.datasets[0].stats.msg);
+  assert.equal(d.calculations.lebail.p.bkg0,23);
+  assert.equal(h.latest('rietveld').id,r.id);
+});
+
+test('global history restores the complete set and rejects restoration of one member', () => {
+  const a=model(),other=a.state.makeDataset({name:'second',tth:a.ds.tth,y:a.ds.y});a.S.datasets.push(other);
+  a.state.selectAll();const job=a.state.globalJob(a.state.selected()),result=a.core.refine(job);
+  assert.equal(result.ok,true,result.msg);a.state.applyResult(a.state.selected(),result,job,true);
+  const h=a.context.RV.fitHistory,r=h.complete(h.begin(a.state.selected(),true),a.state.selected());
+  assert.throws(()=>h.restore(r.id,a.ds.id),/complete set/);
+  a.state.setParam('bkg0',93,[a.ds]);h.restore(r.id);
+  assert.equal(a.S.sel.size,2);assert.equal(a.state.byId(a.ds.id).p.bkg0,r.datasets[0].p.bkg0);
+});
+
+test('history count and byte budgets prune oldest unkept results while preserving kept records', () => {
+  const a=fitted(),h=a.context.RV.fitHistory;a.state.setSetting('historyCount',2);
+  const first=h.complete(h.begin([a.ds],false),[a.ds]);first.pinned=true;
+  for(let i=0;i<5;i++)h.complete(h.begin([a.ds],false),[a.ds]);
+  assert.equal(h.usage().count,3);assert.ok(h.find(first.id));
+  h.exportData(true).records.filter(r=>!r.pinned && r.id!==h.latest('rietveld').id).forEach(r=>h.find(r.id).bytes=2000000);a.state.setSetting('historyMB',1);h.prune();
+  assert.ok(h.find(first.id));assert.ok(h.usage().history<=1000000);
+});
+
+test('compressed projects retain datasets, groups, observations and restorable history', async () => {
+  const a=fitted(),h=a.context.RV.fitHistory,r=h.complete(h.begin([a.ds],false),[a.ds]);
+  a.S.datasetGroups=[{id:'group',name:'Measurements',ids:[a.ds.id]}];
+  const packed=await a.context.RV.project.pack();assert.equal(packed[0],80);assert.equal(packed[1],75);
+  const doc=await a.context.RV.project.unpack(packed);
+  assert.equal(doc.observations.length,1);assert.equal(doc.fitHistory.records.length,1);
+  a.state.commitProject(a.state.prepareProject(doc));
+  assert.deepEqual(plain(a.S.datasetGroups),[{id:'group',name:'Measurements',ids:[a.ds.id]}]);
+  assert.deepEqual(Array.from(a.S.datasets[0].y),Array.from(a.ds.y));
+  a.context.RV.fitHistory.restore(r.id);assert.equal(a.S.datasets[0].p.bkg0,r.datasets[0].p.bkg0);
+});
+
+test('every method fits from each dataset current values without a source override', () => {
+  const a=model();
+  const other=a.state.makeDataset({name:'second',tth:a.ds.tth,y:a.ds.y});a.S.datasets.push(other);
+  for(const method of ['lebail','wppf','rietveld']){
+    a.state.setCalculation(method);a.ds.p['p1.a']=5.1;other.p['p1.a']=5.6;a.state.selectAll();
+    const job=a.state.jobFor(other);assert.equal(job.values[0]['p1.a'],5.6);
+    a.state.setParam('p1.a',5.8,[other]);assert.equal(a.state.jobFor(other).values[0]['p1.a'],5.8);
+    assert.equal(job.values[0]['p1.a'],5.6);assert.equal(a.ds.p['p1.a'],5.1);
+  }
+});
+
+test('conflicting shared starts require a choice and resolve without changing the current model', () => {
+  const a=model(),other=a.state.makeDataset({name:'second',tth:a.ds.tth,y:a.ds.y});a.S.datasets.push(other);
+  a.ds.fit['p1.a']=other.fit['p1.a']=true;other.p['p1.a']=5.6;
+  const job=a.state.globalJob([a.ds,other]),conflicts=a.state.sharedStartConflicts(job);
+  assert.deepEqual(plain(conflicts),[{name:'p1.a',indices:[0,1],values:[5,5.6]}]);
+  assert.throws(()=>a.state.resolveSharedStarts(job,{}),/Choose a shared starting value/);
+  const resolved=a.state.resolveSharedStarts(job,{'p1.a':5.6});
+  assert.equal(resolved.values[0]['p1.a'],5.6);assert.equal(resolved.values[1]['p1.a'],5.6);
+  assert.equal(a.ds.p['p1.a'],5);assert.equal(job.values[0]['p1.a'],5);
+  a.state.setLimit('p1.a',[4,6]);
+  assert.throws(()=>a.state.resolveSharedStarts(job,{'p1.a':7}),/outside its limits/);
+  assert.equal(a.state.resolveSharedStarts(job,{'p1.a':5.3}).values[1]['p1.a'],5.3);
+});
+
+test('shared-start choices exclude local, apart, held and constraint-dependent values', () => {
+  const a=model(),other=a.state.makeDataset({name:'second',tth:a.ds.tth,y:a.ds.y});a.S.datasets.push(other);
+  const list=[a.ds,other];a.ds.fit['p1.a']=other.fit['p1.a']=true;other.p['p1.a']=5.6;
+  a.state.setShared('p1.a',false);assert.equal(a.state.sharedStartConflicts(a.state.globalJob(list)).length,0);
+  a.state.setShared('p1.a',true);a.state.setApart([other],['p1.a'],true);
+  assert.equal(a.state.sharedStartConflicts(a.state.globalJob(list)).length,0);
+  a.state.setApart([other],['p1.a'],false);a.ds.fit['p1.a']=other.fit['p1.a']=false;
+  const name='p1.Si1.B';a.ds.fit[name]=other.fit[name]=true;other.p[name]=.8;
+  a.S.phases[0].constraints=[{kind:'hold',component:'B',atoms:['Si1']}];
+  assert.equal(a.state.sharedStartConflicts(a.state.globalJob(list)).length,0);
+  a.S.phases[0].constraints=[];
+  a.S.parameterLinks=list.map(d=>({source:{datasetId:a.ds.id,name:'p1.Si1.occ'},target:{datasetId:d.id,name},factor:1,offset:0}));
+  assert.equal(a.state.sharedStartConflicts(a.state.globalJob(list)).length,0);
+});
+
+test('a dataset resolution profile is independent of phases reused by other datasets', () => {
+  const a=model(),other=a.state.makeDataset({name:'second',tth:a.ds.tth,y:a.ds.y});a.S.datasets.push(other);
+  a.ds.inst.resolutionType='simple_pvoigt';other.inst.resolutionType='split_pvoigt';
+  const p=a.S.phases[0],definition=a.state.phaseDefs()[0];
+  const first=a.core.profileParamsFor(definition,{lambda1:a.ds.inst.lambda1,resolutionType:a.ds.inst.resolutionType},a.ds.p);
+  const second=a.core.profileParamsFor(definition,{lambda1:other.inst.lambda1,resolutionType:other.inst.resolutionType},other.p);
+  assert.equal(first.profileType,'simple_pvoigt');assert.equal(second.profileType,'split_pvoigt');assert.equal(p.profileType,'gsas_cw');
+  assert.ok(a.state.instrumentParamsFor(a.ds).some(p=>p[0]==='eta'));
+  assert.equal(a.state.instrumentParamsFor(a.ds).some(p=>p[0]==='U_L'),false);
+});
+
+test('all instrument profile families retain independent sample size and strain', () => {
+  const a=model(),ph=a.S.phases[0],angles=Array.from({length:3501},(_,i)=>10+i*.02);
+  a.ds=a.state.makeDataset({name:'resolved peaks',tth:angles,y:Array(angles.length).fill(1),inst:a.ds.inst,p:a.ds.p,fit:a.ds.fit,phases:[ph.key]});a.S.datasets=[a.ds];a.state.selectIds([a.ds.id]);
+  assert.equal(a.ds.inst.resolutionType,'tch_aniso');assert.equal(a.core.usesSeparatedProfile(ph),true);
+  const instrument=JSON.stringify(Object.fromEntries(Object.entries(a.ds.p).filter(([k])=>k.startsWith('inst.'))));
+  for(const type of a.core.INSTRUMENT_PROFILE_TYPES){
+    a.ds.inst.resolutionType=type;a.ds.p[ph.key+'.size']=1;a.ds.p[ph.key+'.strain']=0;
+    const reference=a.core.evaluate(a.state.problemFor([a.ds]),0).ycalc;
+    a.ds.p[ph.key+'.size']=.03;const small=a.core.evaluate(a.state.problemFor([a.ds]),0).ycalc;
+    a.ds.p[ph.key+'.size']=1;a.ds.p[ph.key+'.strain']=800;const strained=a.core.evaluate(a.state.problemFor([a.ds]),0).ycalc;
+    const differs=y=>y.reduce((sum,v,i)=>sum+Math.abs(v-reference[i]),0)>1;
+    assert.ok(differs(small),type+': crystallite size does not change the calculated pattern');
+    assert.ok(differs(strained),type+': microstrain does not change the calculated pattern');
+    assert.equal(JSON.stringify(Object.fromEntries(Object.entries(a.ds.p).filter(([k])=>k.startsWith('inst.')))),instrument);
+    assert.equal(ph.profileType,'gsas_cw');
+  }
+  const next=a.state.makePhase({name:'new phase',sg:a.state.resolveSG(221),cell:{a:5}});
+  assert.equal(next.profileType,'gsas_cw');assert.equal(a.core.usesSeparatedProfile(next),true);
+  assert.ok(Number.isFinite(next.v[next.key+'.size']) && Number.isFinite(next.v[next.key+'.strain']));
+});
+
+test('exact links connect independent parameters across phases and datasets', () => {
+  const a=model(),other=a.state.makeDataset({name:'second',tth:a.ds.tth,y:a.ds.y});a.S.datasets.push(other);
+  a.S.parameterLinks=[{id:'link',source:{datasetId:a.ds.id,name:'p1.a'},target:{datasetId:other.id,name:'p2.a'},factor:1.5,offset:.1}];
+  a.state.setParam('p1.a',5.2,[a.ds]);assert.ok(Math.abs(other.p['p2.a']-7.9)<1e-10);
+  a.ds.fit['p1.a']=true;other.fit['p2.a']=true;a.state.selectAll();a.state.setShared('p1.a',false);
+  const job=a.state.globalJob(a.state.selected()),plan=a.context.AtomicConstraints.prepare(job);
+  assert.equal(plan.vars.some(v=>v.name==='p2.a' && v.d===1),false);
+  const x=plan.vars.map(v=>plan.values[v.d>=0?v.d:0][v.name]),index=plan.vars.findIndex(v=>v.name==='p1.a' && v.d===0);
+  x[index]=5.4;plan.apply(plan.values,x);assert.ok(Math.abs(plan.values[1]['p2.a']-8.2)<1e-10);
+  const single=a.state.jobFor(other),p=a.context.AtomicConstraints.prepare(single);assert.ok(Math.abs(p.values[0]['p2.a']-7.9)<1e-10);
+});
+
+test('history retains external parameter sources and can restore deleted source datasets', () => {
+  const a=fitted(),source=a.state.makeDataset({name:'source',tth:a.ds.tth,y:a.ds.y});a.S.datasets.push(source);source.p['p1.a']=5.2;
+  a.S.parameterLinks=[{id:'source',source:{datasetId:source.id,name:'p1.a'},target:{datasetId:a.ds.id,name:'p1.a'},factor:1,offset:0}];
+  a.state.setParam('p1.a',5.2,[source]);
+  a.ds.stats={ok:true,msg:'converged',Rp:0,Rwp:0};
+  const h=a.context.RV.fitHistory,r=h.complete(h.begin([a.ds],false),[a.ds]);
+  assert.equal(r.dependencies.length,1);a.state.removeDatasets([source.id]);
+  h.withResult(r,()=>assert.equal(a.state.byId(source.id).p['p1.a'],5.2));
+  h.restore(r.id);assert.equal(a.state.byId(source.id).p['p1.a'],5.2);assert.equal(a.S.sel.size,1);
+});
+
+test('phase inclusion is a method choice that preserves dataset assignments', () => {
+  const a=model();a.ds.fit['p2.a']=true;a.S.disabledPhases=['p2'];
+  assert.deepEqual(plain(a.ds.phases),['p1','p2']);
+  assert.deepEqual(plain(a.state.problemFor([a.ds]).datasets[0].phases),['p1']);
+  assert.equal(a.state.fitNames(a.ds).includes('p2.a'),false);
+  a.state.setCalculation('lebail');a.S.disabledPhases=[];a.state.setCalculation('rietveld');
+  assert.deepEqual(plain(a.S.disabledPhases),['p2']);
+});
+
+test('Set makes an older fit the method result without changing its archived record', () => {
+  const a=fitted(),h=a.context.RV.fitHistory,first=h.complete(h.begin([a.ds],false),[a.ds]);
+  const json=JSON.stringify(first);a.ds.p.bkg0=20;const second=h.complete(h.begin([a.ds],false),[a.ds]);
+  assert.equal(h.latest('rietveld').id,second.id);h.restore(first.id);
+  assert.equal(h.latest('rietveld').id,first.id);assert.equal(JSON.stringify(h.find(first.id)),json);
+  const saved=JSON.parse(a.state.projectJSON([]));a.state.commitProject(a.state.prepareProject(saved));
+  assert.equal(h.latest('rietveld').id,first.id);
+});
+
+test('result inspection preserves the selected phase and restores working state after an error', () => {
+  const a=fitted(),h=a.context.RV.fitHistory,r=h.complete(h.begin([a.ds],false),[a.ds]);
+  a.S.phaseSel='p2';a.state.setParam('bkg0',91,[a.ds]);
+  const working=a.S.datasets,phases=a.S.phases,selection=a.S.sel;
+  assert.throws(()=>h.withResult(r,()=>{
+    assert.equal(a.S.phaseSel,'p2');assert.equal(a.S.datasets[0].p.bkg0,r.datasets[0].p.bkg0);
+    throw new Error('report failure');
+  }),/report failure/);
+  assert.equal(a.S.phaseSel,'p2');assert.equal(a.S.datasets,working);
+  assert.equal(a.S.phases,phases);assert.equal(a.S.sel,selection);
+  assert.equal(a.ds.p.bkg0,91);assert.equal(h.viewing(),false);
 });

@@ -217,7 +217,7 @@ RV.pdf = (function () {
 
   // ---------------------------------------------------------------- the report
   function build(list) {
-    var d = new Doc(), title = 'Powder 6 report, ' + ui.stamp().slice(0, 16), sol = RV.solve && RV.solve.report ? RV.solve.report() : { lines: [] };
+    var d = new Doc(), title = 'Powder 6 report, ' + ui.stamp().slice(0, 16), sol = RV.layout && RV.layout.resultTab()==='solve'?{lines:[]}:RV.layout && RV.layout.resultTab()==='structure-results' && RV.solve && RV.solve.reportSelected?RV.solve.reportSelected():RV.solve && RV.solve.report ? RV.solve.report() : { lines: [] };
     d.heading('Powder 6: Rietveld, Le Bail and WPPF', 16, 0);
     d.para(ui.stamp() + '. Powder 6, version ' + RV.version + ', fit core ' + RVCore.VERSION + '. ' + list.length + (list.length === 1 ? ' dataset' : ' datasets') + '; phases: ' +
            (S.phases.map(function (p) { return p.name + ' (' + St.sgText(p.sg) + ', ' + RVCore.METHOD_LABELS[p.method] + ')'; }).join(', ') || 'none') + '.', 9, 0.25);
@@ -250,6 +250,7 @@ RV.pdf = (function () {
     return d.bytes(title);
   }
   function report() {
+    if(RV.fitHistory && !RV.fitHistory.viewing()){var result=RV.layout && RV.layout.resultTab()==='solve'?RV.layout.record():RV.layout && RV.layout.resultTab()==='structure-results'?RV.layout.structureRecord():RV.fitHistory.latest(S.calculation);if(result)return RV.fitHistory.withResult(result,report);if(RV.layout && RV.layout.resultTab()==='solve'){ui.toast('Select a completed fit before exporting a report.','info');return;}}
     var list = St.selected();
     if (!list.length) { ui.toast('Select one or more datasets first.', 'warn'); return; }
     var bytes;

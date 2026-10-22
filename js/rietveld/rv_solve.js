@@ -27,8 +27,8 @@ RV.solve = (function () {
 
   // ---------------------------------------------------------------- options (kept in localStorage)
   function defaults() {
-    return { formula: '', z: '', tab: 'sgt', sgtN: 220,
-             cf: { grid: 'auto', threshold: CFD.thresholdSigma, iterations: CFD.maxIterations, trials: CFD.randomStarts, symLambda: CFD.symLambda,
+    return { formula: '', z: '', tab: 'sgt', sgtN: 0, sgtAuto:true,
+             cf: { adaptive:false, grid: 'auto', threshold: CFD.thresholdSigma, iterations: CFD.maxIterations, trials: CFD.randomStarts, symLambda: CFD.symLambda,
                    densityLevel: 3, densityStride: 1, densityCell: true, densitySites: true, weakFraction: CFD.weakFraction, weakGrouping: CFD.weakGrouping, overlapTol: CFD.overlapTolTth, peakMerge: CFD.peakMerge },
              wy: { maxSites: '', maxRepeat: '', rhoMin: 2, rhoMax: 10, maxZ: 3, particles: 512, particlesAuto:true, iterations: 2000, restarts: 4, minContact: 1.0, constraints: '' } };
   }
@@ -36,7 +36,7 @@ RV.solve = (function () {
     var o = defaults(), s = St.load('solve');
     if (s && typeof s === 'object') {
       ['formula', 'z', 'tab'].forEach(function (k) { if (typeof s[k] === 'string') o[k] = s[k]; });
-      if (Number.isInteger(s.sgtN) && s.sgtN >= 8 && s.sgtN <= 600) o.sgtN = s.sgtN;
+      if (s.sgtAuto===false && Number.isSafeInteger(s.sgtN) && s.sgtN>=4 && s.sgtN<=C.MAX_PRECISION_REFLECTIONS){o.sgtN=s.sgtN;o.sgtAuto=false;}
       ['cf', 'wy'].forEach(function (g) { if (s[g] && typeof s[g] === 'object') Object.keys(o[g]).forEach(function (k) { if (typeof s[g][k] === typeof o[g][k]) o[g][k] = s[g][k]; }); });
     }
     if(s && s.wy && s.wy.particlesAuto==null && s.wy.particles!=null && s.wy.particles!==512)o.wy.particlesAuto=false;
@@ -44,6 +44,40 @@ RV.solve = (function () {
     return o;
   }
   var SV = { opts: null, phaseKey: null, dsId: null, ints: null, sgt: null, cf: null, wy: null, shown: null, cfRun: null, wyRun: null, extractions:{} };
+  function sgtRange(){
+    var I=SV.ints,valid=I && I.phaseKey===SV.phaseKey && I.dsId===SV.dsId;
+    var available=valid?(I.pre && Number.isSafeInteger(I.pre.available)?I.pre.available:(I.det || []).length):0;
+    return {available:available,max:Math.min(C.MAX_PRECISION_REFLECTIONS,available)};
+  }
+  function sgtCount(range){range=range || sgtRange();return SV.opts.sgtAuto || !SV.opts.sgtN?range.max:Math.min(SV.opts.sgtN,range.max);}
+  function sgtCountIssue(){
+    var range=sgtRange(),input=$('#sv-sgtn');
+    if(!range.available)return 'Extract intensities for this dataset and phase first.';
+    if(range.max<4)return 'Need at least 4 determined intensities; '+range.available+' available.';
+    var raw=input?input.value.trim():String(sgtCount(range)),n=/^\d+$/.test(raw)?Number(raw):NaN;
+    return Number.isSafeInteger(n) && n>=4 && n<=range.max?'':'Enter a whole number from 4 to '+range.max+'.';
+  }
+  function syncSgtCount(){
+    var input=$('#sv-sgtn');if(!input)return;var range=sgtRange();
+    input.min='4';input.max=String(range.max);input.value=range.max?String(sgtCount(range)):'';input.disabled=S.busy || range.max<4;
+    input.setCustomValidity('');input.removeAttribute('aria-invalid');
+    $('#sv-sgtn-note').textContent=range.available?range.available+' determined intensities available; lowest-angle reflections are used.'+(range.available>C.MAX_PRECISION_REFLECTIONS?' At most '+C.MAX_PRECISION_REFLECTIONS+' per test.':''):'Extract intensities to set the available range.';
+  }
+  var solutionSelection={},solutionViews={},inspectingSolution=false;
+  function active(){return RV.app && (RV.app.commandTab()==='structure' || RV.app.resultTab()==='structure-results');}
+  function withSolution(k,fn){
+    if(inspectingSolution || !['cf','wy'].includes(k))return fn();
+    var id=solutionSelection[k];if(!id && !SV[k]){var all=RV.fitHistory.list('wppf',k);id=all.length?all[all.length-1].id:null;}
+    var r=id && RV.fitHistory.find(id);if(!r || !r.solution){delete solutionSelection[k];return fn();}
+    if(!solutionViews[k] || solutionViews[k].record!==r)solutionViews[k]={record:r,value:JSON.parse(JSON.stringify(r.solution))};
+    var before={value:SV[k],ints:SV.ints,opts:SV.opts,dsId:SV.dsId,phaseKey:SV.phaseKey,shown:SV.shown},value=solutionViews[k].value;
+    inspectingSolution=true;SV[k]=value;SV.ints=value.I;SV.dsId=value.I.dsId;SV.phaseKey=value.I.phaseKey;SV.opts=Object.assign({},SV.opts,{formula:value.formula || ''});
+    try{return fn();}finally{SV[k]=before.value;['ints','opts','dsId','phaseKey','shown'].forEach(function(key){SV[key]=before[key];});inspectingSolution=false;}
+  }
+  function renderSelectedSolution(k,id){
+    if(k==='sgt'){renderSgtOut();return;}solutionSelection[k]=id || null;
+    withSolution(k,function(){if(k==='cf')renderCfOut();else renderWyOut();renderStruct(k);});
+  }
   function saveOpts() { St.store('solve', SV.opts); }
   function clearEmptyComposition() {
     if (!SV.opts || (S.phases.length && S.datasets.length)) return;
@@ -131,7 +165,7 @@ RV.solve = (function () {
     if (sc.xray && Array.isArray(sc.xray.a)) return sc.xray.a.reduce(function (s, a) { return s + a; }, 0) + (sc.xray.c || 0);
     return St.atomicWeight(el) / 2 || 0;
   }
-  function typedZ() { var z = parseInt(String(SV.opts.z).trim(), 10); return Number.isFinite(z) && z >= 1 ? Math.min(192, z) : null; }
+  function typedZ(value) { var z = parseInt(String(value==null?SV.opts.z:value).trim(), 10); return Number.isFinite(z) && z >= 1 ? Math.min(192, z) : null; }
 
   // ---------------------------------------------------------------- distance constraints (powder5.html, unchanged rules)
   function parseConstraints(text) {
@@ -235,6 +269,7 @@ RV.solve = (function () {
       var d = [St.first()].concat(St.selected(), S.datasets).filter(ok)[0];
       SV.dsId = d ? d.id : null;
     }
+    if(!SV.ints || SV.ints.phaseKey!==SV.phaseKey || SV.ints.dsId!==SV.dsId){var selected=dataset(),cached=selected && SV.extractions[selected.id];SV.ints=cached && cached.stats===selected.stats && cached.I.phaseKey===SV.phaseKey?cached.I:null;}
   }
   function polOf(inst) {
     if (inst.radiation === 'neutron' || inst.pol === 'none') return { mode: 'none' };
@@ -294,23 +329,23 @@ RV.solve = (function () {
     var ph = options.ph || phase(), ds = options.ds || dataset(), why = extractWhy(ph, ds);
     if (why) { ui.toast(why, 'warn'); return; }
     var pi = S.phases.indexOf(ph), res;
-    try { res = await RV.cmd.extract(ds, { phase: pi, maxRefl: SV.opts.sgtN }); }
+    try { res = await RV.cmd.extract(ds, { phase: pi, maxRefl: options.maxRefl || (!SV.opts.sgtAuto && SV.opts.sgtN) || C.MAX_PRECISION_REFLECTIONS }); }
     catch (e) { ui.toast('Intensities: ' + ((e && e.message) || e), 'err'); return; }
     if (!res) { ui.toast('Extraction stopped.', 'info'); return; }
     if (!res.ok) { ui.toast('The intensities of ' + ph.name + ' could not be extracted: ' + res.msg, 'err'); return; }
     var ev, T = res.intensities && res.intensities[0] && res.intensities[0][pi];
     try { ev = C.evaluate(St.problemFor([ds]), 0); } catch (e) { ui.toast('Intensities: ' + ((e && e.message) || e), 'err'); return; }
     if (!T || !ev.phases[pi]) { ui.toast('No WPPF intensities for ' + ph.name + '.', 'err'); return; }
-    var refl = ev.phases[pi].refl.map(function (r, k) {
+    var profile=profileOf(ph,ds),refl = ev.phases[pi].refl.map(function (r, k) {
       return { i: k, h: r.h, k: r.k, l: r.l, m: r.m, d: r.d, tth: r.tth, lp: r.lp, K: r.K, height: r.height, Icalc: T.area[k], area: T.area[k],
-               sigma: T.sigma[k], bound: !!T.bound[k], group: T.group[k], inRange: r.inRange };
+               sigma: T.sigma[k], bound: !!T.bound[k], group: T.group[k], inRange: r.inRange, fwhm:reflectionWidth({profile:profile},r) };
     });
     var det = refl.filter(function (r) { return r.inRange && Number.isFinite(r.sigma); });
     var nv = (St.jobFor(ds).vars || []).length, st = res.stats[0], cell = St.cellOf(ph, ds.p), got = symopsFor(ph.sg);
     SV.ints = {
       stamp: ui.stamp(), phaseKey: ph.key, phaseName: ph.name, dsId: ds.id, dsName: ds.name, sg: Object.assign({}, ph.sg), ops: ph.ops, wyckoff: ph.wyckoff,
       cell: cell, lambda: ds.inst.lambda1, radiation: ds.inst.radiation, pol: polOf(ds.inst), inst: St.instCopy(ds.inst),
-      covarianceOK:res.covarianceOK, profile: profileOf(ph, ds), refl: refl, det: det, pre: res.precision, s2: res.chi2red, nVar: nv, Rwp: st.Rwp, chi2: res.chi2red,
+      covarianceOK:res.covarianceOK, profile: profile, refl: refl, det: det, pre: res.precision, s2: res.chi2red, nVar: nv, Rwp: st.Rwp, chi2: res.chi2red,
       symops: got.error ? null : got.symops, symErr: got.error || '', stale: false
     };
     ds.ints = res.intensities[0];
@@ -330,17 +365,24 @@ RV.solve = (function () {
   }
   function profileOf(ph, ds) {
     return C.profileParamsFor({key:ph.key,profileType:ph.profileType,separatedProfile:ph.separatedProfile===true,system:ph.sg.system,uniqueAxis:ph.sg.uniqueAxis,ops:ph.ops,broadening:ph.broadening},
-      {lambda1:ds.inst.lambda1,lambda2:ds.inst.lambda2,ratio:ds.inst.ratio},ds.p);
+      Object.assign({},ds.inst,{minFwhm:Math.max(1e-4,2*(ds.step || .01))}),ds.p);
+  }
+  function reflectionWidth(I,r){
+    if(r.fwhm>0 && Number.isFinite(r.fwhm))return r.fwhm;
+    if(!I.profile)return null;
+    var sine=r.d>0?I.profile.lambda/(2*r.d):NaN,tth=sine>0 && sine<1?360/Math.PI*Math.asin(sine):r.tth-(I.profile.zeroShift || 0);
+    var p=prepareVoigt(tth,r.tth,{h_orig:r.h,k_orig:r.k,l_orig:r.l,d:r.d},I.profile);
+    return p && Number.isFinite(p.fwhm_total)?p.fwhm_total:null;
   }
   // the list charge flipping and the Wyckoff search share (cfPrepareIntensities of powder5): the determined WPPF
   // intensities, French-Wilson for the weak ones, anything still not positive a measured zero
   function solveInput(I) {
-    var list = I.det.map(function (r) { return { h: r.h, k: r.k, l: r.l, area: r.area, rawArea: r.area, sigma: r.sigma, multiplicity: r.m, tth: r.tth, d: r.d, lp: r.lp }; });
+    var list = I.det.map(function (r) { return { h: r.h, k: r.k, l: r.l, area: r.area, rawArea: r.area, sigma: r.sigma, multiplicity: r.m, tth: r.tth, d: r.d, lp: r.lp,fwhm:reflectionWidth(I,r) }; });
     var fw = frenchWilsonCorrect(list, I.symops, I.pol), zero = 0;
     var hklList = list.map(function (r) {
       var v = r.area;
       if (!(v > 0)) { v = 0; zero++; }
-      return { h_orig: r.h, k_orig: r.k, l_orig: r.l, intensity: v, multiplicity: r.multiplicity, rawIntensity: r.rawArea, sigma: r.sigma > 0 ? r.sigma : null, tth: r.tth, d: r.d, lp: r.lp };
+      return { h_orig: r.h, k_orig: r.k, l_orig: r.l, intensity: v, multiplicity: r.multiplicity, rawIntensity: r.rawArea, sigma: r.sigma > 0 ? r.sigma : null, tth: r.tth, d: r.d, lp: r.lp,fwhm:r.fwhm };
     }).filter(function (r) { return Number.isFinite(r.intensity); });
     var note = 'Lp: ' + polarizationDescription(I.pol) + '. ' + (fw.applied ? 'French–Wilson correction of ' + plural(fw.corrected, 'weak reflection') + (fw.negatives ? ' (' + fw.negatives + ' negative)' : '') : 'No French–Wilson correction (' + fw.reason + ')') + '; ' + zero + ' set to zero.';
     return { hklList: hklList, note: note, fw: fw, zero: zero };
@@ -358,9 +400,18 @@ RV.solve = (function () {
   // ---------------------------------------------------------------- 2. space-group test
   async function runSgt() {
     if(S.busy)return;
+    var issue=sgtCountIssue();if(issue){ui.toast(issue,'warn');return;}
+    var requested=Number($('#sv-sgtn').value);
     var I = SV.ints;
     if (!I) { ui.toast('Extract the intensities first.', 'warn'); return; }
     if (!I.pre || !I.pre.n) { ui.toast('The extraction holds no precision block (no WPPF intensity was determined).', 'warn'); return; }
+    if(I.pre.n!==requested){
+      var ds=St.byId(I.dsId),ph=St.phaseByKey(I.phaseKey),sourceIssue=staleNote() || extractWhy(ph,ds);
+      if(sourceIssue){ui.toast('Refit and extract this source before changing the number of reflections. '+sourceIssue,'warn');return;}
+      if(!await extract({ds:ds,ph:ph,maxRefl:requested,quiet:true}))return;
+      I=SV.extractions[ds.id] && SV.extractions[ds.id].I;
+      if(!I || !I.pre || I.pre.n<4){ui.toast('Need at least 4 determined intensities.','warn');return;}
+    }
     var rec = RV.sgtest.recordOf(I.sg), inp = RV.sgtest.inputFrom(I.pre, I.refl);
     St.setBusy(true,'Checking space-group candidates…');
     await new Promise(function(resolve){setTimeout(resolve,20);});
@@ -393,9 +444,10 @@ RV.solve = (function () {
   function readNum(v, lo, hi, int) { var x = typeof v === 'number' ? v : ui.parseNum(v); if (!Number.isFinite(x)) return NaN; if (int) x = Math.round(x); return Math.min(hi, Math.max(lo, x)); }
   function cfOptions() {
     var o = SV.opts.cf, g = String(o.grid);
-    var r = { grid: g === 'auto' ? 'auto' : parseInt(g, 10), threshold: ui.parseNum(o.threshold), iterations: readNum(o.iterations, 10, 100000, true), trials: readNum(o.trials, 1, 100, true),
+    var r = { adaptive:o.adaptive===true,grid: g === 'auto' ? 'auto' : parseInt(g, 10), threshold: ui.parseNum(o.threshold), iterations: readNum(o.iterations, 10, 100000, true), trials: readNum(o.trials, 1, 100, true),
               symLambda: ui.parseNum(o.symLambda), weakFraction: readNum(o.weakFraction, 0, 0.33), weakGrouping: o.weakGrouping === 'individual' ? 'individual' : 'cluster',
               overlapTol: ui.parseNum(o.overlapTol), peakMerge: ui.parseNum(o.peakMerge) };
+    if(r.adaptive){r.threshold=1.1;r.weakFraction=.15;r.symLambda=.5;r.weakGrouping='cluster';if(!Number.isFinite(r.overlapTol))r.overlapTol=.05;}
     if (r.grid !== 'auto' && !(r.grid >= 8 && (r.grid & (r.grid - 1)) === 0)) r.error = 'The grid must be a power of two.';
     else if (!(r.threshold >= 0)) r.error = 'The threshold must be a number ≥ 0 (in units of σ).';
     else if (!(r.iterations >= 10)) r.error = 'Use at least 10 cycles.';
@@ -404,8 +456,29 @@ RV.solve = (function () {
     else if (!(r.overlapTol >= 0)) r.error = 'The overlap tolerance is a non-negative number of degrees 2θ.';
     else if (!(r.peakMerge > 0)) r.error = 'The peak merge distance is a positive number of ångström.';
     else if (!Number.isFinite(r.weakFraction)) r.error = 'The fraction of weak reflections is a number from 0 to 0.33.';
+    if(r.adaptive && (!Number.isSafeInteger(ui.parseNum(o.trials)) || r.trials<6 || r.trials>12))r.error='Adaptive CF needs 6–12 random starts.';
     return r;
   }
+  function cfAssessment(I){return CFAdaptive.assess(I,SV.opts.cf,function(r){return reflectionWidth(I,r);});}
+  function cfQualityText(q){
+    return q.count+' intensities; '+q.clusters+' profile overlap groups; '+(q.dMin?'d min '+f(q.dMin,2)+' Å; ':'')+
+      'median resolved I/σ '+f(q.medianISigma,1)+'; '+q.strongCount+' resolved entries at I/σ ≥ 3. I/σ by resolution shell (low/middle/high): '+q.shells.map(function(s){return f(s.medianISigma,1);}).join(' / ')+'.';
+  }
+  function renderCfPlan(){
+    var host=$('#sv-cf-quality');if(!host)return;var adaptive=SV.opts.cf.adaptive===true;
+    $('#sv-cf-adaptive').checked=adaptive;
+    ['threshold','symLambda','weakFraction','weakGrouping','overlapTol'].forEach(function(k){var input=$('#sv-cf-'+k),box=input.parentElement;box.hidden=adaptive;box.previousElementSibling.hidden=adaptive;});
+    if(!SV.ints){host.textContent='Extract WPPF intensities to assess the data and preview adaptive settings.';return;}
+    var assessment=cfAssessment(SV.ints),q=assessment.quality;
+    host.innerHTML='<p class="hint">'+esc(cfQualityText(q))+'</p>'+
+      (!q.uncertaintiesReliable?'<p class="hint">Too few reliable resolved intensities, or uncertainties are missing or conditional; signal-to-noise guidance is limited.</p>':'')+
+      (adaptive && q.widthCoverage<1?'<p class="hint">Some fitted widths are unavailable; those pairs use the manual overlap tolerance.</p>':'');
+    if(!adaptive)return;
+    try{var plan=CFAdaptive.plan(assessment,ui.parseNum(SV.opts.cf.trials),!!SV.ints.symops);
+      host.innerHTML+='<p class="hint">Search preview: '+plan.trials.length+' starts across three settings, with repeated seeds. No additional intensity cutoff. Overlap tolerance follows half the mean fitted FWHM of each reflection pair. These choices are search heuristics.</p><p class="hint">Search emphasis: '+esc(plan.reasons.join('; ') || 'baseline parameter exploration')+'.</p>'+cfSettingsTable(plan.settings);
+    }catch(e){host.innerHTML+='<p class="warn">'+esc(e.message)+'</p>';}
+  }
+  function cfSettingsTable(settings){return '<div class="table-wrap"><table class="grid compact"><thead><tr><th>δ / σ density</th><th>Weak fraction</th><th>Symmetry λ</th><th>Starts</th></tr></thead><tbody>'+settings.map(function(c){return '<tr><td>'+f(c.threshold,2)+'</td><td>'+f(c.weakFraction,2)+'</td><td>'+f(c.symLambda,2)+'</td><td>'+c.starts+'</td></tr>';}).join('')+'</tbody></table></div>';}
   // the smallest power of two that holds every member of every orbit (the worker drops what does not fit)
   function autoGrid(hklList, symops) {
     var mx = 0, ops = symops && symops.length ? symops : [{ r: [1, 0, 0, 0, 1, 0, 0, 0, 1] }];
@@ -425,6 +498,8 @@ RV.solve = (function () {
     if (!I) { ui.toast('Extract the intensities first.', 'warn'); return; }
     var o = cfOptions();
     if (o.error) { ui.toast('Charge flipping: ' + o.error, 'warn'); return; }
+    var search=null;
+    if(o.adaptive){try{search=CFAdaptive.plan(cfAssessment(I),o.trials,!!I.symops);}catch(e){ui.toast(e.message,'warn');return;}}
     var inp = solveInput(I);
     if (!inp.hklList.length) { ui.toast('No usable intensity for charge flipping.', 'warn'); return; }
     var rec = RV.sgtest.recordOf(I.sg), ag = autoGrid(inp.hklList, I.symops), grid = o.grid === 'auto' ? ag.grid : o.grid, W;
@@ -433,11 +508,24 @@ RV.solve = (function () {
     if(!ag.fits){ui.toast('Reflections exceed the supported CF grid. Reduce the extracted range.','warn');return;}
     if (!I.symops) ui.toast(I.symErr + ' Charge flipping runs in P1, without the symmetry in the loop, and no sites can be placed.', 'warn');
     try { W = new Worker('js/charge_flipping_worker.js'); } catch (e) { ui.toast('Could not start js/charge_flipping_worker.js: ' + e.message, 'err'); return; }
-    var run = SV.cfRun = { worker: W, trial: 0, done: 0, best: null, structure: null, stopped: false, stage: 'flip', o: o, grid: grid, auto: o.grid === 'auto', ag: ag, inp: inp, I: I, t0: performance.now(), infos: [] };
+    var run = SV.cfRun = { worker: W, trial: 0, done: 0, best: null, structure: null, stopped: false, stage: 'flip', o: o, grid: grid, auto: o.grid === 'auto', ag: ag, inp: inp, I: I, t0: performance.now(), infos: [],search:search,trialLog:[],candidates:[],seed:Date.now()>>>0,compareIndex:0 };
     var job = { type: 'run-charge-flipping', gridSize: grid, maxIterations: o.iterations, thresholdSigma: o.threshold, cell: I.cell, system: I.sg.system, hklList: inp.hklList,
                 symops: I.symops, laueClass: rec ? rec.laue_class : null, centering: rec ? rec.centering : 'P', symLambda: I.symops ? o.symLambda : 0, overlapTolTth: o.overlapTol,
-                applyLP: true, polarization: I.pol, minPeakSeparation: o.peakMerge, maxPeaks: 40, peakHeightCutoff: 0.04, weakFraction: o.weakFraction, weakGrouping: o.weakGrouping };
-    function trial() { try { run.trial++; run.worker.postMessage(Object.assign({}, job, { seed: (Date.now() + run.trial * 7919) >>> 0 })); } catch(e) { finishCf(e.message); } }
+                applyLP: true, polarization: I.pol, minPeakSeparation: o.peakMerge, maxPeaks: 40, peakHeightCutoff: 0.04, weakFraction: o.weakFraction, weakGrouping: o.weakGrouping,overlapFwhmFraction:search?search.grouping.overlapFwhmFraction:0 };
+    function trial() {
+      try{run.current=search?search.trials[run.trial]:{threshold:o.threshold,weakFraction:o.weakFraction,symLambda:o.symLambda,seedSlot:run.trial};run.trial++;
+        run.currentSeed=(run.seed+run.current.seedSlot*7919)>>>0;
+        run.worker.postMessage(Object.assign({},job,{seed:run.currentSeed,thresholdSigma:run.current.threshold,weakFraction:run.current.weakFraction,symLambda:I.symops?run.current.symLambda:0}));
+      }catch(e){finishCf(e.message);}
+    }
+    function logTrial(result,error){var c=run.current,entry={start:run.trial,seed:run.currentSeed,threshold:c.threshold,weakFraction:c.weakFraction,symLambda:I.symops?c.symLambda:0,bestR:result?result.bestR:null,backend:result?result.backend:null,error:error || null};run.trialLog.push(entry);return entry;}
+    function compareNext(){
+      while(run.compareIndex<run.candidates.length){var candidate=run.candidates[run.compareIndex];if(candidate.start===run.bestTrial){candidate.entry.mapCorrelation=1;run.compareIndex++;continue;}
+        progress('cf',run.compareIndex/run.candidates.length,'comparing maps '+(run.compareIndex+1)+'/'+run.candidates.length);
+        try{run.worker.postMessage({type:'compare-cf-maps',gridSize:grid,mapA:run.best.map,mapB:candidate.map});}catch(e){ui.log('CF map comparison: '+e.message,'warn');build();}return;
+      }build();
+    }
+    function trialsDone(){if(search && run.best && run.candidates.length>1 && !run.stopped){run.stage='compare';compareNext();}else build();}
     function onMsg(e) {
       var m = e.data || {};
       if (run !== SV.cfRun) return;
@@ -447,11 +535,17 @@ RV.solve = (function () {
       } else if (m.type === 'cf-info' || m.type === 'cf-wyckoff-start') {
         if (run.infos.indexOf(m.message) < 0) { run.infos.push(m.message); ui.log('Charge flipping: ' + m.message, 'info'); }
       } else if (m.type === 'cf-error') {
-        finishCf(m.message);
+        if(search && run.stage==='flip'){logTrial(null,m.message);run.done=run.trial;ui.log('CF start '+run.trial+': '+m.message,'warn');if(run.trial<o.trials)trial();else if(run.best)trialsDone();else finishCf(m.message);}
+        else if(run.stage==='compare'){ui.log('CF map comparison: '+m.message,'warn');run.compareIndex++;compareNext();}
+        else finishCf(m.message);
       } else if (m.type === 'cf-result') {
         run.done = run.trial;
-        if (!run.best || m.results.bestR < run.best.bestR) { run.best = m.results; run.bestTrial = run.trial; }
-        if (run.stopped || run.trial >= o.trials) build(); else trial();
+        var entry=logTrial(m.results);
+        if(search)run.candidates.push({start:run.trial,map:m.results.map,entry:entry});
+        if (!run.best || m.results.bestR < run.best.bestR) { run.best = m.results; run.bestTrial = run.trial;run.bestOptions=Object.assign({},o,run.current); }
+        if (run.stopped || run.trial >= o.trials) trialsDone(); else trial();
+      } else if(m.type==='cf-comparison'){
+        var candidate=run.candidates[run.compareIndex];candidate.entry.mapCorrelation=m.results.correlation;candidate.map=null;run.compareIndex++;compareNext();
       } else if (m.type === 'cf-structure') {
         run.structure = m.results;
         finishCf(null);
@@ -473,6 +567,7 @@ RV.solve = (function () {
     run.build = build;
     ui.log('Charge flipping of ' + I.phaseName + ': ' + plural(inp.hklList.length, 'intensity') + ', grid ' + grid + '³' + (run.auto ? ' (auto, largest index ' + ag.maxIndex + ')' : '') + ', ' +
            plural(o.trials, 'random start') + ' of ' + o.iterations + ' cycles, threshold ' + o.threshold + ' σ, symmetry ' + (I.symops ? o.symLambda : 'none') + '. ' + inp.note, 'info');
+    if(search)ui.log('Adaptive CF: '+cfQualityText(search.quality)+' Seed '+run.seed+'. Three parameter settings; pairwise fitted-width overlap grouping.','info');
     St.setBusy(true,'Charge flipping…');
     progress('cf', 0, 'starting…');
     syncRun();
@@ -481,7 +576,7 @@ RV.solve = (function () {
   function stopCf() {
     var run = SV.cfRun;
     if (!run) return;
-    if (run.stage === 'flip') {
+    if (run.stage === 'flip' || run.stage==='compare') {
       run.stopped = true;
       try { run.worker.terminate(); } catch (e) { /* gone */ }
       if (run.best) { try { run.spawn(); run.build(); } catch(e) { finishCf(e.message); } } else finishCf('Stopped before any random start finished.');
@@ -502,14 +597,16 @@ RV.solve = (function () {
       renderCfOut();
       return;
     }
-    var snapTol = 0.6 * run.o.peakMerge, pseudo = { ops: I.ops, wyckoff: I.wyckoff };
+    var chosenOptions=run.bestOptions || run.o,snapTol = 0.6 * chosenOptions.peakMerge, pseudo = { ops: I.ops, wyckoff: I.wyckoff };
     var sites = (run.structure ? run.structure.sites : []).map(function (s) {
       var site = siteFor(pseudo, [s.x, s.y, s.z], I.cell, snapTol);
       return { rank: s.rank, x: site.pos[0], y: site.pos[1], z: site.pos[2], raw: [s.x, s.y, s.z], height: s.height, relative: s.relative, mult: site.mult, wyck: site.wyck, element: '', use: false };
     });
     SV.cf = { best: run.best, structure: run.structure, sites: sites, trials: run.o.trials, trialsDone: run.done, bestTrial: run.bestTrial,
-              stopped: run.stopped, o: run.o, grid: run.grid, auto: run.auto, ag: run.ag, note: run.inp.note, n: run.inp.hklList.length, I: I, stamp: I.stamp, err: err, seconds: dt };
+              stopped: run.stopped, o: chosenOptions, grid: run.grid, auto: run.auto, ag: run.ag, note: run.inp.note, n: run.inp.hklList.length, I: I, stamp: I.stamp, err: err, seconds: dt,formula:SV.opts.formula,nameFromFormula:!!parseFormula(SV.opts.formula) };
+    if(run.search)SV.cf.search=Object.assign({},run.search,{seed:run.seed,trials:run.trialLog,mapAgreementThreshold:.9,selectionRule:'Lowest CF R using the same observations and overlap groups'});
     var asg = assignCf();
+    if(RV.fitHistory)RV.fitHistory.solution('cf',SV.cf);
     var msg = 'Charge flipping of ' + I.phaseName + (run.stopped ? ' (stopped)' : '') + ': best R = ' + f(run.best.bestR, 4) + ' after ' + plural(SV.cf.trialsDone, 'random start') + ', ' + dt + ' s; ' +
               (run.structure ? plural(sites.length, 'site') + ', symmetry correlation ' + f(run.structure.symmetryCorrelation, 3) : 'no sites (' + (err || 'no symmetry to place the map on') + ')') +
               (asg ? '; ' + asg : '') + '.';
@@ -525,13 +622,13 @@ RV.solve = (function () {
   /* Element types for the peaks from the formula unit: the strongest scatterer on the highest peaks, each element on as
      many sites as its count times Z asks (Z typed, or from the first peak: the heaviest atom on one site); the peaks
      left over are kept, unticked. Returns a note, '' without a formula. */
-  function assignCf() {
-    var R = SV.cf;
+  function assignCf(R,formula,z) {
+    R=R || SV.cf;
     if (!R || !R.sites.length) return '';
-    var comp = parseFormula(SV.opts.formula);
+    var comp = parseFormula(formula==null?SV.opts.formula:formula);
     if (!comp) { R.sites.forEach(function (s) { s.use = s.relative >= 0.2; }); return ''; }
     var rad = R.I.radiation, order = comp.slice().sort(function (a, b) { return power(b.el, rad) - power(a.el, rad); });
-    var list = R.sites.slice().sort(function (a, b) { return b.height - a.height; }), Z = typedZ();
+    var list = R.sites.slice().sort(function (a, b) { return b.height - a.height; }), Z = z===undefined?typedZ():z;
     list.forEach(function (s) { s.element = ''; s.use = false; });
     if (!Z) Z = list[0].mult / order[0].n;
     order.forEach(function (c) {
@@ -565,7 +662,7 @@ RV.solve = (function () {
     if (S.busy || SV.wyRun || SV.cfRun) return;
     var I = SV.ints, formula = String(SV.opts.formula || '').trim();
     if (!I) { ui.toast('Extract the intensities first.', 'warn'); return; }
-    if (!formula) { ui.toast('The Wyckoff search needs the formula unit (top of the Solve tab).', 'warn'); return; }
+    if (!formula) { ui.toast('The Wyckoff search needs the formula unit in Commands → Structure.', 'warn'); return; }
     var comp = parseFormula(formula);
     if (!comp) { ui.toast(formula + ' is not a formula this program can read.', 'warn'); return; }
     var got = symopsFor(I.sg);
@@ -636,6 +733,7 @@ RV.solve = (function () {
     }
     var sols = Array.isArray(r.solutions) && r.solutions.length ? r.solutions : [{ z: r.z, sites: r.sites, refinement: r.refinement, assignment: (r.wyckoffResult || {}).assignment, searchCC: (r.wyckoffResult || {}).searchCC, ranked: (r.wyckoffResult || {}).ranked }];
     SV.wy = { results: r, sols: sols, pick: 0, formula: run.formula, vc: run.vc, o: run.o, I: run.I, stamp: run.I.stamp, stopped: !!r.stopped, seconds: dt, note: run.inp.note, n: run.inp.hklList.length, log: run.log };
+    if(RV.fitHistory)RV.fitHistory.solution('wy',SV.wy);
     var s0 = sols[0], R = s0.refinement && Number.isFinite(s0.refinement.R) ? s0.refinement.R : NaN;
     ui.toast('Wyckoff search of ' + run.I.phaseName + (r.stopped ? ' (stopped)' : '') + ': ' + (prettyAssign(s0.assignment) || '?') + (Number.isFinite(s0.z) ? ', Z = ' + s0.z : '') + (Number.isFinite(R) ? ', wR(F²) = ' + pct(R) : '') +
              (sols.length > 1 ? '; ' + sols.length + ' solutions, one per Z' : '') + ', ' + dt + ' s.', 'ok');
@@ -645,12 +743,12 @@ RV.solve = (function () {
 
   // ---------------------------------------------------------------- 4. structures: shown, saved as CIF, exported to the phase
   // the structure of a source ('cf', 'wy') in the form of wyckoff_report.js, from the ticked sites
-  function structureOf(src) {
-    var sites, I, label;
-    if (src === 'cf' && SV.cf && SV.cf.sites) {
-      I = SV.cf.I;
-      sites = SV.cf.sites.filter(function (s) { return s.use && s.element; }).map(function (s) { return { rank: s.rank, element: capEl(s.element), x: s.x, y: s.y, z: s.z, wyckoff: s.wyck, multiplicity: s.mult }; });
-      label = 'charge flipping (R = ' + f(SV.cf.best.bestR, 4) + ')';
+  function structureOf(src,cf) {
+    var sites, I, label,R=cf || SV.cf;
+    if (src === 'cf' && R && R.sites) {
+      I = R.I;
+      sites = R.sites.filter(function (s) { return s.use && s.element; }).map(function (s) { return { rank: s.rank, element: capEl(s.element), x: s.x, y: s.y, z: s.z, wyckoff: s.wyck, multiplicity: s.mult }; });
+      label = 'charge flipping (R = ' + f(R.best.bestR, 4) + ')';
     } else if (src === 'wy' && SV.wy && SV.wy.sols) {
       I = SV.wy.I;
       var sol = SV.wy.sols[SV.wy.pick] || SV.wy.sols[0];
@@ -661,10 +759,10 @@ RV.solve = (function () {
     var got = symopsFor(I.sg);
     return { cell: I.cell, sites: sites, spaceGroup: { number: I.sg.number, symbol: I.sg.symbol, hall: I.sg.hall }, opMatrices: got.error ? null : got.symops,
              symops: got.error ? [] : got.symops.map(function (o) { return o.xyz; }).filter(Boolean), source: src === 'cf' ? 'charge-flipping' : 'wyckoff', label: label, I: I,
-             z: src === 'wy' ? (SV.wy.sols[SV.wy.pick] || {}).z : (SV.cf.Z || null), formula: SV.opts.formula };
+             z: src === 'wy' ? (SV.wy.sols[SV.wy.pick] || {}).z : (R.Z || null), formula: SV.opts.formula };
   }
   function show(src) {
-    if (St.S.calculation !== 'wppf') return;
+    if(RV.layout)RV.layout.structureResult(src);
     var st = structureOf(src);
     if (!st) { ui.toast(src === 'cf' ? 'Tick at least one site with an element type.' : 'No structure from the Wyckoff search yet.', 'warn'); return; }
     SV.shown = src;
@@ -700,7 +798,18 @@ RV.solve = (function () {
   }
   // the sites replace the atoms of the phase, in every dataset; optionally the phase goes to Rietveld
   async function exportTo(src) {
-    var st = structureOf(src);
+    var cf=SV.cf,namingFormula;
+    if(src==='cf' && cf && cf.nameFromFormula){
+      // Transfer uses the current command inputs, including when inspecting an older result.
+      namingFormula=$('#sv-formula-cf').value.trim();
+      if(!parseFormula(namingFormula)){ui.toast('Give a valid formula unit in Commands → Structure, or uncheck Name them from the formula to keep the edited element types.','warn');return;}
+      cf=Object.assign({},cf,{sites:cf.sites.filter(function(s){return s.use;}).map(function(s){return Object.assign({},s);})});
+      assignCf(cf,namingFormula,typedZ($('#sv-z-cf').value));
+      // Naming is a transfer option. Preserve the selected sites and the saved result.
+      cf.sites.forEach(function(s){s.use=true;});
+    }
+    var st = structureOf(src,cf);
+    if(st && namingFormula)st.formula=namingFormula;
     if (!st) { ui.toast(src === 'cf' ? 'Tick at least one site with an element type.' : 'No structure to export.', 'warn'); return; }
     var ph = St.phaseByKey(st.I.phaseKey);
     if (!ph) { ui.toast('The phase ' + st.I.phaseName + ' of this solution is gone.', 'warn'); return; }
@@ -708,13 +817,16 @@ RV.solve = (function () {
     if (S.busy) { ui.toast('A fit is running. Wait for it to finish or press Stop.', 'warn'); return; }
     var bad = st.sites.filter(function (s) { return S.tables && !St.scatterer(s.element).xray; }).map(function (s) { return s.element; });
     var targets = S.phases.filter(function (p) { return p.sg.hall === st.I.sg.hall; });
-    var res = await ui.prompt('Export solution atoms', [
+    var transferFields = [
       { key: 'target', label: 'Destination', type: 'select', value: ph.key, options: targets.map(function (p) { return [p.key, 'Attach to ' + p.name]; }).concat([['new', 'Create a new phase']]) },
       { key: 'name', label: 'New phase name', type: 'text', value: ph.name + ' solved', when: 'target:new' },
       { key: 'B', label: 'B (Å²) of every atom', type: 'number', value: 0.5, hint: 'The solution gives positions only; refine B in the Rietveld fit.' },
-      { key: 'riet', label: 'Open the Rietveld calculation after export', type: 'checkbox', value: true, hint: 'Scales estimated from the patterns; tick the scale, then the atoms (Solve, steps 1 and 4).' }
-    ], 'Export atoms', 'The ' + plural(ph.atoms.length, 'atom') + ' of <b>' + esc(ph.name) + '</b> are replaced by the ' + plural(st.sites.length, 'site') + ' of the ' + esc(st.label) + ', in every dataset. Undo brings the old ones back.' +
-       (bad.length ? ' <span class="warn">Not in the X-ray table: ' + esc(bad.join(', ')) + '.</span>' : ''));
+      { key: 'riet', label: 'Open Rietveld setup after transfer', type: 'checkbox', value: true, hint: 'Review refinement choices in Commands → Datasets, then press FIT.' }
+    ];
+    if(RV.workspace)transferFields.splice(2,0,Object.assign(RV.workspace.targetField('Assign new phase to'),{when:'target:new'}));
+    var res = await ui.prompt('Copy solution to phase',transferFields,'Copy atoms','Source: <b>'+esc(st.label)+'</b> · '+esc(st.I.phaseName)+' · '+esc(st.I.dsName)+'. '+plural(st.sites.length,'site')+'. Replacing an existing phase updates its atomic model in every dataset using it; obsolete atomic constraints are removed. Creating a new phase keeps the source model. The original solution remains in History.'+(bad.length ? ' <span class="warn">Not in the X-ray table: ' + esc(bad.join(', ')) + '.</span>' : ''),{
+      after:'<p class="hint" data-transfer-impact></p>',onOpen:function(body){function impact(){var choice=body.querySelector('[data-key="target"]').value,dest=St.phaseByKey(choice),ds=dest?St.holdersOf(dest):RV.workspace?RV.workspace.targets(body.querySelector('[data-key="targets"]').value):[];body.querySelector('[data-transfer-impact]').textContent='Affected datasets: '+ds.length+' · '+ds.map(function(d){return d.name;}).join(', ');}body.addEventListener('change',impact);impact();}
+    });
     if (!res) return;
     if (S.busy) { ui.toast('A fit is running. Wait for it to finish or press Stop.', 'warn'); return; }
     var B = Number.isFinite(res.B) ? res.B : 0.5, cnt = {};
@@ -727,12 +839,13 @@ RV.solve = (function () {
     if (res.target === 'new') {
       var sg = St.resolveSG(st.I.sg.number, st.I.sg.hall);
       ph = St.makePhase({ name: res.name.trim() || ph.name + ' solved', sg: sg, cell: st.I.cell, atoms: atoms, method: 'wppf' });
-      St.addPhase(ph, st.I.dsId ? [st.I.dsId] : undefined);
+      St.addPhase(ph, RV.workspace?RV.workspace.targets(res.targets).map(function(d){return d.id;}):st.I.dsId ? [st.I.dsId] : undefined);
     } else {
       ph = St.phaseByKey(res.target);
       if (!ph || ph.sg.hall !== st.I.sg.hall) { ui.toast('Destination phase no longer matches the solution space group.', 'warn'); return; }
       St.replaceAtoms(ph, atoms, st.I.cell);
     }
+    ph.provenance={kind:st.source,label:st.label,dataset:st.I.dsName,sourceDatasetId:st.I.dsId,sourcePhase:st.I.phaseKey,time:new Date().toISOString()};
     var toR = false;
     if (res.riet) {
       RV.app.calculation('rietveld', true);
@@ -740,7 +853,7 @@ RV.solve = (function () {
     }
     St.selectPhase(ph.key);
     ui.toast(ph.name + ': ' + plural(atoms.length, 'atom') + ' from the ' + st.label + (toR ? '; fitted by Rietveld now, scales estimated. Tick its scale and then the atoms (Solve, steps 1 and 4) and fit.' : '.'), 'ok');
-    RV.app.showTab('phases');
+    RV.app.showTab(res.riet?'method':'phases');
   }
 
   // ---------------------------------------------------------------- SHELX .hkl of the extracted intensities
@@ -753,9 +866,9 @@ RV.solve = (function () {
     if(!St.selected().some(function(d){return d.id===SV.ints.dsId;}))return 'Select the dataset of the extracted intensities.';
     return '';
   }
-  function saveHkl() {
-    var why=hklWhy();if(why){ui.toast(why,'warn');return;}
-    var I = SV.ints;
+  function saveHkl(source) {
+    var why=source?'':hklWhy();if(why){ui.toast(why,'warn');return;}
+    var I = source || SV.ints;
     if (!I) { ui.toast('Extract the intensities first.', 'warn'); return; }
     var rows = I.det.map(function (r) { var w = r.m * r.lp; return { h: r.h, k: r.k, l: r.l, F2: Math.max(0, r.area) / w, s: r.sigma / w }; }).filter(function (r) { return Number.isFinite(r.F2) && r.s > 0; });
     var mx = rows.reduce(function (m, r) { return Math.max(m, r.F2); }, 0), k = mx > 0 ? 99999 / mx : 1;
@@ -772,7 +885,7 @@ RV.solve = (function () {
   function running() { return !!(SV.cfRun || SV.wyRun); }
   function stop() { stopCf(); stopWy(); }
   function syncRun() {
-    var t = document.querySelector('.top [data-tab="solve"]');
+    var t = document.getElementById('tab-structure');
     if (t) t.classList.toggle('running', running());
     ['cf', 'wy'].forEach(function (k) {
       var on = !!SV[k + 'Run'], go = $('#sv-' + k + '-run');
@@ -847,26 +960,27 @@ RV.solve = (function () {
       block('wppf-sgt', 'Space group',
         '<p class="hint">The probability of each set of systematic absences of the Laue class, from the WPPF intensities and their full correlation (Markvardsen, David, Johnson and Shankland 2001). For a complete test, fit in the space group of the Laue class with no absences (P2/m, Pmmm, P4/mmm, Pm-3m …): a reflection the WPPF fit did not contain was never measured.</p>' +
         '<p class="buttons sv-actions"><button type="button" class="primary" data-sv="sgt">Test the space groups</button>' +
-          '<label class="sv-inline" for="sv-sgtn">Lowest-angle reflections</label><input id="sv-sgtn" class="num sv-short" data-opt="sgtN" value="' + o.sgtN + '" inputmode="numeric" title="The test uses the precision block of this many reflections, set when the intensities are extracted"></p>' +
+          '<label class="sv-inline" for="sv-sgtn">Number of reflections</label><input id="sv-sgtn" type="number" min="4" step="1" class="num sv-short" data-opt="sgtN" inputmode="numeric" aria-describedby="sv-sgtn-note" title="Whole number of lowest-angle determined intensities to test"></p><p class="hint" id="sv-sgtn-note"></p>' +
         '<div id="sv-sgt-out"></div>', true) +
       block('wppf-cf', 'Charge flipping',
-        block('cf-setup', 'Formula unit and settings',
           formulaRow('cf') +
           '<p class="hint">Charge flipping (Oszlányi and Sütő 2004) on the extracted intensities, in the worker of powder5: GPU where there is one. The peaks of the map, put on the origin of the space group and reduced to the asymmetric unit, become sites; the formula unit names them.</p>' +
+          '<p><label class="chk"><input type="checkbox" id="sv-cf-adaptive" data-cf="adaptive"'+(o.cf.adaptive?' checked':'')+'> Adapt search to data quality</label></p>' +
           '<div class="form-grid sv-form">' +
             select('sv-cf-grid', 'Grid', o.cf.grid, [['auto', 'Auto'], ['32', '32³'], ['64', '64³'], ['128', '128³']], 'Points per axis; Auto: the smallest power of two that holds every reflection.', 'data-cf="grid"') +
             field('sv-cf-threshold', 'Threshold δ (σ)', o.cf.threshold, 'Density below δ, in standard deviations of the map, is flipped.', 'class="num" data-cf="threshold" inputmode="decimal"') +
             field('sv-cf-iterations', 'Cycles', o.cf.iterations, '', 'class="num" data-cf="iterations" inputmode="numeric"') +
-            field('sv-cf-trials', 'Random starts', o.cf.trials, 'The best R of them is kept.', 'class="num" data-cf="trials" inputmode="numeric"') +
+            field('sv-cf-trials', 'Random starts', o.cf.trials, 'The best R is kept. Adaptive mode uses 6–12 starts across three settings.', 'class="num" data-cf="trials" inputmode="numeric"') +
             field('sv-cf-symLambda', 'Symmetry in the loop', o.cf.symLambda, '0: none (P1), 1: strict.', 'class="num" data-cf="symLambda" inputmode="decimal"') +
             field('sv-cf-weakFraction', 'Weak reflections', o.cf.weakFraction, 'Fraction (0–0.33) of the weakest whose phase is shifted by π/2 instead (Oszlányi and Sütő 2005).', 'class="num" data-cf="weakFraction" inputmode="decimal"') +
             select('sv-cf-weakGrouping', 'Weak, by', o.cf.weakGrouping, [['cluster', 'overlap cluster'], ['individual', 'reflection']], '', 'data-cf="weakGrouping"') +
             field('sv-cf-overlapTol', 'Overlap (° 2θ)', o.cf.overlapTol, 'Reflections closer than this are one observation: their sum is kept, the split is free.', 'class="num" data-cf="overlapTol" inputmode="decimal"') +
             field('sv-cf-peakMerge', 'Peak merge (Å)', o.cf.peakMerge, 'Peaks closer than this are one site.', 'class="num" data-cf="peakMerge" inputmode="decimal"') +
           '</div>' +
+          '<div id="sv-cf-quality"></div>' +
           '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-cf-run" data-sv="cf-run">Run charge flipping</button></p>' +
           '<div class="progress sv-prog" id="sv-cf-prog" hidden><div class="track"><i></i></div><span></span></div>' +
-          '<div id="sv-cf-out"></div>', true, null, 'sub') +
+          '<div id="sv-cf-out"></div>' +
         block('cf-density', '3D density',
           '<p class="hint" id="sv-cf-density-none">Run charge flipping to see its electron density.</p>' +
           '<section class="cf-density" id="sv-cf-density" hidden>' +
@@ -880,7 +994,6 @@ RV.solve = (function () {
         structBlock('cf') +
         resultBlocks('cf', false), false, 'id="sv-cf-sum"') +
       block('wppf-wy', 'Wyckoff search',
-        block('wy-setup', 'Formula unit and search settings',
           formulaRow('wy') +
           '<p class="hint">Atoms of the formula unit on the Wyckoff positions of the space group, fitted to the extracted intensities directly (|F<sub>calc</sub>|² against them, weighted by 1/σ²): the search of powder5, in its worker. It needs WebGPU.</p>' +
           '<div class="form-grid sv-form">' +
@@ -897,12 +1010,13 @@ RV.solve = (function () {
               '<small>One per line: <code>A B N dmin/dmax</code> (N neighbours of B around each A), <code>A B - dmin/</code> for a floor.</small><div class="sv-cstat" id="sv-wy-cstat"></div></div>' +
           '</div>' +
           '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-wy-run" data-sv="wy-run">Run the Wyckoff search</button></p>' +
-          '<div class="progress sv-prog" id="sv-wy-prog" hidden><div class="track"><i></i></div><span></span></div>', true, null, 'sub') +
+          '<div class="progress sv-prog" id="sv-wy-prog" hidden><div class="track"><i></i></div><span></span></div>' +
         block('wy-solution', 'Solution', '<div id="sv-wy-sol"></div>', true, null, 'sub') +
         block('wy-sites', 'Sites', '<div id="sv-wy-sites"></div>', true, null, 'sub') +
         structBlock('wy') +
         resultBlocks('wy', true), false, 'id="sv-wy-sum"') +
       '<datalist id="sv-el-list"></datalist>';
+    if(RV.layout)RV.layout.splitStructure(host);
     renderBar(); renderInt(); renderDensity(); renderSgtOut(); renderCfOut(); renderWyOut(); renderWyStatus(); renderStOut();
     paintProgress('cf'); paintProgress('wy'); syncRun();
     if (RV.results && RV.results.fill) RV.results.fill();
@@ -924,22 +1038,22 @@ RV.solve = (function () {
       (/^converged/.test(dataset().stats.msg || '') ? 'Ready to extract intensities.' : 'Check the fit and convergence before using extracted intensities.')));
     var els = parseFormula(SV.opts.formula), dl = $('#sv-el-list');
     if (dl) dl.innerHTML = (els || []).map(function (c) { return '<option value="' + c.el + '">'; }).join('');
-    syncAble();
+    syncSgtCount();renderCfPlan();syncAble();
   }
   // what the buttons of the methods need, as the reason they are greyed
   function syncAble() {
     var I = SV.ints, none = 'Extract the intensities first.';
 
-    ui.able(document.querySelector('#solve [data-sv="sgt"]'), !I ? none : !I.pre || !I.pre.n ? 'The extraction holds no precision block.' : '');
-    ui.able($('#sv-cf-run'), I ? '' : none);
-    ui.able($('#sv-wy-run'), !I ? none : !parseFormula(SV.opts.formula) ? 'Give the formula unit at the top of the Solve tab.' : '');
+    ui.able(document.querySelector('#solve [data-sv="sgt"]'), S.busy?'Calculation running.':sgtCountIssue() || (!I || !I.pre || !I.pre.n?'The extraction holds no precision block.':''));
+    ui.able($('#sv-cf-run'), S.busy?'Calculation running.':!I?none:cfOptions().error || '');
+    ui.able($('#sv-wy-run'), !I ? none : !parseFormula(SV.opts.formula) ? 'Give the formula unit in Commands → Structure.' : '');
   }
   function renderInt() {
     var el = $('#sv-int');
     if (!el) return;
     var I = SV.ints, ph = phase();
     if (!I || I.phaseKey !== SV.phaseKey) {
-      el.innerHTML = '<p class="hint">' + (!ph ? '' : ph.method !== 'wppf' ? esc(ph.name) + ' is fitted by ' + esc(C.METHOD_LABELS[ph.method]) + '. The Solve tab starts from the intensities of a WPPF phase: switch it to WPPF, fit (zero, cell and peak shape ticked), then extract them.'
+      el.innerHTML = '<p class="hint">' + (!ph ? '' : ph.method !== 'wppf' ? esc(ph.name) + ' is fitted by ' + esc(C.METHOD_LABELS[ph.method]) + '. Structure solution starts from the intensities of a WPPF phase: switch Method to WPPF, fit (zero, cell and peak shape ticked), then extract them.'
         : 'Fit ' + esc(ph.name) + ' by WPPF (zero, cell and peak shape ticked), then extract its intensities: the space-group test, charge flipping and the Wyckoff search start from them.' + (I ? ' The last extraction is of ' + esc(I.phaseName) + '.' : '')) + '</p>';
       return;
     }
@@ -1010,6 +1124,7 @@ RV.solve = (function () {
     g.stroke();
   }
   function renderCfOut() {
+    if(!inspectingSolution && solutionSelection.cf)return withSolution('cf',renderCfOut);
     var el = $('#sv-cf-out');
     if (!el) return;
     var R = SV.cf, sitesEl = $('#sv-cf-sites'), sum = $('#sv-cf-sum'), nEl = $('#sv-cf-sites-n');
@@ -1025,16 +1140,23 @@ RV.solve = (function () {
         '<dt>Intensities</dt><dd>' + esc(R.note) + '</dd>' +
         (st ? '<dt>Origin</dt><dd>symmetry correlation ' + f(st.symmetryCorrelation, 3) + (Number.isFinite(st.runnerUpCorrelation) ? ' (next ' + f(st.runnerUpCorrelation, 3) + ')' : '') + ', hand ' + (st.hand > 0 ? '+' : '−') + ', ' + st.rawPeakCount + ' peaks in the cell</dd>' : '') +
       '</dl><canvas class="sv-spark" id="sv-cf-spark" aria-label="R by cycle, best start"></canvas>';
+    if(R.search)el.innerHTML+=cfSearchHTML(R);
     if (sum) sum.textContent = 'best R ' + f(b.bestR, 4) + (R.sites.length ? ', ' + plural(R.sites.length, 'site') : '');
     if (nEl) nEl.textContent = R.sites.length ? plural(R.sites.length, 'peak') + ' in the asymmetric unit' + (R.Z ? ', Z = ' + (+R.Z.toFixed(2)) + ' from the formula' : '') : '';
     if (sitesEl) sitesEl.innerHTML = (R.sites.length ? cfSitesTable(R) +
-        '<p class="buttons sv-actions"><button type="button" data-sv="cf-assign" title="The strongest scatterers of the formula unit on the highest peaks">Name them from the formula</button><button type="button" data-sv="cf-show">Show the structure</button>' +
+        '<p><label class="chk" title="Assign element types from the formula when copying atoms to the phase"><input type="checkbox" id="sv-cf-assign"'+(R.nameFromFormula?' checked':'')+'> Name them from the formula</label></p><p class="hint">Applied when copying atoms to the phase; uncheck to keep the edited element types. The selected sites are preserved.</p>' +
+        '<p class="buttons sv-actions"><button type="button" data-sv="cf-show">Show the structure</button>' +
         '<button type="button" class="primary" data-sv="cf-export" title="The ticked sites become the atoms of the phase">Atoms to the phase…</button><button type="button" data-sv="cf-cif">Save CIF…</button></p>' +
         '<p class="hint">Charge flipping gives electron density, not chemistry: check the element of each peak, untick the spurious ones. Positions within ' + f(0.6 * R.o.peakMerge, 2) + ' Å of a special position are put on it.</p>'
         : '<p class="hint">' + (st ? 'No peak above the cutoff.' : 'No sites: the map could not be placed on the origin of the space group.') + '</p>');
     spark($('#sv-cf-spark'), R.best.rHistory);
     var dn = $('#sv-cf-density-none'); if (dn) dn.hidden = !!cfDensityData();
     renderDensityMap();
+  }
+  function cfSearchHTML(R){
+    var search=R.search,rows=search.trials || [],best=rows.find(function(r){return r.start===R.bestTrial;}),other=new Set(),compared=new Set(),agree=new Set();
+    rows.forEach(function(r){if(r.error || best && r.seed===best.seed)return;other.add(r.seed);if(Number.isFinite(r.mapCorrelation)){compared.add(r.seed);if(r.mapCorrelation>=search.mapAgreementThreshold)agree.add(r.seed);}});
+    return '<h3>Adaptive search</h3><p class="hint">'+esc(cfQualityText(search.quality))+'</p><p class="hint">Selected the lowest CF R using the same observations and overlap groups. Map agreement ≥ '+f(search.mapAgreementThreshold,2)+': '+agree.size+' of '+other.size+' other independent seeds ('+compared.size+' compared), allowing periodic grid translations and inversion. Reproducibility does not establish a correct structure.</p><div class="table-wrap"><table class="grid compact"><thead><tr><th>Start</th><th>δ/σ</th><th>Weak</th><th>λ</th><th>CF R</th><th>Map correlation</th><th>Seed</th></tr></thead><tbody>'+rows.map(function(r){return '<tr'+(r.start===R.bestTrial?' class="best"':'')+'><td>'+r.start+(r.start===R.bestTrial?' ✓':'')+'</td><td>'+f(r.threshold,2)+'</td><td>'+f(r.weakFraction,2)+'</td><td>'+f(r.symLambda,2)+'</td><td>'+(r.error?esc(r.error):f(r.bestR,4))+'</td><td>'+f(r.mapCorrelation,3)+'</td><td>'+r.seed+'</td></tr>';}).join('')+'</tbody></table></div>';
   }
   function cfDensityData() {
     var R=SV.cf;
@@ -1056,10 +1178,12 @@ RV.solve = (function () {
     return {map:map,gridSize:grid,cell:R.I.cell,sites:sites,aligned:!!aligned};
   }
   function renderDensityMap(rebuild) {
+    if(!inspectingSolution && solutionSelection.cf)return withSolution('cf',function(){renderDensityMap(rebuild);});
     var host=$('#sv-cf-density'), canvas=$('#sv-density-canvas'), d=cfDensityData();
     if(!host || !canvas)return;
     host.hidden=!d;var none=$('#sv-cf-density-none');if(none)none.hidden=!!d;
-    if(!d || S.calculation!=='wppf' || !RV.app || RV.app.tab()!=='solve' || !(RV.acc && RV.acc.isShown(canvas)))return;
+    if(!d){if(none && SV.cf && SV.cf.best)none.textContent='This saved run has no retained density grid. Its sites and structure are available below.';return;}
+    if(!RV.app || RV.app.resultTab()!=='structure-results' || RV.layout.structureKind()!=='cf' || !(RV.acc && RV.acc.isShown(canvas)))return;
     if(typeof Density3D==='undefined'){ $('#sv-density-note').textContent='The density viewer (js/density3d.js) is missing.'; return; }
     var stride=$('#sv-density-stride');if(stride)stride.value=String(SV.opts.cf.densityStride||1);
     try{
@@ -1083,6 +1207,7 @@ RV.solve = (function () {
       v.errors.map(function (e) { return '<div class="sv-err">✕ ' + esc(e) + '</div>'; }).join('') + v.warnings.map(function (w) { return '<div class="sv-warn">⚠ ' + esc(w) + '</div>'; }).join('');
   }
   function renderWyOut() {
+    if(!inspectingSolution && solutionSelection.wy)return withSolution('wy',renderWyOut);
     var el = $('#sv-wy-sol'), sitesEl = $('#sv-wy-sites'), sum = $('#sv-wy-sum');
     if (!el) return;
     var R = SV.wy;
@@ -1116,6 +1241,7 @@ RV.solve = (function () {
   // the 3D structure of each solution, under its Sites; drawn only while its block is open
   function renderStOut() { renderStruct('cf'); renderStruct('wy'); }
   function renderStruct(k) {
+    if(!inspectingSolution && solutionSelection[k])return withSolution(k,function(){renderStruct(k);});
     var head = $('#sv-' + k + '-st-head'), host = $('#sv-' + k + '-st');
     if (!head || !host) return;
     var st = structureOf(k);
@@ -1126,7 +1252,7 @@ RV.solve = (function () {
     head.innerHTML = '<span class="sub">' + esc(st.label) + ', ' + esc(st.spaceGroup.symbol) + ', ' + plural(st.sites.length, 'site') + '</span><span class="tool-gap"></span>' +
       '<button type="button" class="primary" data-sv="' + k + '-export">Atoms to the phase…</button><button type="button" data-sv="' + k + '-cif">Save CIF…</button>';
     if (typeof WyckoffReport === 'undefined') return;
-    if (!(RV.acc && RV.acc.isShown(host)) || S.calculation !== 'wppf') { if (WyckoffReport.dispose) WyckoffReport.dispose(host); host.innerHTML = ''; return; }
+    if (!(RV.acc && RV.acc.isShown(host)) || !RV.app || RV.app.resultTab()!=='structure-results' || RV.layout.structureKind()!==k) { if (WyckoffReport.dispose) WyckoffReport.dispose(host); host.innerHTML = ''; return; }
     if (RV.rietveldStructure) RV.rietveldStructure.dispose();
     SV.shown = k;
     WyckoffReport.render(host, cachedStructure(st));
@@ -1143,10 +1269,11 @@ RV.solve = (function () {
     if (k === 'cf-struct' || k === 'wppf-cf') renderStruct('cf');
     if (k === 'wy-struct' || k === 'wppf-wy') renderStruct('wy');
     if (k === 'cf-density' || k === 'wppf-cf') { renderDensityMap(); if (SV.cf && SV.cf.best) spark($('#sv-cf-spark'), SV.cf.best.rHistory); }
-    if (k === 'cf-setup' && SV.cf && SV.cf.best) spark($('#sv-cf-spark'), SV.cf.best.rHistory);
   }
   // ---------------------------------------------------------------- events
   function onClick(e) {
+    var resultKind=e.target.closest('#structure-result-cf')?'cf':e.target.closest('#structure-result-wy')?'wy':null;
+    if(resultKind && solutionSelection[resultKind] && !inspectingSolution)return withSolution(resultKind,function(){onClick(e);});
     var t = e.target, b;
     if ((b = t.closest('[data-svph]'))) { SV.phaseKey = b.getAttribute('data-svph'); pickDefaults(); renderBar(); renderInt(); renderDensity(); return; }
     if ((b = t.closest('[data-sgset]'))) { var p = b.getAttribute('data-sgset').split('|'); useSetting(+p[0], p.slice(1).join('|')); return; }
@@ -1159,7 +1286,6 @@ RV.solve = (function () {
       case 'density-map': saveDensityMap(); break;
       case 'density-png': { var cv=$('#sv-density-canvas');if(cv){var a=document.createElement('a');a.href=cv.toDataURL('image/png');a.download='cf_density_'+ui.fileStamp()+'.png';a.click();}break; }
       case 'cf-run': runCf(); break;
-      case 'cf-assign': { var note = assignCf(); if (!note) ui.toast('Give the formula unit (top of the Solve tab) to name the peaks.', 'warn'); else ui.toast('Charge flipping: ' + note + '.', 'info'); renderCfOut(); renderStruct('cf'); break; }
       case 'cf-show': show('cf'); break;
       case 'cf-export': exportTo('cf'); break;
       case 'cf-cif': saveCif('cf'); break;
@@ -1170,7 +1296,10 @@ RV.solve = (function () {
     }
   }
   function onChange(e) {
+    var resultKind=e.target.closest('#structure-result-cf')?'cf':e.target.closest('#structure-result-wy')?'wy':null;
+    if(resultKind && solutionSelection[resultKind] && !inspectingSolution)return withSolution(resultKind,function(){onChange(e);});
     var t = e.target, k;
+    if(t.id==='sv-cf-assign'){SV.cf.nameFromFormula=t.checked;return;}
     if (/^sv-density-/.test(t.id)) {
       var key=t.id.slice(11), o=SV.opts.cf;
       if(key==='level'){var level=Number(t.value);if(!(level>=.2 && level<=20)){t.value=o.densityLevel;return;}o.densityLevel=level;}
@@ -1179,18 +1308,22 @@ RV.solve = (function () {
       else if(key==='sites')o.densitySites=t.checked;
       saveOpts();renderDensityMap();return;
     }
-    if (t.id === 'sv-ds') { SV.dsId = +t.value || null; renderInt(); renderDensity(); return; }
+    if (t.id === 'sv-ds') { SV.dsId = +t.value || null; pickDefaults();renderBar();renderInt();renderDensity();return; }
     if ((k = t.getAttribute('data-opt'))) {
-      if (k === 'sgtN') { var n = parseInt(t.value, 10); if (n >= 8 && n <= 600) SV.opts.sgtN = n; else { t.value = SV.opts.sgtN; ui.toast('Between 8 and 600 reflections.', 'warn'); } }
+      if (k === 'sgtN') { var issue=sgtCountIssue();t.setCustomValidity(issue);if(issue)t.setAttribute('aria-invalid','true');else t.removeAttribute('aria-invalid');syncAble();if(issue){ui.toast(issue,'warn');return;}SV.opts.sgtN=Number(t.value);SV.opts.sgtAuto=false; }
       else { SV.opts[k] = t.value.trim(); syncShared(t); }
       saveOpts();
       if (k === 'formula' || k === 'z') { RV.bus.emit('composition'); renderBar(); renderDensity(); renderWyStatus(); }
       return;
     }
-    if ((k = t.getAttribute('data-cf'))) { SV.opts.cf[k] = t.tagName === 'SELECT' ? t.value : t.value.trim(); saveOpts(); return; }
+    if ((k = t.getAttribute('data-cf'))) {
+      if(k==='adaptive'){SV.opts.cf.adaptive=t.checked;if(t.checked){SV.opts.cf.trials=Math.min(12,Math.max(6,Math.round(ui.parseNum(SV.opts.cf.trials)) || 6));$('#sv-cf-trials').value=SV.opts.cf.trials;}}
+      else SV.opts.cf[k] = t.tagName === 'SELECT' ? t.value : t.value.trim();
+      saveOpts();renderCfPlan();syncAble();return;
+    }
     if ((k = t.getAttribute('data-wy'))) { if(k==='particles')SV.opts.wy.particlesAuto=false; SV.opts.wy[k] = t.tagName === 'TEXTAREA' ? t.value : t.value.trim(); saveOpts(); if (k === 'constraints' || /^rho/.test(k)) { renderWyStatus(); renderDensity(); } return; }
     if (t.hasAttribute('data-cfuse')) { var s = SV.cf.sites[+t.getAttribute('data-cfuse')]; s.use = t.checked; t.closest('tr').classList.toggle('off', !s.use); renderDensityMap(); renderStruct('cf'); return; }
-    if (t.hasAttribute('data-cfel')) { var s2 = SV.cf.sites[+t.getAttribute('data-cfel')], el = St.elementOf(t.value) || t.value.trim(); s2.element = el; t.value = el; renderStruct('cf'); return; }
+    if (t.hasAttribute('data-cfel')) { var s2 = SV.cf.sites[+t.getAttribute('data-cfel')], el = St.elementOf(t.value) || t.value.trim(); s2.element = el; t.value = el; SV.cf.nameFromFormula=false;$('#sv-cf-assign').checked=false;renderStruct('cf');return; }
     if (t.hasAttribute('data-wypick')) { SV.wy.pick = +t.getAttribute('data-wypick'); renderWyOut(); renderStruct('wy'); }
   }
   // the formula unit and Z appear under both charge flipping and the Wyckoff search: one value
@@ -1201,19 +1334,20 @@ RV.solve = (function () {
   }
   function onInput(e) {
     var t = e.target;
+    if(t.id==='sv-sgtn'){var issue=sgtCountIssue();t.setCustomValidity(issue);if(issue)t.setAttribute('aria-invalid','true');else t.removeAttribute('aria-invalid');syncAble();return;}
     if (t.classList.contains('sv-formula') || t.classList.contains('sv-z')) { SV.opts[t.getAttribute('data-opt')] = t.value.trim(); syncShared(t); RV.bus.emit('composition'); renderDensity(); if (t.classList.contains('sv-formula')) { renderWyStatus(); syncAble(); } }
     else if (t.id === 'sv-wy-constraints') { SV.opts.wy.constraints = t.value; renderWyStatus(); }
   }
 
   // ---------------------------------------------------------------- the PDF report
   // the text of the structure solution for the report, '' when there is none
-  function report() {
+  function report(kind) {
     var L = [], I = SV.ints;
     if (!I && !SV.cf && !SV.wy) return { lines: [], image: null };
     L.push('## Structure solution');
     if (I) L.push('intensities\t' + I.det.length + ' WPPF intensities of ' + I.phaseName + ' (' + I.sg.symbol + ') in ' + I.dsName + ', extracted ' + I.stamp + (I.nVar ? ', sigma with ' + I.nVar + ' parameters integrated out' : ''));
     var T = SV.sgt;
-    if (T && !T.error) {
+    if ((!kind || kind==='sgt') && T && !T.error) {
       L.push('', '### Space-group test (Markvardsen et al. 2001), ' + T.n + ' intensities, Laue class ' + T.laue + ', fitted in ' + RV.sgtest.label(T.fitRec));
       T.rows.slice(0, 8).forEach(function (r, i) {
         L.push((i + 1) + '\t' + r.recs.slice(0, 4).map(RV.sgtest.label).join(', ') + (r.recs.length > 4 ? ' +' + (r.recs.length - 4) : '') + '\tabsent ' + r.m + (r.untested ? ' (untested ' + r.untested + ')' : '') + '\tp = ' + (r.p >= 1e-3 ? (100 * r.p).toFixed(2) + ' %' : r.p.toExponential(2)));
@@ -1223,19 +1357,20 @@ RV.solve = (function () {
       L.push(head);
       list.forEach(function (s) { L.push([s.label, s.element, s.wyckoff || '', f(s.x, 5), f(s.y, 5), f(s.z, 5), s.multiplicity].join('\t')); });
     }
-    var cf = structureOf('cf'), wy = structureOf('wy');
-    if (SV.cf && SV.cf.best) {
+    var cf = !kind || kind==='cf'?structureOf('cf'):null, wy = !kind || kind==='wy'?structureOf('wy'):null;
+    if ((!kind || kind==='cf') && SV.cf && SV.cf.best) {
       L.push('', '### Charge flipping: best R = ' + f(SV.cf.best.bestR, 4) + ', grid ' + SV.cf.best.gridSize + '^3, ' + SV.cf.trialsDone + ' of ' + SV.cf.trials + ' starts' + (SV.cf.structure ? ', symmetry correlation ' + f(SV.cf.structure.symmetryCorrelation, 3) : ''));
       L.push(SV.cf.note);
+      if(SV.cf.search){L.push('Adaptive search\t'+cfQualityText(SV.cf.search.quality),'Selection\t'+SV.cf.search.selectionRule,'start\tseed\tdelta/sigma\tweak fraction\tsymmetry\tCF R\tmap correlation');SV.cf.search.trials.forEach(function(r){L.push([r.start,r.seed,r.threshold,r.weakFraction,r.symLambda,r.error || r.bestR,r.mapCorrelation==null?'not compared':r.mapCorrelation].join('\t'));});}
       if (cf) sites('site\telement\tWyckoff\tx\ty\tz\tmult', labelled(cf.sites));
     }
-    if (SV.wy && SV.wy.sols) {
+    if ((!kind || kind==='wy') && SV.wy && SV.wy.sols) {
       var sol = SV.wy.sols[SV.wy.pick] || SV.wy.sols[0];
       L.push('', '### Wyckoff search: ' + SV.wy.formula + (Number.isFinite(sol.z) ? ', Z = ' + sol.z : '') + ', ' + prettyAssign(sol.assignment) + ', wR(F2) = ' + pct(sol.refinement && sol.refinement.R) + (SV.wy.stopped ? ' (stopped early)' : ''));
       if (wy) sites('site\telement\tWyckoff\tx\ty\tz\tmult', labelled(wy.sites));
     }
     // the structure plot as it is on screen, on the background of the plots (its canvas is transparent)
-    var canvas = document.querySelector('#sv-' + (SV.shown || 'wy') + '-st canvas') || document.querySelector('.sv-struct-host canvas'), image = null;
+    var shown=kind || SV.shown || 'wy',canvas=kind==='sgt'?null:document.querySelector('#sv-'+shown+'-st canvas'),image=null;
     try {
       if (canvas && canvas.width > 10 && canvas.height > 10) {
         var c2 = document.createElement('canvas'), g = c2.getContext('2d');
@@ -1243,46 +1378,48 @@ RV.solve = (function () {
         g.fillStyle = (getComputedStyle(document.documentElement).getPropertyValue('--plot-bg') || '#fff').trim() || '#fff';
         g.fillRect(0, 0, c2.width, c2.height);
         g.drawImage(canvas, 0, 0);
-        image = { url: c2.toDataURL('image/jpeg', 0.92), w: c2.width, h: c2.height, title: SV.shown === 'wy' ? 'Structure from the Wyckoff search' : 'Structure from charge flipping' };
+        image = { url: c2.toDataURL('image/jpeg', 0.92), w: c2.width, h: c2.height, title: shown === 'wy' ? 'Structure from the Wyckoff search' : 'Structure from charge flipping' };
       }
     } catch (e) { image = null; }
     var densityImage=null, densityCanvas=$('#sv-density-canvas');
-    try { if(densityCanvas && densityCanvas===SV.densityCanvas && SV.cf && SV.cf.best) {
+    try { if((!kind || kind==='cf') && densityCanvas && densityCanvas===SV.densityCanvas && SV.cf && SV.cf.best) {
       densityImage={url:densityCanvas.toDataURL('image/jpeg',.92),w:densityCanvas.width,h:densityCanvas.height,
         title:'Charge-flipping density of '+SV.cf.I.phaseName+' in '+SV.cf.I.dsName+', isosurface '+(SV.opts.cf.densityLevel||3)+' sigma'};
     } } catch(e) { densityImage=null; }
     return { lines: L, image: image, densityImage:densityImage };
   }
   function labelled(list) { var n = {}; return list.map(function (s) { n[s.element] = (n[s.element] || 0) + 1; return Object.assign({ label: s.element + n[s.element] }, s); }); }
+  function archive(includeDensity){return JSON.parse(JSON.stringify({cf:SV.cf,wy:SV.wy,ints:SV.ints,opts:SV.opts,dsId:SV.dsId,phaseKey:SV.phaseKey},function(k,v){if(!includeDensity && k==='map' && (Array.isArray(v)||ArrayBuffer.isView(v)))return undefined;return ArrayBuffer.isView(v)?Array.from(v):v;}));}
+  function restoreArchive(value){if(!value){SV.cf=null;SV.wy=null;SV.ints=null;return;}['cf','wy','ints','opts','dsId','phaseKey'].forEach(function(k){if(value[k]!==undefined)SV[k]=value[k];});if(SV.opts.sgtAuto!==false || !Number.isSafeInteger(SV.opts.sgtN) || SV.opts.sgtN<4 || SV.opts.sgtN>C.MAX_PRECISION_REFLECTIONS){SV.opts.sgtN=0;SV.opts.sgtAuto=true;}if(SV.cf){if(SV.cf.best && SV.cf.best.map)SV.cf.best.map=Float32Array.from(SV.cf.best.map);if(SV.cf.structure && SV.cf.structure.map)SV.cf.structure.map=Float32Array.from(SV.cf.structure.map);}dirty=true;render();}
 
   // ---------------------------------------------------------------- init
   function refresh() {
     clearEmptyComposition();
     dirty = true;
-    if (RV.app && RV.app.tab() === 'solve') render();
+    if (active()) render();
   }
   function init() {
     SV.opts = loadOpts();
     clearEmptyComposition();
     probeGPU();
-    var host = $('#solve');
+    var host = $('#work');
     host.addEventListener('click', onClick);
     host.addEventListener('change', onChange);
     host.addEventListener('input', onInput);
-    RV.bus.on('calculation',function(m){if(m!=='wppf' && typeof Density3D!=='undefined')Density3D.dispose();else setTimeout(function(){ renderDensityMap(); renderStOut(); },0);});
-    RV.bus.on('tab',function(t){if(t!=='solve' && typeof Density3D!=='undefined')Density3D.dispose();else renderDensityMap();});
+    RV.bus.on('calculation',function(){if(RV.app.resultTab()!=='structure-results' && typeof Density3D!=='undefined')Density3D.dispose();else setTimeout(function(){renderDensityMap();renderStOut();},0);});
+    RV.bus.on('tab',function(){if(RV.app.resultTab()!=='structure-results' && typeof Density3D!=='undefined')Density3D.dispose();else renderDensityMap();});
     RV.bus.on('theme',function(){if(typeof Density3D!=='undefined')Density3D.applyTheme();});
-    RV.bus.on('tab', function (t) { if (t === 'solve' && dirty) render(); else if (t === 'solve') renderStOut(); });
+    RV.bus.on('tab', function () { if(active() && dirty)render();else if(active())renderStOut(); });
     RV.bus.on('acc', onAcc);
     RV.bus.on('phases', function () { if (SV.ints) SV.ints.stale = true; refresh(); });
-    RV.bus.on('params', function () { if (SV.ints) SV.ints.stale = true; if (RV.app && RV.app.tab() === 'solve') { renderBar(); renderInt(); renderDensity(); } else dirty = true; });
-    RV.bus.on('stats', function () { if (RV.app && RV.app.tab() === 'solve') renderBar(); else dirty = true; });
+    RV.bus.on('params', function () { if (SV.ints) SV.ints.stale = true; if (active()) { renderBar(); renderInt(); renderDensity(); } else dirty = true; });
+    RV.bus.on('stats', function () { if (active()) renderBar(); else dirty = true; });
     RV.bus.on('phaseSel', function () { var cur = St.currentPhase(); if (cur && cur.method === 'wppf' && cur.key !== SV.phaseKey) { SV.phaseKey = cur.key; refresh(); } });
     ['datasets', 'selection', 'tables'].forEach(function (ev) { RV.bus.on(ev, function () { if (!dataset()) SV.dsId = null; refresh(); }); });
-    RV.bus.on('busy', function () { if (RV.app && RV.app.tab() === 'solve') renderBar(); });
-    RV.bus.on('theme', function () { if (RV.app && RV.app.tab() === 'solve') { if (SV.cf && SV.cf.best) spark($('#sv-cf-spark'), SV.cf.best.rHistory); renderStOut(); } });
+    RV.bus.on('busy', function () { if (active()) renderBar(); });
+    RV.bus.on('theme', function () { if (active()) { if (SV.cf && SV.cf.best) spark($('#sv-cf-spark'), SV.cf.best.rHistory); renderStOut(); } });
   }
 
   return { init: init, running: running, stop: stop, report: report, render: render, saveHkl:saveHkl, hklWhy:hklWhy, autoExtract:autoExtract, probeGPU:probeGPU, budgetFor:budgetFor, gpuBudget:gpuBudget, state: SV, cfDensityData: cfDensityData, renderDensityMap: renderDensityMap, symopsFor: symopsFor, parseFormula: parseFormula,
-           validateConstraints: validateConstraints, assignCf: assignCf };
+           validateConstraints: validateConstraints, assignCf: assignCf,renderSelectedSolution:renderSelectedSolution,reportSelected:function(){var k=RV.layout && RV.layout.structureKind();return withSolution(k,function(){return report(k);});},archive:archive,restoreArchive:restoreArchive,exportTo:exportTo };
 })();

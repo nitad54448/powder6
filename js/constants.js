@@ -181,7 +181,10 @@ function getMinProfileFwhmDeg() { return MIN_PROFILE_FWHM_DEG; }
  */
 function softPositive(x, floor) {
     if (!isFinite(x)) return floor;
-    return 0.5 * (x + Math.sqrt(x * x + 4 * floor * floor));
+    // Rationalise the negative branch: x + sqrt(x*x + 4*f*f) loses
+    // all significant digits when a trial variance is far below zero.
+    const h = Math.hypot(x, 2 * floor);
+    return x < 0 ? floor * (floor / (0.5 * h - 0.5 * x)) : 0.5 * x + 0.5 * h;
 }
 
 // ===========================================================================

@@ -1,13 +1,12 @@
-/* Phase definitions and numerical values of the selected calculation dataset. */
+/* Shared phase definitions and starting values. Dataset values live in Datasets. */
 RV.phasesTab = (function () {
   'use strict';
   var S = RV.state.S, St = RV.state, ui = RV.ui, esc = ui.esc, C = RVCore;
   var CELL = ['a', 'b', 'c', 'alpha', 'beta', 'gamma'], CELL_LABEL = { a: 'a', b: 'b', c: 'c', alpha: 'α', beta: 'β', gamma: 'γ' };
   var DEC = { cell: 6, x: 6, y: 6, z: 6, occ: 4, B: 4 };
   function $(s) { return document.querySelector(s); }
-  // Use the same first selected dataset as Parameters when it holds the phase.
-  // With no selected holder the editor is a starting-model editor.
-  function srcDs() { var ph = St.currentPhase(), d = St.first(); return ph && d && St.hasPhase(d,ph) ? d : null; }
+  // Phase edits change the starting model, never an existing dataset instance.
+  function srcDs() { return null; }
   function src() { var d = srcDs(), ph = St.currentPhase(); return d ? d.p : ph ? ph.v : {}; }
   function srcEsd() { var d = srcDs(); return d ? d.esd || {} : {}; }
   function setNumeric(ph,name,value) { var d=srcDs(); return St.setParam(name,value,d ? [d] : [],!d); }
@@ -33,7 +32,6 @@ RV.phasesTab = (function () {
   // ---------------------------------------------------------------- building
   function renderBar() {
     var bar = $('#phase-select'), cur = St.currentPhase();
-    ui.able($('#ph-tab-del'), cur ? '' : 'No phase yet.');
     ui.able($('#ph-tab-atom'), cur ? '' : 'No phase yet.');
     var cb=document.querySelector('[data-atomic-constraints]');if(cb){ui.able(cb,cur && cur.atoms.length?'':'Select a phase with atoms.');cb.textContent='Atomic constraints…'+(cur && cur.constraints && cur.constraints.length?' ('+cur.constraints.length+')':'');}
     if (!bar) return;
@@ -76,19 +74,14 @@ RV.phasesTab = (function () {
       return;
     }
     var cps = C.cellParams(ph.sg.system, ph.sg.uniqueAxis);
-    var prof = Object.keys(C.PROFILE_PARAMS).map(function (k) { return '<option value="' + k + '"' + (k === ph.profileType ? ' selected' : '') + '>' + esc(C.PROFILE_LABELS[k] || k) + '</option>'; }).join('');
     var can = St.canRietveld(ph);
     body.innerHTML =
       '<p class="hint phase-src" id="phase-src"></p>' +
       '<div class="phase-cols">' +
         '<section class="pblock"><h2>Phase</h2><div class="form-grid">' +
-          '<label for="phase-select">Edit phase</label><div><span class="phase-control-row"><select id="phase-select" aria-label="Phase to edit"></select><input type="color" id="ph-color" data-ph="color" aria-label="Phase colour" title="Change phase colour" value="' + RV.plots.phaseColor(S.phases.indexOf(ph)) + '"></span></div>' +
-          '<label for="ph-name">Name</label><div><input id="ph-name" data-ph="name" value="' + esc(ph.name) + '" spellcheck="false" autocomplete="off"></div>' +
+          '<label for="phase-select">Phase name</label><div><span class="phase-control-row phase-name-row"><select id="phase-select" aria-label="Phase name"></select><input type="color" id="ph-color" data-ph="color" aria-label="Phase colour" title="Change phase colour" value="' + RV.plots.phaseColor(S.phases.indexOf(ph)) + '"><button type="button" id="ph-rename" data-act="rename-phase" title="Rename this phase">Edit</button></span></div>' +
           '<label for="ph-sg">Space group</label><div><span class="phase-control-row"><input id="ph-sg" data-ph="sg" list="sg-list" value="' + esc(ph.sg.symbol) + '" spellcheck="false" autocomplete="off" title="Symbol, number or Hall symbol">' +
             '<button type="button" data-act="sg-browse" title="Choose the space group and its setting by crystal system, centring, symbol or number">Browse…</button></span><small id="ph-sg-info"></small></div>' +
-          '<label for="ph-prof">Peak shape</label><div><span class="with-btn"><select id="ph-prof" data-ph="profile">' + prof + '</select>' +
-            '<button type="button" data-act="preset-load" title="Load a peak-shape preset (a peak-shape JSON file: its shape and parameters)">Load…</button><button type="button" data-act="preset-save" title="Save the shape and the parameters of this phase as a preset (peak-shape JSON)">Save…</button></span>' +
-            '<small>Separated CW profiles use one instrument resolution for every phase in a dataset. Calibrate / fix it in Datasets before refining sample size and strain. Legacy profiles remain available for older projects.</small></div>' +
           (C.usesSeparatedProfile(ph) ? ['size','strain'].map(function (kind) {
             var b = C.broadeningConfig(ph.broadening), choices = kind === 'size' ? [['isotropic','Isotropic'],['uniaxial','Uniaxial'],['ellipsoid','Ellipsoidal']] : [['isotropic','Isotropic'],['uniaxial','Uniaxial'],['stephens','Stephens quartic']];
             return '<label>' + (kind === 'size' ? 'Crystallite size' : 'Microstrain') + '</label><div><select data-ph="' + kind + 'Model">' + choices.map(function (p) { return '<option value="'+p[0]+'"'+(b[kind]===p[0]?' selected':'')+'>'+p[1]+'</option>'; }).join('') + '</select>' +
@@ -113,7 +106,7 @@ RV.phasesTab = (function () {
       (ph.atoms.length ? '<section class="pblock constraints-block"><h2>Atomic constraints <span class="sub" id="ph-ac-n"></span></h2>' +
         '<p class="hint">GSAS-II relationships between the atomic parameters of ' + esc(ph.name) + ': hold, equivalence and constraint equation. Rietveld applies them exactly in every dataset' + (ph.method === 'rietveld' ? '' : '; ' + esc(ph.name) + ' is fitted by ' + esc(C.METHOD_LABELS[ph.method]) + ' now, so they are kept but unused') + '. Constrained parameters are marked in Parameters.</p>' +
         '<div id="ph-ac"></div></section>' : '');
-    if (RV.constraints && $('#ph-ac')) RV.constraints.mount($('#ph-ac'), ph);
+    if ($('#ph-ac')) $('#ph-ac').innerHTML='<p class="hint">'+(ph.constraints || []).map(function(c){return esc(AtomicConstraints.text(c));}).join('; ')+'</p><button type="button" data-edit-method>Edit constraints in Datasets →</button>';
     var acn = $('#ph-ac-n'); if (acn) acn.textContent = ph.constraints && ph.constraints.length ? ph.constraints.length + (ph.constraints.length === 1 ? ' relationship' : ' relationships') : '';
     renderBar();
     values();
@@ -123,7 +116,7 @@ RV.phasesTab = (function () {
   // ---------------------------------------------------------------- values (inputs keep focus: only their content changes)
   function values() {
     var ph = St.currentPhase();
-    if (!ph || !$('#ph-name')) return;
+    if (!ph || !$('#phase-select')) return;
     var s = src(), e = srcEsd(), act = document.activeElement, ds = srcDs(ph), list = St.selected(), n = list.filter(function (d) { return St.hasPhase(d, ph); }).length, k = ph.key + '.';
     var atoms = ds ? St.atomicValues(ds) : s, inactive = !!ds && S.calculation !== 'rietveld';
     function put(el, v, dec, esd) {
@@ -134,9 +127,8 @@ RV.phasesTab = (function () {
       el.title = esd > 0 ? (el.dataset.tip ? el.dataset.tip + '. ' : '') + 'Standard uncertainty ' + ui.fmt(esd, 2) : el.dataset.tip;
     }
     var held = St.holdersOf(ph), others = list.length - n;
-    $('#phase-src').textContent = ds ? C.METHOD_LABELS[S.calculation] + ' · ' + ds.name + ' · Cell and profile match Parameters. Edits affect this dataset; phase definitions are shared.' : 'Starting model · Select a dataset holding this phase to edit or inspect its calculation values.';
+    $('#phase-src').textContent = 'Shared phase definition and starting model. Existing dataset values and refinement flags are edited only in Datasets.';
     $('#ph-atom-src').textContent = inactive ? 'Rietveld atomic model of '+ds.name+' · Unused by '+C.METHOD_LABELS[S.calculation]+'. Switch to Rietveld to edit or refine atomic values.' : ds ? 'Rietveld atomic model of '+ds.name+'. Atomic values are used and refined in Rietveld.' : 'Atomic starting model. Rietveld uses the atoms; Le Bail and WPPF use the cell and space group.';
-    if (act !== $('#ph-name')) $('#ph-name').value = ph.name;
     if (act !== $('#ph-color')) $('#ph-color').value = RV.plots.phaseColor(S.phases.indexOf(ph));
     if (act !== $('#ph-sg')) { $('#ph-sg').value = ph.sg.symbol; $('#ph-sg').classList.remove('invalid'); }
     $('#ph-sg-info').textContent = 'No. ' + ph.sg.number + ', ' + ph.sg.system + (ph.sg.laue ? ', Laue class ' + ph.sg.laue : '') +
@@ -192,25 +184,13 @@ RV.phasesTab = (function () {
     }
     var f = el.getAttribute('data-ph'), v = el.value.trim();
     if (f === 'color') { if (!/^#[0-9a-f]{6}$/i.test(v)) return; RV.history.take('phase colour'); ph.color = v; RV.bus.emit('phaseStyle'); return; }
-    if (f === 'name') {
-      if (!v || v === ph.name) { el.value = ph.name; return; }
-      RV.history.take('renaming phase ' + ph.name);
-      var old = ph.name; ph.name = v;
-      RV.bus.emit('phases');
-      ui.toast('Phase ' + old + ' renamed ' + v + '.', 'info');
-    } else if (f === 'sg') {
+    if (f === 'sg') {
       var sg = St.resolveSG(v);
       if (!sg) { bad(el, 'Space group not recognised: ' + v + '. Type a symbol (P 21/c, Fm-3m), a number or a Hall symbol.'); return; }
       if (sg.hall === ph.sg.hall) { values(); return; }
       RV.history.take('space group of ' + ph.name);
       St.setPhaseSG(ph, sg);
       ui.toast('Space group of ' + ph.name + ': ' + sg.symbol + ' (' + sg.number + '), ' + sg.system + '. Sites of the ' + ph.atoms.length + ' atoms worked out again.', 'ok');
-    } else if (f === 'profile') {
-      if (v === ph.profileType) return;
-      RV.history.take('peak shape of ' + ph.name);
-      ph.profileType = v;
-      St.phaseChanged(ph);
-      ui.toast('Peak shape of ' + ph.name + ': ' + (C.PROFILE_LABELS[v] || v) + '. Its parameters start from their default values.', 'info');
     } else if (/^po\d$/.test(f)) {
       var i = +f.slice(2), x = ui.parseNum(v), dir = ph.poDir.slice();
       dir[i] = x;
@@ -289,6 +269,12 @@ RV.phasesTab = (function () {
     else if (el.hasAttribute('data-cell')) cellField(ph, el);
     else if (el.hasAttribute('data-at')) atomField(ph, el.closest('tr').getAttribute('data-atom'), el);
   }
+  async function renamePhase(ph) {
+    var key=ph.key,v=await ui.prompt('Rename phase',[{key:'name',label:'Phase name',type:'text',value:ph.name}],'Rename',null,{check:function(v){return v.name.trim()?'':'Enter a phase name.';}});
+    if(!v || busy())return;
+    ph=St.phaseByKey(key);if(!ph || v.name.trim()===ph.name)return;
+    RV.history.take('renaming phase '+ph.name);ph.name=v.name.trim();RV.bus.emit('phases');
+  }
   function onClick(e) {
     var chip = e.target.closest('.chip[data-key]');
     if (chip) { St.selectPhase(chip.getAttribute('data-key')); return; }
@@ -300,9 +286,9 @@ RV.phasesTab = (function () {
     else if (a === 'simulate') RV.cmd.simulate();
     else if (a === 'orientation') RV.cmd.orientation();
     else if (a === 'atom') RV.cmd.addAtom();
-    else if (a === 'del-phase') RV.cmd.deletePhase();
+    else if (a === 'rename-phase' && ph && !busy()) renamePhase(ph);
     else if (a === 'sg-browse' && ph && !busy()) openBrowser(ph);
-    else if (a === 'preset-load' && ph && !busy()) RV.cmd.loadPreset();
+    else if (a === 'preset-load' && ph && !busy()) {RV.app.showTab('datasets');RV.cmd.loadPreset();}
     else if (a === 'preset-save' && ph) RV.cmd.savePreset();
     else if (a === 'del-atom' && ph && !busy()) {
       var label = b.closest('tr').getAttribute('data-atom');
@@ -345,7 +331,7 @@ RV.phasesTab = (function () {
     ['params', 'selection', 'stats', 'data', 'datasets'].forEach(function (ev) { RV.bus.on(ev, values); });
     // a running fit owns the values: the editor is locked until it ends
     RV.bus.on('busy', function (b) {
-      if (b) document.querySelectorAll('#pane-phases input, #pane-phases select, #pane-phases .phase-bar button[data-act]').forEach(function (el) { el.disabled = true; });
+      if (b) document.querySelectorAll('#pane-phases input, #pane-phases select, #pane-phases button[data-act]').forEach(function (el) { el.disabled = true; });
       else { document.querySelectorAll('#pane-phases .phase-bar button[data-act]').forEach(function (el) { el.disabled = false; }); build(); }
     });
     build();

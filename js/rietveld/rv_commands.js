@@ -98,6 +98,7 @@ RV.cmd = (function () {
   function havePhase() { return need(S.phases.length, 'No phase yet. Read a structure CIF (File) or make a new phase (Refine).'); }
   function haveSG() { return need(S.sgReady, S.sgLoading ? 'The space groups are still loading.' : 'The space-group database is not loaded: open index.html through a web server.'); }
   function sel() { return St.selected(); }
+  function datasetTargets() { var d=RV.workspace && RV.workspace.dataset();return d?[d]:[]; }
   function snapshot(label, opts) { RV.history.take(label, opts); }
   function baseName(n) { return String(n).replace(/\.[^./\\]+$/, ''); }
   function fmt(v) { return ui.fmt(v, 4); }
@@ -110,6 +111,7 @@ RV.cmd = (function () {
     for (var i = 0; i < files.length; i++) {
       var f = files[i], buf;
       try { buf = await ui.readBuffer(f); } catch (e) { ui.toast(f.name + ': ' + e.message, 'err'); continue; }
+      if(/\.powder6$/i.test(f.name)){try{project={name:f.name,document:await RV.project.unpack(buf)};}catch(e){ui.toast(f.name+': '+e.message,'err');}continue;}
       var head = '';
       try { head = new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(buf, 0, Math.min(buf.byteLength, 65536))); } catch (e) { head = ''; }
       if (/^\s*\{/.test(head) && (head.indexOf('"powder6-project"') >= 0)) { project = { name: f.name, text: new TextDecoder().decode(buf) }; continue; }
@@ -128,7 +130,7 @@ RV.cmd = (function () {
       }
       data.push({ name: f.name, buf: buf });
     }
-    if (project) { try { await openProject(project.text); } catch (e) { ui.toast(project.name + ': ' + e.message, 'err'); } return; }
+    if (project) { try { await openProject(project.document || project.text); } catch (e) { ui.toast(project.name + ': ' + e.message, 'err'); } return; }
     var importedPhases = structures.length ? readStructures(structures) : [];
     if (data.length) await readData(data, importedPhases);
     for (var preset of presets) await applyPresetText(preset.text, preset.name);
@@ -236,7 +238,6 @@ RV.cmd = (function () {
       { key: 'a', label: 'a /Å', type: 'number', value: 5 }, { key: 'b', label: 'b /Å', type: 'number', value: 5, hint: 'Lengths and angles the crystal system fixes are ignored.' },
       { key: 'c', label: 'c /Å', type: 'number', value: 5 }, { key: 'alpha', label: 'α /°', type: 'number', value: 90 },
       { key: 'beta', label: 'β /°', type: 'number', value: 90 }, { key: 'gamma', label: 'γ /°', type: 'number', value: 90 },
-      { key: 'profile', label: 'Peak shape', type: 'select', value: (St.selected()[0] && St.selected()[0].inst.resolutionType) || 'gsas_cw', options: Object.keys(C.PROFILE_PARAMS).map(function (k) { return [k, C.PROFILE_LABELS[k]]; }) },
     ].concat(S.datasets.length > 1 && S.sel.size && S.sel.size < S.datasets.length ? [{ key: 'where', label: 'In', type: 'select', value: 'all',
       options: [['all', 'every dataset (' + S.datasets.length + ')'], ['sel', 'the selected datasets (' + S.sel.size + ')']], hint: 'Change phase assignments later in Datasets.' }] : []), 'Make phase', 'A phase without atoms is fitted by Le Bail or WPPF; once it has atoms (added in the Phases tab, or found in the Solve tab) it can be fitted by Rietveld. A structure CIF (File) gives the space group, the cell and the atoms at once.',
     { onOpen: function (body) {
@@ -267,7 +268,7 @@ RV.cmd = (function () {
       return '';
     } });
     if (!v || !chosen) return;
-    var ph = St.makePhase({ name: v.name.trim() || 'phase ' + n, sg: chosen, cell: { a: v.a, b: v.b, c: v.c, alpha: v.alpha, beta: v.beta, gamma: v.gamma }, profileType: v.profile, separatedProfile: !!(St.selected()[0] && St.selected()[0].inst.resolutionType===v.profile) });
+    var ph = St.makePhase({ name: v.name.trim() || 'phase ' + n, sg: chosen, cell: { a: v.a, b: v.b, c: v.c, alpha: v.alpha, beta: v.beta, gamma: v.gamma } });
     var only = v.where === 'sel' ? Array.from(S.sel) : null;
     snapshot('new phase ' + ph.name);
     St.addPhase(ph, only);
@@ -293,10 +294,11 @@ RV.cmd = (function () {
     var at = ph.atoms.filter(function (a) { return a.label === label; })[0];
     ui.toast('Atom ' + label + ' added to ' + ph.name + ' on ' + at.site.wyck + ' (' + at.site.expr + ').', 'ok');
   }
-  async function deletePhase() {
-    var ph = St.currentPhase();
+  async function deletePhase(key) {
+    var ph = typeof key==='string'?St.phaseByKey(key):St.currentPhase();if(!ph)return;
     if (!idle() || !havePhase()) return;
     if (!(await ui.confirm('Delete phase ' + ph.name + ' from every dataset? Undo brings it back.', 'Delete', true, 'Delete phase'))) return;
+    if(!idle() || !St.phaseByKey(ph.key))return;
     snapshot('deleting phase ' + ph.name);
     St.removePhase(ph.key);
     ui.toast('Phase ' + ph.name + ' deleted.', 'info');
@@ -464,7 +466,7 @@ RV.cmd = (function () {
     var res = await ui.modal({
       title: 'Sharing in the global fit', size: groups.length > 8 || list.length > 5 ? 'xl' : '', wide: true,
       body: '<p class="intro">For the global fit of the ' + plural(list.length, 'selected dataset') + '. A shared group of parameters has one value for the ticked datasets that hold its phase; ' +
-            'an unticked dataset keeps its own value. Not shared: one value per dataset. Scales and background have one value per dataset. Zero point and sample geometry may be shared explicitly; what is refined is what is ticked in Parameters.</p>' +
+            'an unticked dataset keeps its own value. Not shared: one value per dataset. Scales and background have one value per dataset. Zero point and sample geometry may be shared explicitly; what is refined is what is ticked in the dataset tabs.</p>' +
             '<div class="table-wrap pm-wrap"><table class="grid compact pm sh"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table></div>' +
             '<p class="hint">The padlocks of Parameters show the same: closed shared, open one value per dataset; right-click a padlock to come back here.</p>',
       onOpen: function (b) {
@@ -550,7 +552,7 @@ RV.cmd = (function () {
     if (doc.format !== PRESET_FORMAT) throw new Error('Expected a Powder 6 instrument calibration or peak-shape preset, not format ' + JSON.stringify(doc.format === undefined ? null : doc.format) + ' (expected ' + PRESET_FORMAT + ').');
     if (doc.version !== 2) throw new Error('Peak-shape preset version ' + doc.version + ' is not supported (expected 2).');
     if (!doc.parameters || !validType(doc.profileType)) throw new Error('The peak-shape preset has no parameters or an unknown profile type (' + doc.profileType + ').');
-    if (doc.separatedProfile === true || doc.profileType === 'gsas_cw') throw new Error('This is a sample-broadening preset. Load it in Phases; use Save calibration for instrument parameters.');
+    if (doc.separatedProfile === true || doc.profileType === 'gsas_cw') throw new Error('This is a sample-broadening preset. Load it from the active dataset; use Save calibration for instrument parameters.');
     var type = doc.profileType, P = doc.parameters, notes = [];
     values = {};
     function read(name, optional) {
@@ -576,7 +578,7 @@ RV.cmd = (function () {
       ['U','V','W','SL','HL'].forEach(function (name) { values[name] = read(name); });
       values.X = read('X'); values.Y = read('Y');
       notes.push('TCH shape is retained: X is the 1/cos(theta) term and Y the tan(theta) term, as in GSAS-II.');
-      if (Object.keys(P).some(function (name) { return /^param-s[0-4]{3}$/.test(name) && Number(P[name]) !== 0; })) notes.push('Stephens terms are sample strain, excluded from this instrument calibration; define sample strain in Phases.');
+      if (Object.keys(P).some(function (name) { return /^param-s[0-4]{3}$/.test(name) && Number(P[name]) !== 0; })) notes.push('Stephens terms are sample strain, excluded from this instrument calibration; define sample strain in each dataset tab.');
     } else {
       C.instrumentProfileParams(type).forEach(function (p) { values[p[0]] = read(p[0]); });
     }
@@ -585,30 +587,36 @@ RV.cmd = (function () {
   }
 
   async function resolution(initialDocument, initialName) {
-    if (!idle() || !haveSel()) return;
-    var list = sel(), d = St.first(), current = St.currentPhase();
+    if (!idle()) return;
+    var list = datasetTargets(), d = list[0], current = St.currentPhase();if(!d)return;
+    RV.app.showTab('datasets');
     if (!current || !list.some(function(ds){return St.hasPhase(ds,current);})) current=St.phasesIn(d)[0] || null;
-    var activeType = current && C.PROFILE_PARAMS[current.profileType] ? current.profileType : (d.inst.resolutionType || 'gsas_cw');
+    var activeType = d.inst.resolutionType || (current && current.profileType) || 'gsas_cw';
     var loadedDocument = initialDocument ? calibrationOf(initialDocument) : null;
     if (loadedDocument) activeType = loadedDocument.profileType;
     var fields = [];
     C.ALL_INSTRUMENT_PROFILE.forEach(function (p) {
       fields.push({key:p[0],label:p[0]+(/^(U|V|W)(_[LR])?$/.test(p[0])?' /cdeg²':/^(X|Y|Z)(_[LR])?$/.test(p[0])?' /cdeg':''),type:'number',value:Number.isFinite(d.p['inst.'+p[0]])?d.p['inst.'+p[0]]:p[1]});
     });
-    var v = await ui.prompt('Instrument resolution · '+d.name,fields,'Apply to selected datasets',
-      'Load a calibration JSON: its profile type and coefficients are detected automatically. Apply updates the Peak shape selector for phases in the selected datasets. The profile type and coefficients are retained with each dataset even before phases are added. Instrument parameters remain separate from sample size and strain. Choose refinement flags in Parameters. Phase profile choices are project-wide.',{
-      after:'<p class="hint" data-res-profile></p><p class="buttons"><button type="button" data-res-cal="load">Load calibration JSON…</button><button type="button" data-res-cal="save">Save calibration JSON…</button></p><p class="hint" data-res-status role="status">Load a calibration or edit the coefficients, then Apply to selected datasets.</p>',
+    if(RV.workspace)fields.unshift(RV.workspace.targetField());
+    var v = await ui.prompt('Instrument resolution · '+d.name,fields,'Apply resolution',
+      'Instrument calibration belongs to each dataset. Sample size and strain remain separate in its phase contributions. Choose refinement flags in the dataset tab.',{
+      before:'<p class="buttons"><button type="button" data-res-cal="load">Load calibration JSON…</button><button type="button" data-res-cal="save">Save calibration JSON…</button></p><p class="hint" data-res-status role="status">Load a calibration to detect its profile and coefficients automatically, or edit the current coefficients. Save calibration writes the coefficients shown here. Apply resolution updates the chosen datasets.</p><p class="hint" data-res-profile></p>',
+      after:'<p class="hint" data-res-targets></p>',
       onOpen:function(body){
         function status(message) { body.querySelector('[data-res-status]').textContent = message; }
         function showProfile() {
           var active = C.instrumentProfileParams(activeType).map(function (p) { return p[0]; });
           fields.forEach(function (field) {
+            if(field.key==='targets')return;
             var key = field.key, hidden = active.indexOf(key) < 0;
             body.querySelector('[data-key="'+field.key+'"]').closest('div').hidden = hidden;
             body.querySelector('label[for="f_'+field.key+'"]').hidden = hidden;
           });
-          body.querySelector('[data-res-profile]').textContent = (loadedDocument ? 'Detected profile: ' : 'Current profile: ') + C.PROFILE_LABELS[activeType];
+          body.querySelector('[data-res-profile]').textContent = (loadedDocument ? 'Detected profile: ' : 'Current profile: ') + C.PROFILE_LABELS[activeType==='gsas_cw'?'tch_aniso':activeType];
         }
+        function showTargets(){if(!RV.workspace)return;var selected=RV.workspace.targets(body.querySelector('[data-key="targets"]').value),phases=S.phases.filter(function(p){return selected.some(function(d){return St.hasPhase(d,p);});});body.querySelector('[data-res-targets]').textContent='Apply to '+selected.length+' datasets · '+selected.slice(0,5).map(function(d){return d.name;}).join(', ')+(selected.length>5?' …':'')+'. Phase contributions: '+phases.map(function(p){return p.name;}).join(', ')+'.';}
+        body.addEventListener('change',showTargets);showTargets();
         function loadDocument(doc,name) {
           var parsed = calibrationOf(doc);
           loadedDocument = parsed; activeType = parsed.profileType;
@@ -616,7 +624,7 @@ RV.cmd = (function () {
             body.querySelector('[data-key="'+p[0]+'"]').value = parsed.values[p[0]];
           });
           showProfile();
-          status('Loaded '+name+'. Apply will select '+C.PROFILE_LABELS[activeType]+'. '+(parsed.conversion && parsed.conversion.notes || []).join(' '));
+          status('Loaded '+name+'. Apply will use this calibration for the chosen datasets. '+(parsed.conversion && parsed.conversion.notes || []).join(' '));
         }
         if (loadedDocument) loadDocument(loadedDocument,initialName || 'instrument calibration'); else showProfile();
         body.addEventListener('click',async function(e){
@@ -645,48 +653,62 @@ RV.cmd = (function () {
       }
     });
     if(!v || !idle())return;
+    if(RV.workspace)list=RV.workspace.targets(v.targets);
+    if(!list.length){ui.toast('Select at least one target dataset.','warn');return;}
+    applyResolution(list,v.profileType,v);
+  }
+  function setInstrumentProfile(ds,type) {
+    if(!idle() || !ds || !C.INSTRUMENT_PROFILE_TYPES.includes(type))return;
+    if((ds.inst.resolutionType==='gsas_cw'?'tch_aniso':ds.inst.resolutionType)===type && St.phasesIn(ds).every(C.usesSeparatedProfile))return;
+    var values={};C.instrumentProfileParams(type).forEach(function(p){values[p[0]]=Number.isFinite(ds.p['inst.'+p[0]])?ds.p['inst.'+p[0]]:p[1];});
+    applyResolution([ds],type,values);
+  }
+  function applyResolution(list,type,values) {
     snapshot('instrument resolution calibration');
     var affected=S.phases.filter(function(ph){return list.some(function(ds){return St.hasPhase(ds,ph);});});
-    var changed=affected.some(function(ph){return ph.profileType!==v.profileType || !C.usesSeparatedProfile(ph);});
+    var changed=affected.some(function(ph){return !C.usesSeparatedProfile(ph);});
     affected.forEach(function(ph){
-      ph.profileType=v.profileType;ph.separatedProfile=true;
+      ph.separatedProfile=true;
       St.profileNames(ph).forEach(function(name){
         var key=ph.key+'.'+name;
         if(!Number.isFinite(ph.v[key])){var def=C.SAMPLE_PROFILE.filter(function(p){return p[0]===name;})[0];ph.v[key]=def?def[1]:0;ph.fit[key]=false;}
       });
     });
     if(changed)St.phaseChanged(affected[0]);
-    var coefficients=C.instrumentProfileParams(v.profileType);
+    var coefficients=C.instrumentProfileParams(type);
     list.forEach(function(ds){
-      ds.inst.resolutionType=v.profileType;
+      ds.inst.resolutionType=type;
       ds.mem=ds.mem||{};
-      coefficients.forEach(function(p){var n='inst.'+p[0];ds.mem[n]=[v[p[0]],!!ds.fit[n]];ds.p[n]=v[p[0]];});
-      Object.keys(ds.calculations||{}).forEach(function(m){var bank=ds.calculations[m];coefficients.forEach(function(p){var n='inst.'+p[0];bank.p[n]=v[p[0]];/* Refinement flags belong to the calculation, not the calibration. */});bank.stats=null;bank.esd={};bank.ints=null;});
+      coefficients.forEach(function(p){var n='inst.'+p[0];ds.mem[n]=[values[p[0]],!!ds.fit[n]];ds.p[n]=values[p[0]];});
+      Object.keys(ds.calculations||{}).forEach(function(m){var bank=ds.calculations[m];coefficients.forEach(function(p){var n='inst.'+p[0];bank.p[n]=values[p[0]];/* Refinement flags belong to the calculation, not the calibration. */});bank.stats=null;bank.esd={};bank.ints=null;});
       ds.stats=null;ds.esd={};ds.ints=null;St.invalidate(ds);
     });
-    RV.bus.emit('params',{});ui.toast('Loaded '+C.PROFILE_LABELS[v.profileType]+' resolution for '+plural(list.length,'dataset')+(affected.length?'. Peak shape selectors updated.':'. Saved with the dataset; new phases will use this profile by default.'),'ok');
+    RV.bus.emit('params',{});RV.bus.emit('data');ui.toast('Set '+C.PROFILE_LABELS[type]+' resolution for '+plural(list.length,'dataset')+'.','ok');
   }
 
   async function orientation() {
     var ph=St.currentPhase();if(!idle() || !ph)return;
-    var held=St.holdersOf(ph,sel()), source=held[0],pre=ph.key+'.po',values=source?source.p:ph.v;
+    var held=St.holdersOf(ph,datasetTargets()), source=held[0],pre=ph.key+'.po',values=source?source.p:ph.v;
+    RV.app.showTab('datasets');
     var v=await ui.prompt('Preferred orientation · '+ph.name,[
       {key:'h',label:'Axis h',type:'number',value:ph.poDir[0]}, {key:'k',label:'Axis k',type:'number',value:ph.poDir[1]}, {key:'l',label:'Axis l',type:'number',value:ph.poDir[2]},
       {key:'r',label:'March–Dollase r',type:'number',value:values[pre]||1,hint:'1 means random orientation; r is dimensionless.'},
       {key:'refine',label:'Refine r',type:'checkbox',value:ph.method==='rietveld' && !!(source?source.fit[pre]:ph.fit[pre])},
       {key:'shared',label:'Share r in a global fit',type:'checkbox',value:St.isShared(pre)}
-    ],'Apply','The axis belongs to the phase. The strength r and its refinement flag apply to the selected datasets that contain this phase, or to its start values if none are selected. Preferred orientation is meaningful only for a Rietveld intensity model.',{
+    ],'Apply','The axis belongs to the phase. The strength r and its refinement flag apply only to the active dataset containing this phase. Preferred orientation is meaningful only for a Rietveld intensity model.',{
       check:function(v){if([v.h,v.k,v.l].every(function(x){return x===0;}))return 'The axis must be nonzero.';if(!(v.r>=.1 && v.r<=5))return 'r must be between 0.1 and 5.';if(v.refine && ph.method!=='rietveld')return 'Choose the Rietveld calculation in Solve before refining preferred orientation.';return '';}
     });
     if(!v || !idle())return;snapshot('preferred orientation of '+ph.name);ph.poDir=[v.h,v.k,v.l];St.phaseChanged(ph);
-    St.setParam(pre,v.r,held,true);St.setFit(pre,v.refine,held);ph.fit[pre]=v.refine;St.setShared(pre,v.shared);
+    St.setParam(pre,v.r,held,!source);St.setFit(pre,v.refine,held);if(!source)ph.fit[pre]=v.refine;St.setShared(pre,v.shared);
     ui.toast('Preferred orientation of '+ph.name+': ('+ph.poDir.join(' ')+'), r = '+v.r+(v.refine?', refined.':', fixed.'),'ok');
   }
 
   // ---------------------------------------------------------------- datasets
   async function instrument() {
-    if (!idle() || !haveSel()) return;
-    var list = sel(), d = St.first(), i = d.inst, lo = Infinity, hi = -Infinity;
+    if (!idle()) return;
+    var list = datasetTargets(), d = list[0];if(!d)return;
+    RV.app.showTab('datasets');
+    var i = d.inst, lo = Infinity, hi = -Infinity;
     list.forEach(function (x) { lo = Math.min(lo, x.tth[0]); hi = Math.max(hi, x.tth[x.tth.length - 1]); });
     var anodes = Object.keys(St.ANODES).map(function (k) { return [k, k + ' Kα1 ' + St.ANODES[k][0] + ', Kα2 ' + St.ANODES[k][1] + ' Å']; }).concat([['', 'Other wavelength']]);
     var anode = i.anode && St.ANODES[i.anode] && Math.abs(St.ANODES[i.anode][0] - i.lambda1) < 1e-6 ? i.anode : '';
@@ -742,12 +764,14 @@ RV.cmd = (function () {
     return { values: out, bad: bad };
   }
   async function background() {
-    if (!idle() || !haveSel()) return;
-    var list = sel(), d = St.first(), i = d.inst, placed = null;
+    if (!idle()) return;
+    var list = datasetTargets(), d = list[0];if(!d)return;
+    RV.app.showTab('datasets');
+    var i = d.inst, placed = null;
     var v = await ui.prompt('Background', [
       { key: 'type', label: 'Background', type: 'select', value: i.bkgType, options: [['cheb', 'Chebyshev polynomials over the fitted range'], ['spline', 'Spline through anchors (monotone cubic)']] },
       { key: 'bkgN', label: 'Terms', type: 'number', value: i.bkgN, when: 'type:cheb', hint: 'A whole number from 0 to 24.' },
-      { key: 'anchors', label: 'Anchors at 2θ /°', type: 'text', value: i.bkgX.map(fmt6).join(' '), when: 'type:spline', hint: 'Separated by spaces. Empty: placed automatically in each dataset. Ctrl+click on the pattern places an anchor at both cursor coordinates, or removes the one under the cursor. Right-drag an anchor to move it; its height is a parameter (Parameters).' },
+      { key: 'anchors', label: 'Anchors at 2θ /°', type: 'text', value: i.bkgX.map(fmt6).join(' '), when: 'type:spline', hint: 'Separated by spaces. Empty: placed automatically in each dataset. Ctrl+click on the pattern places an anchor at both cursor coordinates, or removes the one under the cursor. Right-drag an anchor to move it; its height and refinement flag are in this dataset’s Background group.' },
       { key: 'nAuto', label: 'Anchors to place', type: 'number', value: S.settings.nAnchors, when: 'type:spline', hint: 'Place puts them at the two ends of the fitted range and at the lowest point of equal stretches between them, never in an excluded region.' }
     ], 'Apply', (list.length > 1 ? 'For the ' + plural(list.length, 'selected dataset') + ' (the values shown are those of ' + ui.esc(d.name) + '). ' : '') +
        'The heights of new anchors start at the data; anchors that stay where they were keep their values.', {
@@ -782,12 +806,14 @@ RV.cmd = (function () {
     St.setSetting('nAnchors', Math.round(v.nAuto));
     var xs = parseList(v.anchors).values;
     list.forEach(function (ds) { St.setInstrument([ds], { bkgType: 'spline', bkgX: xs.length ? xs : St.autoAnchors(ds, Math.round(v.nAuto)) }); });
-    ui.toast('Background of ' + plural(list.length, 'dataset') + ': a spline through ' + (xs.length ? plural(xs.length, 'anchor') : 'anchors placed in each') + '. Their heights start at the data; tick them in Parameters (step 1 of the Solve) to refine them.', 'ok');
+    ui.toast('Background of ' + plural(list.length, 'dataset') + ': a spline through ' + (xs.length ? plural(xs.length, 'anchor') : 'anchors placed in each') + '. Their heights start at the data; tick them in this dataset’s Background group to refine them.', 'ok');
   }
   function regionsText(ex) { return ex.map(function (r) { return fmt6(r[0]) + ' ' + fmt6(r[1]); }).join('\n'); }
   async function excludeRegions() {
-    if (!idle() || !haveSel()) return;
-    var list = sel(), d = St.first(), result = null;
+    if (!idle()) return;
+    var list = datasetTargets(), d = list[0];if(!d)return;
+    RV.app.showTab('datasets');
+    var result = null;
     var v = await ui.modal({
       title: 'Excluded regions', wide: true,
       body: '<p class="intro">2θ regions left out of the fit, one per line: from and to, in degrees (for example <code>26.4 26.9</code>). The pattern is still calculated there; the points take no part in the fit, the Le Bail and WPPF intensities or the R factors. ' +
@@ -821,6 +847,7 @@ RV.cmd = (function () {
     var i = ds.inst;
     if (!(x >= ds.tth[0] && x <= ds.tth[ds.tth.length - 1]) || !Number.isFinite(y)) return;
     St.setSetting('showBkg', true);
+    St.setSetting('showAnchors', true);
     if (i.bkgType !== 'spline') {
       snapshot('spline background of ' + ds.name);
       St.setInstrument([ds], { bkgType: 'spline', bkgX: [i.tthMin, x, i.tthMax] });
@@ -937,25 +964,17 @@ RV.cmd = (function () {
     if (!Object.keys(out.values).length) throw new Error('no parameter of the ' + C.PROFILE_LABELS[type] + ' in it');
     return out;
   }
-  function applyPreset(pr, from) {
-    var ph = St.currentPhase();
-    if (!need(ph, 'Make or read a phase first: the preset sets the peak shape of the current phase.')) return;
-    if (!idle()) return;
-    snapshot('peak shape preset for ' + ph.name);
-    if (ph.profileType !== pr.type || !!ph.separatedProfile !== pr.separatedProfile || JSON.stringify(ph.broadening) !== JSON.stringify(pr.broadening)) { ph.profileType = pr.type; ph.separatedProfile = pr.separatedProfile; ph.broadening = C.broadeningConfig(pr.broadening); St.phaseChanged(ph); }
-    var list = [], k = ph.key + '.';
-    Object.keys(pr.values).forEach(function (n) {
-      St.setParam(k + n, pr.values[n], list, true);
-      list.forEach(function (ds) { if (k + n in ds.fit) ds.fit[k + n] = pr.fit[n]; });
-      ph.fit[k + n] = pr.fit[n];
-    });
-    var inst = [];
-    if (list.length && Number.isFinite(pr.disp)) { St.setParam('disp', pr.disp, list, false); inst.push('displacement ' + pr.disp); }
-    if (list.length && Number.isFinite(pr.transp)) { St.setParam('transp', pr.transp, list, false); inst.push('transparency ' + pr.transp); }
-    RV.bus.emit('params', {});
-    ui.toast('Peak shape of ' + ph.name + ' from ' + from + ': ' + C.PROFILE_LABELS[pr.type] + ', ' + plural(Object.keys(pr.values).length, 'parameter') +
-      (list.length ? ' in ' + plural(list.length, 'selected dataset') : ' (start values)') + (inst.length ? ', and ' + inst.join(', ') : '') +
-      (pr.ignored.length ? '. Not used (Stephens anisotropic broadening is not in this model): ' + pr.ignored.join(', ') : '') + '.', pr.ignored.length ? 'warn' : 'ok');
+  async function applyPreset(pr, from) {
+    var current=St.currentPhase();if(!current || !idle())return;
+    RV.app.showTab('datasets');
+    if(!pr.separatedProfile)throw new Error('Use an instrument-resolution calibration or a sample-broadening preset.');
+    var fields=[{key:'phase',label:'Destination phase',type:'select',value:current.key,options:S.phases.map(function(p){return [p.key,p.name];})}];
+    if(RV.workspace)fields.push(RV.workspace.targetField());
+    var result=await ui.prompt('Load sample broadening',fields,'Apply sample values','Source: '+ui.esc(from)+'. This updates sample size/strain values for the chosen phase in the target datasets. Instrument resolution and refinement flags are kept.');
+    if(!result)return;var ph=St.phaseByKey(result.phase),list=(RV.workspace?RV.workspace.targets(result.targets):sel()).filter(function(d){return St.hasPhase(d,ph);});
+    snapshot('sample broadening of '+ph.name);ph.separatedProfile=true;ph.broadening=C.broadeningConfig(pr.broadening);St.phaseChanged(ph);
+    Object.keys(pr.values).forEach(function(n){St.setParam(ph.key+'.'+n,pr.values[n],list,true);});
+    RV.bus.emit('params',{});ui.toast('Loaded sample broadening for '+ph.name+' in '+list.length+' dataset(s).','ok');
   }
   async function applyPresetText(text, name) {
     try {
@@ -965,7 +984,7 @@ RV.cmd = (function () {
         // Show its coefficients and targets; nothing changes until Apply.
         return await resolution(calibrationOf(doc), name);
       }
-      applyPreset(presetOf(doc), name);
+      await applyPreset(presetOf(doc), name);
     } catch (e) { ui.toast(name + ': ' + ((e && e.message) || e), 'err'); }
   }
   async function loadPreset() {
@@ -977,12 +996,12 @@ RV.cmd = (function () {
   function savePreset() {
     var ph = St.currentPhase();
     if (!need(ph, 'No phase yet.')) return;
-    var ds = null, src = ph.v, fit = ph.fit, P = {};
+    var ds = RV.workspace.dataset(), src = ds && St.hasPhase(ds,ph)?ds.p:ph.v, fit = ds && St.hasPhase(ds,ph)?ds.fit:ph.fit, P = {};
     St.profileNames(ph).forEach(function (n) { var v = src[ph.key + '.' + n]; P['param-' + n.toLowerCase()] = Number.isFinite(v) ? (St.isSizeParam(n) ? String(Math.round(St.toDisplay(n,v))) : v.toFixed(4)) : '0'; P['fit-' + n.toLowerCase()] = !!fit[ph.key + '.' + n]; });
     if (ds) { P['param-shft'] = (ds.p.disp || 0).toFixed(4); P['fit-shft'] = !!ds.fit.disp; P['param-trns'] = (ds.p.transp || 0).toFixed(6); P['fit-trns'] = !!ds.fit.transp; }
-    var doc = { broadening:C.broadeningConfig(ph.broadening), format: PRESET_FORMAT, version: 2, profileType: ph.profileType, separatedProfile: C.usesSeparatedProfile(ph), sizeUnit: 'nm', label: C.PROFILE_LABELS[ph.profileType] + ', ' + ph.name, savedAt: new Date().toISOString(), parameters: P };
+    var doc = { broadening:C.broadeningConfig(ph.broadening), format: PRESET_FORMAT, version: 2, profileType: ph.profileType, separatedProfile: C.usesSeparatedProfile(ph), sizeUnit: 'nm', label: 'Sample broadening, ' + ph.name, savedAt: new Date().toISOString(), parameters: P };
     ui.download(String(PRESET_FILES[ph.profileType] || 'profile.json').replace('_default', '_' + ph.name.replace(/[^\w-]+/g, '_')), JSON.stringify(doc, null, 2), 'application/json');
-    ui.toast('Saved the peak shape of ' + ph.name + (ds ? ' in ' + ds.name : '') + ' as a sample-profile preset. Instrument calibration is saved separately using Resolution. Legacy default filename: ' + (PRESET_FILES[ph.profileType] || '(none)') + ' next to index.html, it becomes the start of every new phase with that shape.', 'ok');
+    ui.toast('Saved the peak shape of ' + ph.name + (ds ? ' in ' + ds.name : '') + ' as a sample-broadening preset. Instrument calibration is saved separately using Resolution.', 'ok');
   }
   // the start values of new phases, from Voigt_default.json and its siblings next to the page; silent when absent
   async function loadDefaultPresets() {
@@ -1008,7 +1027,11 @@ RV.cmd = (function () {
     if (S.busy) throw new Error('a fit is running');
     var job = St.jobFor(ds);
     job.type = 'extract';
-    if (precision) job.precision = { dataset: 0, phase: precision.phase, maxRefl: precision.maxRefl || 220 };
+    if (precision) {
+      var limit=precision.maxRefl==null?C.MAX_PRECISION_REFLECTIONS:precision.maxRefl;
+      if(!Number.isSafeInteger(limit) || limit<1 || limit>C.MAX_PRECISION_REFLECTIONS)throw new Error('Number of reflections must be a whole number between 1 and '+C.MAX_PRECISION_REFLECTIONS+'.');
+      job.precision={dataset:0,phase:precision.phase,maxRefl:limit};
+    }
     St.setBusy(true,'Extracting integrated intensities…');
     ui.progress(0, -1, 'intensities');
     var run = null;
@@ -1042,12 +1065,12 @@ RV.cmd = (function () {
     ui.toast('Scales and constant background estimated by linear least squares in ' + ok + ' of ' + plural(list.length, 'dataset') + '.', ok === list.length ? 'ok' : 'warn');
   }
   function cloneTo(all) {
-    if (!idle() || !haveSel()) return;
-    var from = St.first(), targets = all ? S.datasets.slice() : sel();
-    if (!need(targets.length > 1, all ? 'There is only one dataset.' : 'Select the datasets to copy to as well.')) return;
+    if (!idle()) return;
+    var from = RV.workspace.dataset(), targets = (all ? S.datasets.slice() : sel()).filter(function(d){return d!==from;});
+    if (!need(from && targets.length, all ? 'There is only one dataset.' : 'Select the datasets to copy to.')) return;
     snapshot('copying the parameters of ' + from.name);
     St.copyParams(from, targets);
-    ui.toast('Copied the values and fit flags of ' + from.name + ' to ' + plural(targets.length - 1, 'other dataset') + '.', 'ok');
+    ui.toast('Copied the values and fit flags of ' + from.name + ' to ' + plural(targets.length, 'other dataset') + '.', 'ok');
   }
 
   // fit flags by steps, the usual order of a Rietveld refinement; each step keeps the ones before
@@ -1085,9 +1108,9 @@ RV.cmd = (function () {
     var step = stepOf(name);
     return step >= 0 && step < 3 ? STEPS[step] : null;
   }
-  function fitGroupState(kind) {
+  function fitGroupState(kind, targets) {
     var total = 0, ticked = 0;
-    sel().forEach(function (ds) {
+    (targets || sel()).forEach(function (ds) {
       Object.keys(ds.fit).forEach(function (name) {
         if (fitGroup(name) !== kind || !groupEligible(ds,name)) return;
         total++; if (ds.fit[name]) ticked++;
@@ -1095,12 +1118,12 @@ RV.cmd = (function () {
     });
     return { total: total, ticked: ticked, checked: total > 0 && ticked === total, mixed: ticked > 0 && ticked < total };
   }
-  function setFitGroup(kind, on) {
-    if (!idle() || !haveSel()) return;
+  function setFitGroup(kind, on, targets) {
+    if (!idle() || !(targets ? targets.length : haveSel())) return;
     if (STEPS.concat(['adp','occupancy','resolution']).indexOf(kind) < 0) return;
     if (['atoms','adp','occupancy'].indexOf(kind) >= 0 && S.calculation !== 'rietveld') return;
     snapshot('refinement group ' + kind + (on ? ' on' : ' off'));
-    sel().forEach(function (ds) {
+    (targets || sel()).forEach(function (ds) {
       Object.keys(ds.fit).forEach(function (name) {
         if (fitGroup(name) === kind && groupEligible(ds,name)) ds.fit[name] = !!on;
       });
@@ -1108,7 +1131,7 @@ RV.cmd = (function () {
     RV.bus.emit('params', {});
   }
   function groupEligible(ds,name) {
-    return St.isVariable(name) && (C.classify(name).kind !== 'instrument' || St.instrumentParamsFor(ds).some(function(p){return 'inst.'+p[0]===name;}));
+    return St.isVariable(name) && !S.disabledPhases.includes(C.classify(name).phase) && !S.parameterLinks.some(function(l){return l.target.datasetId===ds.id && l.target.name===name;}) && (C.classify(name).kind !== 'instrument' || St.instrumentParamsFor(ds).some(function(p){return 'inst.'+p[0]===name;}));
   }
 
   // ---------------------------------------------------------------- refining
@@ -1117,19 +1140,19 @@ RV.cmd = (function () {
     if (!idle() || !haveSel() || !havePhase()) return;
     if (St.calculationIssue()) { ui.toast(St.calculationIssue(), 'warn'); return; }
     var list = sel().filter(function (ds) { return St.fitNames(ds).length; });
-    if (!list.length) { ui.toast('Tick at least one parameter to refine (Parameters, or the steps in Solve).', 'warn'); return; }
+    if (!list.length) { ui.toast('Tick at least one parameter to refine (Datasets).', 'warn'); return; }
     var jobs = list.filter(function(ds){return St.fitPoints(ds).tth.length>=2;}).map(function(ds){return {id:ds.id,job:null};});
     if (!need(jobs.length, 'Fewer than two points in the fitted range (Data, Instrument and range).')) return;
     snapshot('refining ' + plural(jobs.length, 'dataset'));
-    var modelSource=St.startingModel();
-    ui.log('Phase starting model: '+modelSource.name+' (topmost selected dataset).');
+    ui.log('Starting from the current values for '+C.METHOD_LABELS[S.calculation]+'.');
+    var historyTicket=RV.fitHistory?RV.fitHistory.begin(list,false):null;
     ui.log('Refinement algorithm: ' + (S.settings.algorithm === 'pt' ? 'parallel tempering + LM finish' : 'Levenberg–Marquardt') + '.');
     var t0 = performance.now(), last = 0, nOk = 0, nWarn = 0, nBad = 0, run = null, results;
     St.setBusy(true,'Fitting '+jobs.length+' dataset(s) individually…');
     ui.progress(0, jobs.length);
     try {
       await new Promise(function(resolve){setTimeout(resolve,20);});
-      running = run = RV.pool.run(jobs.map(function (j) { return function(){j.job=St.seedPhaseStarts(St.jobFor(St.byId(j.id)),modelSource);return j.job;}; }), function (res, k) {
+      running = run = RV.pool.run(jobs.map(function (j) { return function(){j.job=St.jobFor(St.byId(j.id));return j.job;}; }), function (res, k) {
         var ds = St.byId(jobs[k].id);
         if (!ds) return;
         if (res.ok) { (res.constraintWarnings || []).forEach(function(w){ui.log(w,'warn');}); St.applyResult([ds], res, jobs[k].job, false); if (St.fitStatus(res.msg) === 'ok') nOk++; else nWarn++; }
@@ -1147,6 +1170,7 @@ RV.cmd = (function () {
       RV.bus.emit('stats'); RV.bus.emit('params', {});
     }
     if(S.calculation==='wppf' && RV.solve && RV.solve.autoExtract && !run.stopped()) await RV.solve.autoExtract(jobs.map(function(j){return St.byId(j.id);}).filter(function(d){return d && d.stats && d.stats.ok;}));
+    if(RV.fitHistory)RV.fitHistory.complete(historyTicket,jobs.filter(function(j,k){return results[k] && results[k].ok;}).map(function(j){return St.byId(j.id);}),run.stopped());
     var n = results.filter(Boolean).length, dt = ((performance.now() - t0) / 1000).toFixed(2), stopped = run.stopped();
     if (jobs.length === 1 && results[0]) {
       var r = results[0], ds = St.byId(jobs[0].id);
@@ -1158,16 +1182,45 @@ RV.cmd = (function () {
         (stopped && n < jobs.length ? ' The ' + (jobs.length - n) + ' not refined keep their values.' : ''), stopped || nBad || nWarn ? 'warn' : 'ok');
     }
   }
+  async function chooseSharedStarts(job) {
+    var conflicts=St.sharedStartConflicts(job);
+    if(!conflicts.length)return job;
+    var fields=[],resolved=null;
+    conflicts.forEach(function(c,k){
+      var label=c.name+(St.isSizeParam(c.name)?' (nm)':'');
+      fields.push({key:'shared'+k,label:label,type:'select',value:'',options:[['','Choose a current value...']].concat(c.indices.map(function(i){var ds=St.byId(job.datasets[i].id);return [String(i),(ds?ds.name:'Dataset '+job.datasets[i].id)+': '+String(St.toDisplay(c.name,job.values[i][c.name]))];})).concat([['custom','Enter a value...']])});
+      fields.push({key:'value'+k,label:'Shared value for '+label,type:'number',value:'',when:'shared'+k+':custom'});
+    });
+    var picked=await ui.prompt('Choose shared starting values',fields,'Use values and FIT',
+      'These parameters are shared in the global fit, but their current values differ between the selected datasets. Choose a starting value for each. Local parameters keep their own current values. Cancel to change sharing in Datasets.',
+      {wide:true,check:function(values){
+        var starts={};
+        for(var k=0;k<conflicts.length;k++){
+          var c=conflicts[k],choice=values['shared'+k];
+          if(choice==='')return 'Choose a shared starting value for '+c.name+'.';
+          starts[c.name]=choice==='custom'?St.fromDisplay(c.name,values['value'+k]):job.values[+choice][c.name];
+        }
+        try{resolved=St.resolveSharedStarts(job,starts);return '';}catch(e){return e.message;}
+      }});
+    if(!picked)return null;
+    resolved.sharedStarts.forEach(function(c){ui.log('Shared starting value '+c.name+' = '+String(St.toDisplay(c.name,c.value))+'.');});
+    return resolved;
+  }
   async function globalFit() {
     if (!idle() || !haveSel(2) || !havePhase()) return;
     if (St.calculationIssue()) { ui.toast(St.calculationIssue(), 'warn'); return; }
-    var list=sel(), first=list[0], modelSource=St.startingModel(), job=St.seedPhaseStarts(St.globalJob(list),modelSource);
-    if (!job.vars.length) { ui.toast('Tick at least one parameter (Parameters, or the steps in Solve).', 'warn'); return; }
+    var list=sel(), first=list[0], job=St.globalJob(list);
+    if (!job.vars.length) { ui.toast('Tick at least one parameter (Datasets).', 'warn'); return; }
+    if (job.constraintIssue) { ui.toast(job.constraintIssue,'warn'); return; }
     if (job.mixed.length && !(await ui.confirm('The fit ticks differ between the selected datasets for ' + job.mixed.slice(0, 8).join(', ') + (job.mixed.length > 8 ? ' …' : '') +
         '. The global fit uses for each the ticks of the first of them that holds it, ' + first.name + ' first.', 'Continue', false, 'Global fit'))) return;
     if (!need(job.datasets.every(function (d) { return d.tth.length >= 2; }), 'A dataset has fewer than two points in its fitted range.')) return;
+    job=await chooseSharedStarts(job);
+    if(!job)return;
     snapshot('global fit of ' + plural(list.length, 'dataset'));
-    ui.log('Phase starting model: '+modelSource.name+' (topmost selected dataset).');
+    ui.log('Starting from the current values for '+C.METHOD_LABELS[S.calculation]+'.');
+    var historyTicket=RV.fitHistory?RV.fitHistory.begin(list,true):null;
+    if(historyTicket)historyTicket.sharedStarts=job.sharedStarts || [];
     St.setBusy(true,'Global refinement…');
     ui.progress(0, -1);
     ui.log('Refinement algorithm: ' + (S.settings.algorithm === 'pt' ? 'parallel tempering + LM finish' : 'Levenberg–Marquardt') + '.');
@@ -1192,15 +1245,17 @@ RV.cmd = (function () {
     if (overall) ui.log('Overall global fit: Rwp ' + (Number.isFinite(overall.Rwp) ? (100*overall.Rwp).toFixed(2) : '—') + '%, Rp ' + (Number.isFinite(overall.Rp) ? (100*overall.Rp).toFixed(2) : '—') + '%, reduced chi2 ' + fmt(overall.chi2red) + ', GOF ' + fmt(overall.GOF) + '.');
     RV.bus.emit('stats'); RV.bus.emit('params', {});
     if(S.calculation==='wppf' && RV.solve && RV.solve.autoExtract) await RV.solve.autoExtract(list);
+    if(RV.fitHistory)RV.fitHistory.complete(historyTicket,list,false);
     ui.log('Refinement algorithm: ' + (S.settings.algorithm === 'pt' ? 'parallel tempering + LM finish' : 'Levenberg–Marquardt') + '.');
     ui.toast('Global fit (' + C.METHOD_LABELS[S.calculation] + ') of ' + plural(list.length, 'dataset') + ': ' + job.nShared + ' shared and ' + job.nLocal + ' local parameters, χ² ' + fmt(res.chi2red) + ', ' +
       res.iter + ' iterations, ' + res.msg + ', ' + ((performance.now() - t0) / 1000).toFixed(2) + ' s.' + (job.mixed.length ? ' Ticks of ' + first.name + ' used for all.' : ''), St.fitStatus(res.msg));
   }
-  function fit() { var el=document.activeElement;if(el && el.matches && el.matches('input,select,textarea'))el.blur(); if (RV.app.fitMode() === 'global') globalFit(); else fitSelected(); }
+  function fit() { var el=document.activeElement;if(el && el.matches && el.matches('input,select,textarea'))el.blur(); if (RV.app.fitMode() === 'global') return globalFit(); else return fitSelected(); }
   function stop() { if (running) running.cancel(); if (RV.solve) RV.solve.stop(); }
 
   // ---------------------------------------------------------------- projects
   function saveProject() {
+    if(RV.project)return RV.project.save();
     if (!need(S.datasets.length || S.phases.length, 'Nothing to save yet.')) return;
     var lines = ui.logEntries();
     ui.download('rietveld_project_' + ui.fileStamp() + '.json', St.projectJSON(lines), 'application/json');
@@ -1209,18 +1264,19 @@ RV.cmd = (function () {
   async function openProject(text) {
     if (!idle()) return;
     var doc;
-    try { doc = JSON.parse(text); } catch (e) { throw new Error('the project file is not valid JSON'); }
+    try { doc = typeof text==='object'?text:JSON.parse(text); } catch (e) { throw new Error('the project file is not valid JSON'); }
     var pj = St.prepareProject(doc);
     if ((S.datasets.length || S.phases.length) && !(await ui.confirm('Opening a project replaces the ' + plural(S.phases.length, 'phase') + ' and the ' + plural(S.datasets.length, 'dataset') + ' in memory. Undo brings them back.', 'Open project', false, 'Open project'))) return;
     snapshot('opening a project');
     St.commitProject(pj);
+    if(RV.solve && RV.solve.restoreArchive)RV.solve.restoreArchive(doc.solutionState);
     ui.logLoad(pj.log, 'Log saved with the project, ' + plural(pj.log.length, 'line') + ' (newest first):');
     ui.toast('Opened a project with ' + plural(S.phases.length, 'phase') + ' and ' + plural(S.datasets.length, 'dataset') + '.', 'ok');
   }
   async function openProjectFile() {
-    var fs = await ui.pickFiles({ accept: '.json,application/json' });
+    var fs = await ui.pickFiles({ accept: '.powder6,.json,application/json,application/zip' });
     if (!fs.length) return;
-    try { await openProject(new TextDecoder().decode(await ui.readBuffer(fs[0]))); } catch (e) { ui.toast(fs[0].name + ': ' + e.message, 'err'); }
+    await readFiles(fs);
   }
 
   // ---------------------------------------------------------------- demo: NaCl and Si, measured with Cu Ka1+Ka2 and with Co Ka1
@@ -1279,7 +1335,7 @@ RV.cmd = (function () {
     var g = RV.app && RV.app.fitMode() === 'global', list = sel();
     if (g && list.length < 2) return 'A global fit needs at least two selected datasets.';
     var ticked = list.some(function (ds) { return St.fitNames(ds).length > 0; });
-    return ticked ? '' : 'Tick at least one parameter to refine (Parameters, or the steps in Solve).';
+    return ticked ? '' : 'Tick at least one parameter to refine (Datasets).';
   }
   var WHY = {
     read: function () { return S.busy ? BUSY : ''; },
@@ -1290,18 +1346,19 @@ RV.cmd = (function () {
     rietveldOk: function () { var ph = St.currentPhase(); return S.busy ? BUSY : !ph ? NO_PHASE : St.canRietveld(ph) ? '' : 'The current phase has no atoms: Rietveld needs a structure.'; },
     saveProject: function () { return S.datasets.length || S.phases.length ? '' : 'Nothing to save yet.'; },
     selection: noSel, edit: idleSel,
+    report: function () { if(RV.layout && RV.layout.resultTab()==='solve')return RV.layout.record()?'':'No completed run selected.';return RV.layout && RV.layout.resultTab()==='structure-results' && RV.layout.structureRecord()?'':noSel(); },
     withPhase: function () { return idleSel() || (S.phases.length ? '' : NO_PHASE); },
     undo: function () { return S.busy ? BUSY : RV.history.count() ? '' : 'Nothing to undo.'; },
     fit: fitWhy,
     global: function () { return idleSel() || (S.phases.length ? '' : NO_PHASE) || (S.sel.size > 1 ? '' : 'A global fit needs at least two selected datasets.'); },
-    cloneAll: function () { return S.busy ? BUSY : noSel() || (S.datasets.length > 1 ? '' : 'There is only one dataset.'); },
-    cloneSel: function () { return S.busy ? BUSY : noSel() || (S.sel.size > 1 ? '' : 'Select the datasets to copy to as well.'); },
+    cloneAll: function () { return S.busy ? BUSY : S.datasets.length > 1 ? '' : 'There is only one dataset.'; },
+    cloneSel: function () { var from=RV.workspace.dataset();return S.busy ? BUSY : sel().some(function(d){return d!==from;}) ? '' : 'Select the datasets to copy to.'; },
     stop: function () { return running || (RV.solve && RV.solve.running()) ? '' : 'Only fits and structure solutions can be stopped.'; }
   };
   function why(id) { var f = WHY[id]; return f ? f() || '' : ''; }
-  var BUTTONS = [['#busy-cancel', 'stop'], ['#btn-fit', 'read'], ['[data-workflow="fit"]', 'fit'], ['[data-workflow="scales"]', 'selection'], ['#clone-all', 'cloneAll'], ['#clone-sel', 'cloneSel'], ['[data-plot-action="png"]', 'selection'],
-                  ['#btn-report', 'selection'], ['#fit-sharing', 'global'], ['#ds-phases', 'phaseMap'],
-                  ['[data-dataset-action="delete"]', 'edit'], ['#ph-tab-del', 'havePhase']];
+  var BUTTONS = [['#busy-cancel', 'stop'], ['#btn-fit', 'fit'], ['[data-workflow="fit"]', 'fit'], ['[data-workflow="scales"]', 'selection'], ['#clone-all', 'cloneAll'], ['#clone-sel', 'cloneSel'], ['[data-plot-action="png"]', 'selection'],
+                  ['#btn-report', 'report'], ['#fit-sharing', 'global'], ['#ds-phases', 'phaseMap'],
+                  ['[data-dataset-action="delete"]', 'edit']];
   var syncRaf = 0;
   function syncButtons() {
     if (syncRaf) { cancelAnimationFrame(syncRaf); syncRaf = 0; }
@@ -1325,7 +1382,7 @@ RV.cmd = (function () {
     ['phases>>p1&p2, phases>>all, phases>>none', 'the phases the selected datasets hold (keys or names); a phase taken out keeps its values for when it comes back'],
     ['sharing', 'which selected datasets share each group of parameters in the global fit; the others keep their own values'],
     ['simulate', 'a pattern calculated from phases with atoms, independent of the active fit method'],
-    ['clone_all, clone_active', 'copy the values and ticks of the first selected dataset to all, or to the selected ones'],
+    ['clone_all, clone_active', 'copy matching parameter values and refinement flags from the active dataset to all others, or to the selected others'],
     ['select>>text', 'select the datasets whose name contains text (regular expressions work)'],
     ['demo', 'NaCl and Si, two simulated patterns'],
     ['gsas2', 'ZIP file for GSAS-II: a CIF per phase, a .xye per selected dataset with its .instprm, and a README'],
@@ -1439,19 +1496,19 @@ RV.cmd = (function () {
   // ---------------------------------------------------------------- menus
   function init() {
     var M = {
-      file: [['Read powder patterns…', readData0, 'read'], ['Read a structure CIF…', readStructure, 'phase'], ['Load a peak-shape preset…', loadPreset, 'havePhase'], null,
+      file: [['Read powder patterns…', readData0, 'read'], ['Read a structure CIF…', readStructure, 'phase'], ['Load calibration or sample-broadening preset…', loadPreset, 'havePhase'], null,
              ['Open project…', openProjectFile, 'read'], ['Save project', saveProject, 'saveProject'], null,
-             ['Report of selected (PDF)…', function () { RV.pdf.report(); }, 'selection'],
+             ['Report (PDF)…', function () { RV.pdf.report(); }, 'report'],
              ['Save results of selected…', function () { RV.results.save('save'); }, 'selection'],
              ['Save reflections and intensities of selected…', function () { RV.results.save('refl'); }, 'selection'],
              ['Save calculated patterns of selected…', function () { RV.results.save('calc'); }, 'selection'], null,
-             ['Save the peak shape of the current phase…', savePreset, 'havePhaseAny'], null,
+             ['Save sample broadening of the current phase…', savePreset, 'havePhaseAny'], null,
              ['Export to GSAS-II…', function () { RV.gsas2.exportSelected(); }, 'selection']],
       data: [['Undo the last command', undo, 'undo'], null,
              ['Instrument and range of selected…', instrument, 'edit'], ['Background of selected…', background, 'edit'], ['Excluded regions of selected…', excludeRegions, 'edit'], null,
              ['Simulate a pattern from the phases…', simulate, 'havePhase'], ['Delete selected datasets…', deleteDatasets, 'edit'], null,
-             ['Copy values of the first selected to all', function () { cloneTo(true); }, 'cloneAll'],
-             ['Copy values of the first selected to selected', function () { cloneTo(false); }, 'cloneSel']],
+             ['Copy active dataset parameters to all others', function () { cloneTo(true); }, 'cloneAll'],
+             ['Copy active dataset parameters to selected others', function () { cloneTo(false); }, 'cloneSel']],
       refine: [['Fit selected datasets (F9)', fit, 'fit'], ['Global fit of selected datasets', globalFit, 'global'], null,
                ['Tick scales and background', function () { tickSteps('scale'); }, 'edit'], ['… and zero and cells', function () { tickSteps('cell'); }, 'edit'],
                ['… and peak shapes', function () { tickSteps('profile'); }, 'edit'], ['… and atoms', function () { tickSteps('atoms'); }, 'edit'],
@@ -1464,13 +1521,13 @@ RV.cmd = (function () {
         ui.menu(b, M[b.getAttribute('data-menu')].map(function (it) { return it ? { label: it[0], act: it[1], off: why(it[2]) } : { sep: true }; }));
       });
     });
-    ['datasets', 'selection', 'params', 'phases', 'data', 'fitmode'].forEach(function (ev) { RV.bus.on(ev, scheduleSync); });
+    ['datasets', 'selection', 'params', 'phases', 'data', 'fitmode','tab','fitHistory'].forEach(function (ev) { RV.bus.on(ev, scheduleSync); });
     RV.bus.on('busy', syncButtons);
     syncButtons();
   }
 
   return { init: init, readFiles: readFiles, readStructure: readStructure, newPhase: newPhase, addAtom: addAtom, deletePhase: deletePhase, setMethod: setMethod,
-           readData: readData0, orientation: orientation, resolution: resolution, instrument: instrument, background: background, excludeRegions: excludeRegions, markAt: markAt, regionAt: regionAt, simulate: simulate,
+           readData: readData0, orientation: orientation, resolution: resolution, setInstrumentProfile:setInstrumentProfile, instrument: instrument, background: background, excludeRegions: excludeRegions, markAt: markAt, regionAt: regionAt, simulate: simulate,
            loadPreset: loadPreset, savePreset: savePreset, loadDefaultPresets: loadDefaultPresets, extract: extract,
            deleteDatasets: deleteDatasets, estimate: estimate, cloneTo: cloneTo, tickSteps: tickSteps, fitGroupState: fitGroupState, setFitGroup: setFitGroup,
            fit: fit, fitSelected: fitSelected, globalFit: globalFit, stop: stop, undo: undo, saveProject: saveProject, openProject: openProject,

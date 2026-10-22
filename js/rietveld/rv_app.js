@@ -6,34 +6,20 @@
   'use strict';
   var S = RV.state.S, St = RV.state, ui = RV.ui, curTab = 'pattern';
   function $(s) { return document.querySelector(s); }
-  function tabButtons() { return Array.prototype.slice.call(document.querySelectorAll('.top [data-tab]')); }
+  function tabButtons() { return Array.prototype.slice.call(document.querySelectorAll('.panel-tabs [data-tab]')); }
 
   function showTab(tab) {
-    if (tab === 'results') tab = 'solve';
-    if (!document.getElementById('pane-' + tab)) tab = 'pattern';
-    curTab = tab;
-    tabButtons().forEach(function (b) {
-      var on = b.getAttribute('data-tab') === tab;
-      b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1;
-    });
-    document.querySelectorAll('.stage > .pane').forEach(function (p) { p.classList.toggle('on', p.id === 'pane-' + tab); });
-    $('#ptools').hidden = tab !== 'pattern';
-    RV.plots.show(tab === 'pattern');
-    St.store('tab', tab);
-    if (tab === 'solve') syncCalculation();
-    RV.bus.emit('tab', tab);
+    curTab = RV.layout.showTab(tab);
+    St.store('tab',curTab);
+    if(curTab==='method')syncCalculation();
+    RV.bus.emit('tab',curTab);
   }
   function fitMode() { return S.sel.size >= 2 && St.load('fitmode') === 'global' ? 'global' : 'single'; }
   function showSide(name) {
-    if (!document.querySelector('[data-side="' + name + '"]')) name = 'datasets';
-    document.querySelectorAll('[data-side]').forEach(function (b) {
-      var on = b.getAttribute('data-side') === name;
-      b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1;
-    });
-    document.querySelectorAll('.side-panel').forEach(function (p) { p.classList.toggle('on', p.id === 'sp-' + name); });
+    showTab(name==='info'?'method':name==='params'?'datasets':name);
     St.store('side', name);
   }
-  RV.app = { showTab: showTab, tab: function () { return curTab; }, fitMode: fitMode, showSide: showSide, calculation: calculation };
+  RV.app = { showTab: showTab, tab: function () { return curTab; }, commandTab:function(){return RV.layout.commandTab();},resultTab:function(){return RV.layout.resultTab();},fitMode: fitMode, showSide: showSide, calculation: calculation };
 
   /* Accordion blocks (<details class="acc" data-acc="key">): their open state is remembered per key.
      RV.acc.attr(key, openByDefault) -> ' open' or '' for blocks built in script; RV.acc.restore(root) for the page's own;
@@ -59,28 +45,26 @@
   })();
 
   function syncCalculation() {
-    var m = S.calculation || 'lebail', labels = RVCore.METHOD_LABELS;
+    var m = S.calculation || 'lebail';
     document.querySelectorAll('[data-calculation]').forEach(function (b) {
       var on = b.dataset.calculation === m;
       b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; b.disabled = !!S.busy;
     });
-    $('#calculation-title').textContent = labels[m] + ' calculation';
-    $('#calculation-description').textContent = {
-      lebail: 'Fit cells and profiles without an atomic model; reflection intensities are partitioned from the pattern.',
-      wppf: 'Refine integrated intensities by least squares, then check the space group, run charge flipping or search Wyckoff sites.',
-      rietveld: 'Fit atomic models and phase scales. Weight fractions are normalized among the Rietveld phases; include every crystalline phase for quantitative analysis.'
-    }[m];
-    document.querySelectorAll('.calc-layout').forEach(function (el) { el.hidden = el.getAttribute('data-layout') !== m; });
-    var issue = St.calculationIssue();
-    $('#calculation-summary').textContent = issue ? '⚠ ' + issue : '';
-    $('#calculation-summary').classList.toggle('warn', !!issue);
+    RV.layout.syncResultLayouts();
+    var issue=RV.cmd.why('fit'),warning='';
+    if(issue){
+      warning=!S.phases.length?'Need a phase':!S.datasets.length?'Load a dataset':!S.sel.size?'Select a dataset':
+        /No enabled phase/.test(issue)?'Need a phase in each selected dataset':
+        /needs atoms/.test(issue)?'Rietveld needs an atomic model':
+        /Missing scattering/.test(issue)?'Missing scattering factors':
+        /Tick at least/.test(issue)?'Choose parameters to refine':
+        S.busy?'Calculation running':issue;
+    }
+    $('#calculation-summary').textContent=warning?'⚠ '+warning:'';$('#calculation-summary').title=issue;$('#calculation-summary').hidden=!warning;
     document.querySelector('[data-workflow="scales"]').hidden = m !== 'rietveld';
     document.querySelector('[data-workflow="orientation"]').hidden = m !== 'rietveld';
-    var list = St.selected(), held = S.phases.filter(function (ph) { return list.some(function (d) { return St.hasPhase(d, ph); }); });
-    $('#calculation-target').textContent = '1 · Select datasets on the right. 2 · Set assignments in Datasets. 3 · Tick parameters below or in Parameters. 4 · Fit and inspect results. ' + (St.calculationIssue() || 'Prerequisites ready.');
-    var source=St.selected()[0], note=$('#starting-model-note');
-    if(note)note.textContent=source ? 'Phase starting values: '+source.name+' (topmost selected dataset). Reorder datasets to change the source. Instrument, background, geometry, assignments and fit flags remain specific to each dataset. Phases absent from this source keep their own values.' : 'Select datasets. The topmost selected dataset supplies phase starting values; reorder the dataset list to change it.';
-    if (RV.results) RV.results.render();
+    $('#calculation-target').textContent='Set values and refinement flags in Datasets and FIT from any view.';
+    if (RV.results && RV.layout.resultTab()==='solve') RV.results.render();
     updateSolveHeader();
   }
   function updateSolveHeader() {
@@ -97,11 +81,11 @@
   function calculation(m, skipHistory) {
     if (S.busy) return;
     if (!skipHistory && m !== S.calculation) RV.history.take('switch calculation to ' + RVCore.METHOD_LABELS[m]);
-    if (St.setCalculation(m)) { syncCalculation(); RV.bus.emit('tab', 'solve'); }
+    if (St.setCalculation(m)) { syncCalculation(); RV.bus.emit('tab',RV.layout.commandTab()); }
   }
   function initCalculations() {
     document.querySelectorAll('[data-calculation]').forEach(function (b) { b.addEventListener('click', function () { calculation(b.dataset.calculation); }); });
-    document.querySelector('.calculation-tabs').addEventListener('keydown', function (e) {
+    $('#method-selector').addEventListener('keydown', function (e) {
       if (!/^Arrow(Left|Right)$/.test(e.key)) return;
       var tabs = Array.from(this.querySelectorAll('button')), i = tabs.indexOf(document.activeElement);
       if (i < 0 || S.busy) return;
@@ -125,7 +109,7 @@
     }); });
     $('#ds-resolution').addEventListener('click',function(){RV.cmd.resolution();});
     $('#ds-phases').addEventListener('click', function () { RV.cmd.phaseMap(); });
-    ['calculation', 'selection', 'phases', 'datasets', 'stats', 'params', 'busy', 'fitmode'].forEach(function (ev) { RV.bus.on(ev, function () { if (curTab === 'solve') syncCalculation(); }); });
+    ['calculation', 'selection', 'phases', 'datasets', 'stats', 'params', 'busy', 'fitmode'].forEach(function (ev) { RV.bus.on(ev,syncCalculation); });
   }
 
   function initBusyGuard() {
@@ -133,7 +117,7 @@
       document.body.classList.toggle('busy',!!b);
       $('#busy-guard').hidden=!b;
       $('#busy-label').textContent=S.busyLabel || 'Calculation running…';
-      $('#work').inert=!!b;document.querySelector('.top').inert=!!b;
+      // Navigation and plot inspection remain available during a fit. Mutating commands guard S.busy.
       $('#cmdline').disabled=!!b;
       document.body.setAttribute('aria-busy',String(!!b));
       if(b && document.activeElement && document.activeElement!==document.body)document.activeElement.blur();
@@ -143,6 +127,8 @@
       if(!S.busy)return;
       var stop=e.target && e.target.closest && e.target.closest('#busy-cancel');
       if(stop)return;
+      var inspect=e.target && e.target.closest && e.target.closest('#pat-host,#diff-host,#plot-selection,#dataset-tabs,#result-run-select,#structure-run-select,[data-structure-result],#side-grip,#swap-panels,#btn-about,#pane-about,.panel-tabs');
+      if(inspect)return;
       if(e.type==='keydown' && e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();RV.cmd.stop();return;}
       e.preventDefault();e.stopImmediatePropagation();
     }
@@ -154,18 +140,19 @@
 
   // ---------------------------------------------------------------- side panel width (drag its left edge, as in Yappari)
   function initGrip() {
-    var grip = $('#side-grip'), work = $('#work'), cs = getComputedStyle(work), v = function (n) { return parseFloat(cs.getPropertyValue(n)); };
-    var DEF = v('--side-w') || 0, MIN = v('--side-min') || 0, MAX = (v('--side-max') || 100) / 100, side = grip.parentElement;
+    var grip = $('#side-grip'), work = $('#work'), side=$('.command-panel');
+    var DEF=Math.min(620,Math.round(work.clientWidth*.46));
     function set(w, save) {
-      w = Math.round(Math.max(MIN, Math.min(w, window.innerWidth * MAX)));
+      var max=Math.max(320,work.clientWidth-374),min=Math.min(320,max);w=Math.round(Math.max(min,Math.min(w,max)));
       work.style.setProperty('--side-w', w + 'px');
-      if (save) St.store('sidew', w);
+      grip.setAttribute('aria-valuenow',w);grip.setAttribute('aria-valuemin',min);grip.setAttribute('aria-valuemax',max);grip.setAttribute('aria-label','Resize command and results panels');
+      if (save) St.store('commandWidth', w);
     }
-    var w0 = St.load('sidew');
-    if (w0) set(w0, false);
+    set(St.load('commandWidth') || DEF,false);
     grip.addEventListener('pointerdown', function (e) {
       e.preventDefault(); grip.setPointerCapture(e.pointerId); document.body.classList.add('resizing');
-      function mv(ev) { set(window.innerWidth - ev.clientX, false); }
+      var startX=e.clientX,startWidth=side.getBoundingClientRect().width,direction=work.classList.contains('panels-swapped')?-1:1;
+      function mv(ev) {set(startWidth+direction*(ev.clientX-startX),false);}
       function up() {
         grip.removeEventListener('pointermove', mv); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
         document.body.classList.remove('resizing');
@@ -177,8 +164,10 @@
     grip.addEventListener('keydown', function (e) {
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
       e.preventDefault();
-      set(side.getBoundingClientRect().width + (e.key === 'ArrowLeft' ? 1 : -1) * (e.shiftKey ? 50 : 10), true);
+      var direction=e.key==='ArrowRight'?1:-1;if(work.classList.contains('panels-swapped'))direction=-direction;
+      set(side.getBoundingClientRect().width+direction*(e.shiftKey?50:10),true);
     });
+    RV.bus.on('panelLayout',function(){RV.plots.redrawAll();});
   }
 
   // ---------------------------------------------------------------- theme
@@ -194,7 +183,7 @@
   // ---------------------------------------------------------------- pattern toolbar
   function syncToolbar() {
     document.querySelectorAll('[data-yscale]').forEach(function (b) { var k=b.getAttribute('data-yscale');b.setAttribute('aria-pressed',String(k === (S.settings.noBackground ? 'lin' : S.settings.yscale)));b.disabled=!!S.settings.noBackground && k!=='lin'; });
-    $('#no-background').checked = !!S.settings.noBackground; $('#show-bkg').checked = !!S.settings.showBkg; $('#show-phases').checked = !!S.settings.showPhases; $('#show-ticks').checked = !!S.settings.showTicks;
+    $('#show-anchors').checked=!!S.settings.showAnchors;$('#no-background').checked = !!S.settings.noBackground; $('#show-bkg').checked = !!S.settings.showBkg; $('#show-phases').checked = !!S.settings.showPhases; $('#show-ticks').checked = !!S.settings.showTicks;
   }
 
   // ---------------------------------------------------------------- databases
@@ -238,6 +227,8 @@
   }
 
   function init() {
+    RV.workspace.prepare();
+    RV.layout.prepare();
     St.restore();
     RV.history.init();
     RV.plots.init();
@@ -247,35 +238,29 @@
     RV.cmd.init();
     RV.solve.init();
     RV.datasets.init();
+    RV.workspace.init();
+    RV.layout.init();
     initCalculations();
     initBusyGuard();
     RV.acc.restore(document.getElementById('calculation-body'));
 
     var tabs = tabButtons();
     tabs.forEach(function (b) { b.addEventListener('click', function () { showTab(b.getAttribute('data-tab')); }); });
-    $('.top .tabs').addEventListener('keydown', function (e) {
+    $('#btn-about').addEventListener('click', function () { showTab('about'); });
+    document.querySelectorAll('.panel-tabs').forEach(function(nav){nav.addEventListener('keydown', function (e) {
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-      var list = tabs.filter(function (b) { return b.closest('.tabs'); }), i = list.indexOf(document.activeElement);
+      var list = Array.from(nav.querySelectorAll('button')), i = list.indexOf(document.activeElement);
       if (i < 0) return;
       var j = (i + (e.key === 'ArrowRight' ? 1 : -1) + list.length) % list.length;
-      list[j].focus(); showTab(list[j].getAttribute('data-tab'));
-    });
-    var sideTabs = Array.prototype.slice.call(document.querySelectorAll('[data-side]'));
-    sideTabs.forEach(function (b) { b.addEventListener('click', function () { showSide(b.getAttribute('data-side')); }); });
-    $('.side-tabs').addEventListener('keydown', function (e) {
-      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-      var i = sideTabs.indexOf(document.activeElement);
-      if (i < 0) return;
-      var j = (i + (e.key === 'ArrowRight' ? 1 : -1) + sideTabs.length) % sideTabs.length;
-      sideTabs[j].focus(); showSide(sideTabs[j].getAttribute('data-side'));
-    });
-    $('#btn-fit').addEventListener('click', function () { showTab('solve'); });
+      list[j].focus();if(list[j].dataset.resultMethod)RV.layout.showResult(list[j].dataset.resultMethod);else showTab(list[j].getAttribute('data-tab'));
+    });});
+    $('#btn-fit').addEventListener('click', function () { RV.cmd.fit(); });
     $('#btn-report').addEventListener('click', function () { RV.pdf.report(); });
     $('#cmd-help').addEventListener('click', function () { RV.cmd.showHelp(); });
     initGrip();
 
     document.querySelectorAll('[data-yscale]').forEach(function (b) { b.addEventListener('click', function () { St.setSetting('yscale', b.getAttribute('data-yscale')); }); });
-    [['#show-bkg', 'showBkg'], ['#show-phases', 'showPhases'], ['#show-ticks', 'showTicks'], ['#no-background','noBackground']].forEach(function (p) {
+    [['#show-anchors','showAnchors'],['#show-bkg', 'showBkg'], ['#show-phases', 'showPhases'], ['#show-ticks', 'showTicks'], ['#no-background','noBackground']].forEach(function (p) {
       $(p[0]).addEventListener('change', function (e) { St.setSetting(p[1], e.target.checked); });
     });
     RV.bus.on('busy', function (b) { document.body.classList.toggle('busy', !!b); });
@@ -311,7 +296,7 @@
     document.addEventListener('keydown', function (e) {
       var typing = e.target.matches && e.target.matches('input, select, textarea');
       if ($('#sg-modal-overlay').classList.contains('open')) return;
-      if (e.key === 'F9') { e.preventDefault(); showTab('solve'); RV.cmd.fit(); }
+      if (e.key === 'F9') { e.preventDefault(); RV.cmd.fit(); }
       else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); RV.cmd.saveProject(); }
       else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && !$('#dlg').open) { e.preventDefault(); RV.cmd.undo(); }
     });
@@ -329,8 +314,7 @@
     applyTheme(); syncToolbar();
 
     $('#about-version').textContent = 'version ' + RV.version.replace(/\s*\(([^)]+)\)$/, ', $1');
-    showSide(St.load('side') || 'datasets');
-    showTab(St.load('tab') || 'pattern');
+    RV.layout.restore();syncCalculation();
     RV.bus.emit('datasets'); RV.bus.emit('selection'); RV.bus.emit('settings', '*');
     ui.toast('Loading the space groups and the scattering factors…', 'info');
     loadDatabases().then(function (notes) {

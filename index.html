@@ -24,12 +24,13 @@
   <nav class="tabs" role="tablist" aria-label="Views">
     <button type="button" role="tab" id="tab-pattern" data-tab="pattern" aria-controls="pane-pattern" aria-selected="true" title="Observed and calculated patterns, reflections, background anchors, excluded regions and difference">Patterns</button>
     <button type="button" role="tab" id="tab-datasets" data-tab="datasets" aria-controls="pane-datasets" aria-selected="false" tabindex="-1" title="Dataset assignments, instrument, background, exclusions and batch refinement">Datasets</button>
-    <button type="button" role="tab" id="tab-phases" data-tab="phases" aria-controls="pane-phases" aria-selected="false" tabindex="-1" title="Phase definitions and active calculation values: name, colour, space group, peak shape, cell and atoms">Phases</button>
+    <button type="button" role="tab" id="tab-phases" data-tab="phases" aria-controls="pane-phases" aria-selected="false" tabindex="-1" title="Shared phase definitions and starting model: name, colour, space group, cell and atoms">Phases</button>
     <button type="button" role="tab" id="tab-solve" data-tab="solve" aria-controls="pane-solve" aria-selected="false" tabindex="-1" title="Le Bail, WPPF and Rietveld calculations, structure solution and results">Solve</button>
     <button type="button" role="tab" id="tab-log" data-tab="log" aria-controls="pane-log" aria-selected="false" tabindex="-1">Log</button>
     <button type="button" role="tab" id="tab-about" data-tab="about" aria-controls="pane-about" aria-selected="false" tabindex="-1">About</button>
-    <button type="button" role="tab" id="tab-settings" data-tab="settings" aria-controls="pane-settings" aria-selected="false" tabindex="-1" class="settings-btn" title="Refinement and plot settings, parameter limits, shared parameters"><svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M11.3 1.5l.4 2.3c.6.2 1.1.5 1.6.9l2.2-.8 1.3 2.2-1.8 1.5c.1.6.1 1.2 0 1.8l1.8 1.5-1.3 2.2-2.2-.8c-.5.4-1 .7-1.6.9l-.4 2.3H8.7l-.4-2.3c-.6-.2-1.1-.5-1.6-.9l-2.2.8-1.3-2.2L5 9.4c-.1-.6-.1-1.2 0-1.8L3.2 6.1l1.3-2.2 2.2.8c.5-.4 1-.7 1.6-.9l.4-2.3h2.6zM10 6.3a2.2 2.2 0 100 4.4 2.2 2.2 0 000-4.4z" transform="translate(0 1.5)"/></svg><span>Settings</span></button>
+    <button type="button" role="tab" id="tab-settings" data-tab="settings" aria-controls="pane-settings" aria-selected="false" tabindex="-1" class="settings-btn" title="Numerical conditions, plot settings and history storage"><svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M11.3 1.5l.4 2.3c.6.2 1.1.5 1.6.9l2.2-.8 1.3 2.2-1.8 1.5c.1.6.1 1.2 0 1.8l1.8 1.5-1.3 2.2-2.2-.8c-.5.4-1 .7-1.6.9l-.4 2.3H8.7l-.4-2.3c-.6-.2-1.1-.5-1.6-.9l-2.2.8-1.3-2.2L5 9.4c-.1-.6-.1-1.2 0-1.8L3.2 6.1l1.3-2.2 2.2.8c.5-.4 1-.7 1.6-.9l.4-2.3h2.6zM10 6.3a2.2 2.2 0 100 4.4 2.2 2.2 0 000-4.4z" transform="translate(0 1.5)"/></svg><span>Settings</span></button>
   </nav>
+  <button type="button" class="hbtn" id="btn-about" aria-controls="pane-about" aria-expanded="false" title="About Powder 6">About</button>
   <div class="menus" role="menubar" aria-label="Commands">
     <button type="button" class="menu-btn" data-menu="file" aria-haspopup="menu" aria-expanded="false">File</button>
     <button type="button" class="menu-btn" data-menu="data" aria-haspopup="menu" aria-expanded="false">Data</button>
@@ -60,16 +61,17 @@
     <div class="pane plot-pane" id="pane-pattern" role="tabpanel" aria-labelledby="tab-pattern"><div class="plot-host" id="pat-host"></div><div class="plot-host res" id="diff-host"></div></div>
 
     <div class="pane datasets-pane" id="pane-datasets" role="tabpanel" aria-labelledby="tab-datasets">
+      <p id="datasets-empty" class="empty-pane">No datasets yet. Use File, drop powder patterns on this window, or <button type="button" class="link" data-dataset-action="demo">load the demo</button> (NaCl and Si, measured with Cu and Co radiation).</p>
+      <div id="dataset-content" hidden>
       <div class="dataset-toolbar">
         <button type="button" data-dataset-action="read">Read patterns…</button>
         <button type="button" data-dataset-action="simulate">Simulate…</button>
-        <button type="button" id="ds-phases" class="mini" title="Add or remove phases for each dataset">Phases…</button><button type="button" id="ds-resolution" class="mini">Resolution…</button><button type="button" id="ds-inst" class="mini" title="Wavelength, polarisation and fitted range of the selected datasets">Instrument…</button><button type="button" id="ds-absorption" class="mini" title="Load elemental mass attenuation coefficients for physical transparency estimates">Absorption…</button><button type="button" id="ds-bkg" class="mini" title="Background of the selected datasets: Chebyshev terms or a spline through anchors">Background…</button><button type="button" id="ds-excl" class="mini" title="2θ regions of the selected datasets left out of the fit">Exclude…</button>
-        <button type="button" class="btn-delete" data-dataset-action="delete">Delete selected…</button>
+        <button type="button" id="ds-phases" class="mini" title="Add or remove phases for each dataset">Phases…</button><button type="button" id="ds-resolution" class="mini">Resolution…</button><button type="button" id="ds-inst" class="mini" title="Wavelength, polarisation and fitted range of the selected datasets">Instrument…</button><button type="button" id="ds-bkg" class="mini" title="Background of the selected datasets: Chebyshev terms or a spline through anchors">Background…</button>
       </div>
-      <section class="dataset-card"><h1>Dataset setup</h1><p class="hint">The names selected on the right are the patterns to plot or fit. Instrument, resolution, background, exclusions and phase-assignment edits apply to those selected datasets. Ctrl/Cmd+A selects all; Ctrl/Cmd+click adds one; Shift+click selects a range.</p><div id="ds-info" class="ds-info param-stats"></div></section>
+      <section class="dataset-card"><h1>Dataset setup</h1><p class="hint">Choose a coloured dataset tab to edit its values and refine/fixed controls. Setup actions default to that dataset; import dialogs can explicitly target others. The checkboxes on the right select patterns for plotting and fitting. Switching dataset tabs keeps that selection.</p><div id="ds-info" class="ds-info param-stats"></div></section>
       <section class="dataset-card">
         <h2>Selection and batch refinement</h2>
-        <p class="hint">Copy suitable start values and refinement flags to the selected datasets in Parameters, then fit the selection. Individual fits keep a separate set of fitted values for each dataset. Global fits tie only the parameters marked shared; use local cells when the lattice varies between patterns.</p>
+        <p class="hint">Set values and refinement flags in each dataset tab. Use its Copy controls for an explicit batch change, then fit the selection. Individual fits keep separate fitted values for each dataset. Global fits tie only parameters marked shared; use local cells when the lattice varies between patterns.</p>
         <div class="buttons">
           <button type="button" data-dataset-action="all">Select all</button><button type="button" data-dataset-action="none">Clear selection</button>
           <button type="button" data-dataset-action="parameters">Refinement parameters</button><button type="button" data-dataset-action="individual">Fit selected individually</button>
@@ -77,6 +79,7 @@
         </div>
         <div class="table-wrap" id="dataset-table"></div>
       </section>
+      </div>
     </div>
 
     <div class="pane phase-pane" id="pane-phases" role="tabpanel" aria-labelledby="tab-phases">
@@ -86,7 +89,6 @@
         <button type="button" data-act="simulate">Simulate…</button>
         <button type="button" data-atomic-constraints>Atomic constraints…</button>
         <button type="button" id="ph-tab-atom" data-act="atom">Add atom…</button>
-        <button type="button" id="ph-tab-del" class="btn-delete" data-act="del-phase">Delete phase…</button>
       </div>
       <div class="phase-body" id="phase-body"></div>
     </div>
@@ -99,24 +101,16 @@
         <button type="button" role="tab" id="calc-tab-rietveld" data-calculation="rietveld" aria-controls="calculation-body" aria-selected="false" tabindex="-1">Rietveld</button>
       </nav>
           <div class="solve-actions" role="toolbar" aria-label="Calculation actions">
-            <button type="button" data-workflow="assign">Datasets setup</button>
-            <button type="button" data-workflow="parameters">Refinement parameters</button><button type="button" data-workflow="orientation">Preferred orientation…</button>
+
+            <button type="button" data-workflow="orientation">Preferred orientation…</button>
             <button type="button" data-workflow="scales">Refine scales only</button>
             <button type="button" class="primary" data-workflow="fit">Fit selected datasets</button>
-            <button type="button" data-workflow="patterns">View patterns</button>
+
           </div>
+          <p class="hint method-instructions" id="calculation-target">Set values and refinement flags in Datasets and FIT from any view.</p>
+          <p class="method-warning warn" id="calculation-summary" role="status" hidden></p>
       </div>
-      <div id="calculation-body" role="tabpanel" aria-labelledby="calculation-title">
-        <!-- Info: what the calculation does and its prerequisites (folds) -->
-        <details class="acc acc-top" data-acc="info">
-          <summary><span class="acc-t" id="calculation-title">Le Bail calculation</span><span class="acc-s" id="calculation-summary"></span></summary>
-          <div class="acc-body calculation-card">
-            <p id="calculation-description" class="hint"></p>
-            <p class="hint" id="calculation-target"></p>
-            <p class="hint" id="starting-model-note"></p>
-            <p class="hint">Observations, phase definitions and assignments belong to the project. Each method keeps its own values, refinement flags, background, sharing and results. Fits use the topmost selected dataset as the source of phase starting values. Reorder datasets to change the source. Phases and Parameters show the active calculation for the first selected dataset; deselect datasets to edit the starting model; select datasets on the right.</p>
-          </div>
-        </details>
+      <div id="calculation-body" role="tabpanel" aria-label="Calculation results">
         <!-- always visible: what is fitted and how -->
         <section class="fitbar solve-fit" id="sp-fit" role="group" aria-label="Fit">
           <p class="fit-target" id="fit-target"></p>
@@ -130,7 +124,7 @@
             <span class="fit-kv"><span class="fit-lbl">Algorithm</span> <b id="fit-algorithm"></b></span>
             <span class="fit-kv" title="LM iterations per stage; edit in Settings"><span class="fit-lbl">Max iterations</span> <b id="fit-max-iter"></b></span>
             <span class="fit-kv" title="Relative change of χ², twice in a row; edit in Settings"><span class="fit-lbl">Min χ² change</span> <b id="fit-tol"></b></span>
-            <button type="button" class="mini" data-workflow="refinement-settings" title="Algorithm, iterations, χ² tolerance, weights and parameter limits">Settings »</button>
+            <button type="button" class="mini" data-workflow="refinement-settings" title="Numerical conditions: algorithm, iterations, tolerance and weights">Settings »</button>
           </div>
           <p class="hint fit-mode-hint" id="fit-mode-hint"></p>
           <div class="fit-steps">
@@ -144,7 +138,7 @@
               <label data-rietveld-only title="Isotropic displacement parameter B = 8π² Uiso"><input type="checkbox" data-fit-group="adp">B (Å²; Uiso × 8π²)</label>
               <label data-rietveld-only><input type="checkbox" data-fit-group="occupancy">Fractional occupancies</label>
             </div>
-            <p class="hint">Each checkbox changes only its group in the selected datasets. Sample selects phase broadening; Resolution selects instrument broadening. A dash means some parameters are ticked. Set individual values and preferred orientation in Parameters. Click Fit selected datasets above or press F9 to refine the selected datasets.</p>
+            <p class="hint">Each checkbox changes only its group in this dataset. Sample selects phase broadening; Resolution selects instrument broadening. A dash means some parameters are ticked. Edit individual values and flags below. FIT or F9 calculates the datasets selected on the right.</p>
           </div>
         </section>
 
@@ -183,37 +177,41 @@
 
     <div class="pane log-pane" id="pane-log" role="tabpanel" aria-labelledby="tab-log"><p class="hint log-head" id="history-info"></p><ol id="log-list" class="log"></ol></div>
 
-    <div class="pane about-pane" id="pane-about" role="tabpanel" aria-labelledby="tab-about">
+    <div class="pane about-pane" id="pane-about" role="region" aria-labelledby="btn-about">
       <article class="about">
         <p class="sub" id="about-version"></p>
-        <p>Load one or more patterns from the Datasets tab, or use Simulate with any phase that has atoms. Define phases with or without atoms, then assign phases with <b>Datasets tab → Phases…</b> or <b>Refine → Phases of the datasets…</b>. Solve contains separate <b>Le Bail</b>, <b>WPPF</b> and <b>Rietveld</b> calculations of the same observations. Switching method tabs preserves each calculation’s values, fit flags, background, sharing choices and results in the project file. New calculations start from the current values. Phase definitions and dataset assignments are shared by the project; changing a structure invalidates incompatible saved results. During a Rietveld calculation, any phase without atoms is fitted by WPPF alongside the Rietveld phases.</p>
-        <p>Select datasets on the right, choose Individual or Global, then select parameters to refine. Global fits allow a mixture of local and shared cell, atom, orientation, profile, zero-point and sample-geometry parameters. Scales and background remain local. Rietveld needs atoms; atomless phases use WPPF in a Rietveld calculation. Refine scales only fits all Rietveld phase scales in the selected patterns with other parameters held fixed; the results show their normalized weight fractions.</p>
+        <h1>About Powder 6</h1>
+        <p><b>Commands</b> and <b>Results</b> have independent tabs. Each coloured <b>Datasets</b> tab contains that dataset’s values and refine/fixed controls, including background X/Y, resolution and phase contributions. Bounds, sharing and links are edited there too. <b>Phases</b> contains shared definitions and starting models; <b>Method</b> chooses the next calculation; <b>Settings</b> contains numerical conditions. Results has separate <b>Le Bail</b>, <b>WPPF</b> and <b>Rietveld</b> tabs showing one selected run. Choosing a previous run preserves the working setup; <b>Use as start</b> restores it explicitly. Press <b>FIT</b> or F9 from any view. Use <b>⇄ Panels</b> to swap the two panels.</p>
+        <p>The dataset checkboxes define both the fit and plot selection. Choose All datasets or a saved group for large batches. Clicking a selected dataset inspects it without changing that selection. Plots offers Overlay, Overview and Inspect one dataset. Anchors, Backgnd, Phases, Refl and Backgnd subtract have independent display controls.</p>
+        <p>Ctrl+click places an anchor at both cursor coordinates; right-drag moves it, Escape cancels the move. Edit exact X (2θ), Y (intensity) and the Y refinement checkbox in <b>Datasets → dataset tab → Background</b>. Magenta filled anchors are refinable; grey hollow anchors are fixed. A yellow line identifies the anchor being edited. Ctrl+Shift+drag edits exclusions.</p>
+        <p>Each method retains its own setup and current result. <b>History</b> stores completed fits by method, with grouped individual batches and complete global fits. Set restores a record; Keep protects it from automatic pruning. The default automatic budget is 100 MB, with 20 recent unkept records per method; current and kept results are protected. Ctrl+Z undoes recent editing. Log contains detailed messages.</p>
+        <p>Save a compressed <b>.powder6</b> project to retain observations, model definitions, method states, groups, history and structure candidates. Observations are stored once. Compact history and CF density-map inclusion are optional. Open the file later using File or drag and drop.</p>
+        <p>Instrument resolution belongs to explicitly selected datasets. Sample presets target a phase and datasets. CF and Wyckoff candidates can be copied to an existing or new phase, with affected datasets shown before transfer. The source solution remains in History.</p>
         <table class="grid"><tr><th>Parameter ownership</th><th>Controls</th></tr>
           <tr><td>Acquisition / dataset</td><td>Wavelength, radiation, polarization, range, excluded regions and background; zero point defaults to local.</td></tr>
           <tr><td>Sample geometry</td><td>Displacement and transparency, local unless explicitly shared.</td></tr>
           <tr><td>Phase</td><td>Space group, unit cell, atoms and preferred-orientation direction.</td></tr>
           <tr><td>Phase in a dataset</td><td>Scale, orientation strength and sample microstructure. Separated CW profiles use dataset-owned U,V,W,X,Y,Z and axial-asymmetry terms plus phase-in-dataset size and microstrain. Isotropic, uniaxial, ellipsoidal size and Stephens quartic strain are available. Calibrate the instrument with a standard, then keep it fixed for sample fits. Older effective-profile models remain available.</td></tr>
         </table>
-        <p>The <b>Solve</b> tab holds separate Le Bail, WPPF and Rietveld calculations. Its WPPF section starts from the intensities of a WPPF phase: the space-group test ranks the space groups of its Laue class, charge flipping and the Wyckoff search solve the structure, and the atoms they find go back to the phase, which can then be fitted by Rietveld.</p>
-        <h2>Working with it</h2><p>Dataset setup is on the Datasets tab; the right-hand list only selects patterns for plotting and fitting. Hundreds of independent fits are queued with only the active worker jobs prepared in memory. Busy calculations lock editing; Stop or Escape cancels a fit or structure search.</p>
+        <h2>Working with it</h2><p>Dataset setup is in Commands → Datasets. The expandable <b>Datasets for fitting and plotting</b> list selects patterns; coloured tabs choose the dataset to inspect and edit. Hundreds of independent fits are queued with only the active worker jobs prepared in memory. Busy calculations lock editing; Stop or Escape cancels a fit or structure search.</p>
         <ol>
           <li>File, read powder patterns from the Datasets tab, or drop them on the window (Bruker, PANalytical, Rigaku, Philips, GSAS, CIF, two-column ASCII). New datasets appear at the top of the list. Set the wavelength, the polarisation and the fitted range in Instrument (Datasets tab), the background in Background, the regions to leave out in Exclude.</li>
           <li>Read a structure CIF for each phase, or make a new phase from its space group and cell: without atoms it is fitted by Le Bail or WPPF.</li>
           <li>In Datasets, use <b>Phases…</b> (or <b>Refine → Phases of the datasets…</b>) to define which phases each dataset contains.</li>
-          <li>Tick what to refine in Parameters, or use the group checkboxes in Solve: background/scales, zero/lattice, Sample and Resolution; Rietveld also offers positions, B and occupancies. Sample selects phase broadening; Resolution selects instrument broadening independently. Press Fit (F9). Le Bail or WPPF first, to settle the cell and the peak shape, is the usual start. Global fits the selected patterns together: select A and C to refine what they share with those two only.</li>
-          <li>With a WPPF fit done, open Solve → WPPF: test the space group, solve the structure, export the atoms to the phase, switch to Rietveld and fit again.</li>
-          <li>Solve includes the results of the active calculation: R factors, weight fractions, atoms, reflections and extracted intensities; File saves them, the calculated patterns and the whole project; Report writes a PDF.</li>
+          <li>In each dataset tab, set values and tick individual parameters or use the group checkboxes: background/scales, zero/lattice, Sample and Resolution; Rietveld also offers positions, B and occupancies. Sample selects phase broadening; Resolution selects instrument broadening independently. Press Fit (F9). Le Bail or WPPF first, to settle the cell and the peak shape, is the usual start. Global fits the selected patterns together: select A and C to refine what they share with those two only.</li>
+          <li>With a WPPF fit done, open Commands → Structure to extract intensities, test the space group and solve the structure. Inspect output in Results → Structure, export the atoms to the phase, switch Method to Rietveld and fit again.</li>
+          <li>Results shows the selected completed run: R factors, weight fractions, atoms, reflections and extracted intensities. Its run selector opens previous calculations; exports and Report use the selected run. History offers Set, Keep and storage controls.</li>
         </ol>
         <h2>The model</h2>
-        <p>y<sub>calc</sub>(2θ) = background + Σ<sub>phases</sub> Σ<sub>hkl</sub> I<sub>hkl</sub> · Ω(2θ − 2θ<sub>hkl</sub>), Ω the peak shape of unit area, Kα2 included. Rietveld: I = S · m · Lp · P · |F|², with S the scale of the phase in the pattern, m the multiplicity, Lp the Lorentz-polarisation factor, P the March–Dollase factor and F the structure factor from the atoms. Le Bail: I is the share of the observed counts that the reflection gets in proportion to its calculated profile (Le Bail, Duroy and Fourquet 1988), partitioned again from flat at every cycle. WPPF: I is a free variable of the least-squares fit, non-negative, solved exactly at every step (variable projection, Golub and Pereyra 1973), so its standard uncertainty and its correlation with the cell and profile are those of a full Pawley refinement. The background is a Chebyshev series over the fitted range or a monotone cubic spline through anchors; points in excluded regions are calculated but not fitted. Choose Levenberg–Marquardt (LM), or parallel tempering (PT) followed by LM, in Settings → Refinement. Both respect limits and weights 1/σ²; standard uncertainties come from the normal matrix scaled by χ². Weight fractions (Rietveld phases) follow Hill and Howard.</p>
+        <p>y<sub>calc</sub>(2θ) = background + Σ<sub>phases</sub> Σ<sub>hkl</sub> I<sub>hkl</sub> · Ω(2θ − 2θ<sub>hkl</sub>), Ω the peak shape of unit area, Kα2 included. Rietveld: I = S · m · Lp · P · |F|², with S the scale of the phase in the pattern, m the multiplicity, Lp the Lorentz-polarisation factor, P the March–Dollase factor and F the structure factor from the atoms. Le Bail: I is the share of the observed counts that the reflection gets in proportion to its calculated profile (Le Bail, Duroy and Fourquet 1988), partitioned again from flat at every cycle. WPPF: I is a free variable of the least-squares fit, non-negative, solved exactly at every step (variable projection, Golub and Pereyra 1973), so its standard uncertainty and its correlation with the cell and profile are those of a full Pawley refinement. The background is a Chebyshev series over the fitted range or a monotone cubic spline through anchors; points in excluded regions are calculated but not fitted. Choose Levenberg–Marquardt (LM), or parallel tempering (PT) followed by LM, in Settings → Numerical conditions. Both respect limits and weights 1/σ²; standard uncertainties come from the normal matrix scaled by χ². Weight fractions (Rietveld phases) follow Hill and Howard.</p>
         <h2>Mouse and keys</h2>
         <table class="grid">
           <tr><td>Plots</td><td>drag to zoom, shift-drag or right-drag to pan, wheel zooms 2θ about the cursor (Alt: intensity), double-click to autoscale; the difference plot follows</td></tr>
-          <tr><td>Background, regions</td><td>Ctrl+click places a background anchor at both cursor coordinates (on an anchor: removes it) and makes the background a spline. Right-drag an anchor to move it; Escape cancels the move. Filled magenta anchors are refinable; hollow grey anchors are fixed. A yellow vertical line marks the anchor being edited in Parameters. Ctrl+Shift+drag marks an excluded region; Ctrl+Shift+click in one removes it. Placement and exclusions use the first selected dataset; dragging edits the anchor under the cursor.</td></tr>
+          <tr><td>Background, regions</td><td>Ctrl+click places a background anchor at both cursor coordinates (on an anchor: removes it) and makes the background a spline. Right-drag an anchor to move it; Escape cancels the move. Filled magenta anchors are refinable; hollow grey anchors are fixed. A yellow vertical line marks the anchor being edited in its Datasets tab. Ctrl+Shift+drag marks an excluded region; Ctrl+Shift+click in one removes it. Placement and exclusions use the first selected dataset; dragging edits the anchor under the cursor.</td></tr>
           <tr><td>Parameter</td><td>mouse wheel or arrow keys change the value; Shift for larger steps, Alt for smaller ones</td></tr>
-          <tr><td>Parameters</td><td>← → next to the dataset name show the previous or next dataset; a group header folds the group, its box ticks the whole group; in Global mode a padlock shares the parameter (closed) or not (open), right-click on it for the datasets that share it</td></tr>
+          <tr><td>Dataset parameters</td><td>Coloured tabs or ← → next to the dataset name inspect another dataset without changing the fit selection. A group header folds the group; its checkbox changes refinement flags only in the active dataset. In Global mode a padlock shares the parameter (closed) or not (open); right-click on it for the datasets that share it.</td></tr>
           <tr><td>Phases list</td><td>click or use ↑ ↓ to select the active phase; double-click or press Enter to open it in the Phases tab. Assign phases to datasets with Datasets → Phases… or Refine → Phases of the datasets…</td></tr>
-          <tr><td>Dataset list</td><td>Ctrl+A all, Shift+click range, Ctrl+click one more, Delete, F2 or double-click to rename, drag to reorder</td></tr>
+          <tr><td>Dataset list</td><td>Checkboxes select fit and plot datasets; click a selected dataset to inspect it. Ctrl+A selects all; Shift+click selects a range; Ctrl+click adds one; Delete removes datasets, F2 or double-click renames, drag reorders.</td></tr>
           <tr><td>Anywhere</td><td>F9 fit, Ctrl+S save the project, Ctrl+Z undo</td></tr>
         </table>
         <h2>Requirements</h2>
@@ -237,7 +235,7 @@
     <section class="side-panel side-phases" id="sp-phases" role="tabpanel" aria-labelledby="side-tab-phases">
       <div class="side-h"><span id="ph-count" class="sub"></span></div>
       <div id="ph-list" class="ds-list" tabindex="0" role="listbox" aria-label="Phases"></div>
-      <p class="hint">Select a phase; double-click to inspect its active dataset values in Phases. Assign phases in Datasets.</p>
+      <p class="hint">Select a phase; double-click to inspect its shared definition in Phases. Edit dataset-specific phase values and assignments in Datasets.</p>
     </section>
     <section class="side-panel side-params" id="sp-params" role="tabpanel" aria-labelledby="side-tab-params">
       <div class="side-h param-head"><span class="sub">Values of</span><span id="param-ds" class="sub strong"></span><span id="param-more" class="sub"></span><span class="tool-gap"></span><span class="ds-step" role="group" aria-label="Show another dataset"><button type="button" id="param-prev" aria-label="Previous dataset">←</button><button type="button" id="param-next" aria-label="Next dataset">→</button></span></div>
@@ -245,8 +243,8 @@
       <div id="param-stats" class="param-stats"></div>
       <div class="clone-bar">
         <span class="sub">Copy these values to</span>
-        <button type="button" id="clone-all" title="Copy the values and fit flags of the first selected dataset to every dataset">All datasets</button>
-        <button type="button" id="clone-sel" title="Copy the values and fit flags of the first selected dataset to the other selected datasets">Selected datasets</button>
+        <button type="button" id="clone-all" title="Copy values and fit flags from the active dataset tab to every other dataset">All datasets</button>
+        <button type="button" id="clone-sel" title="Copy values and fit flags from the active dataset tab to the selected datasets">Selected datasets</button>
       </div>
     </section>
 
@@ -327,11 +325,16 @@
 <script src="js/rietveld/rv_datasets.js"></script>
 <script src="js/rietveld/rv_commands.js"></script>
 <script src="js/rietveld/rv_sgtest.js"></script>
+<script src="js/cf_adaptive.js"></script>
 <script src="js/rietveld/rv_solve.js"></script>
 <script src="js/rietveld/rv_pdf.js"></script>
 <script src="js/rietveld/rv_gsas2.js"></script>
 <script src="js/rietveld/rv_constraints.js"></script>
 <script src="js/rietveld/rv_rietveld_structure.js"></script>
+<script src="js/rietveld/rv_fit_history.js"></script>
+<script src="js/rietveld/rv_project.js"></script>
+<script src="js/rietveld/rv_workspace.js"></script>
+<script src="js/rietveld/rv_layout.js"></script>
 <script src="js/rietveld/rv_app.js"></script>
 </body>
 </html>

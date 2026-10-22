@@ -88,7 +88,7 @@ RV.absorption = (function () {
   }
   function predict(ds,lambda) {
     if(!ds || ds.inst.radiation!=='xray')return {error:'Elemental X-ray tables do not predict neutron attenuation.'};
-    if(!table)return {error:loading?'Absorption table is loading.':'Load absorption.json using Datasets → Absorption (energies default to eV, coefficients cm²/g).'};
+    if(!table)return {error:loading?'Absorption table is loading.':error || 'The absorption.json table is unavailable. Place it beside index.html and reload.'};
     var model=sample(ds);if(model.error)return model;
     if(!(lambda>0))return {error:'A positive X-ray wavelength is required.'};
     var E=HC_EV_ANGSTROM/lambda,massMu=0;
@@ -124,10 +124,9 @@ RV.absorption = (function () {
     }catch(e){ui.toast('Absorption table: '+e.message,'err');}
   }
   async function init() {
-    var btn=document.querySelector('#ds-absorption');if(btn)btn.addEventListener('click',loadFile);
     if(typeof fetch!=='function')return;
     var token=revision;loading=true;
-    try{var r=await fetch('absorption.json');if(!r.ok)throw new Error('absorption.json is not available; load your table in Datasets → Absorption.');var doc=await r.json();if(token===revision)loadDocument(doc,'absorption.json','eV');}
+    try{var r=await fetch('absorption.json');if(!r.ok)throw new Error('absorption.json is unavailable. Place it beside index.html and reload.');var doc=await r.json();if(token===revision)loadDocument(doc,'absorption.json','eV');}
     catch(e){if(token===revision){loading=false;error=e.message;RV.bus.emit('absorption');}}
   }
   return {init:init,loadFile:loadFile,loadDocument:loadDocument,normalize:normalize,coefficient:coefficient,sample:sample,predict:predict,tip:tip,status:status};

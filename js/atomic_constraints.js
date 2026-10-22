@@ -107,11 +107,30 @@ var AtomicConstraints = (function () {
         });
       });
     });
+    var targetKeys=new Set(),sourceKeys=new Set();
+    (problem.parameterLinks || []).forEach(function(link){
+      var target=link.target,source=link.source,factor=Number(link.factor),offset=Number(link.offset || 0);
+      if(!target || !source || !Number.isFinite(factor) || factor===0 || !Number.isFinite(offset))throw new Error('A parameter link needs a source, target and finite nonzero multiplier.');
+      var tk=target.datasetId+':'+target.name,sk=source.datasetId+':'+source.name;
+      if(tk===sk || targetKeys.has(tk))throw new Error('A linked parameter must have one distinct source.');
+      targetKeys.add(tk);sourceKeys.add(sk);
+      var d=datasets.findIndex(function(ds){return ds.id===target.datasetId;}),sd=datasets.findIndex(function(ds){return ds.id===source.datasetId;});
+      if(d<0)return;
+      if(!Number.isFinite(values[d][target.name]))throw new Error('Missing linked target '+target.name+'.');
+      if(raw.some(function(r){return r.d===d && r.name===target.name;}))throw new Error('The linked target is already dependent in an atomic constraint.');
+      var value=sd>=0?values[sd][source.name]:problem.linkValues && problem.linkValues[source.datasetId] && problem.linkValues[source.datasetId][source.name];
+      if(!Number.isFinite(value))throw new Error('Missing linked source '+source.name+'.');
+      var j=slots[d][target.name];if(j!=null)removed[j]=true;
+      checks.push({d:d,name:target.name,limits:limits(problem,target.name,values[d][target.name])});
+      if(!constrained.includes(target.name))constrained.push(target.name);
+      raw.push({d:d,name:target.name,offset:offset+(sd<0?factor*value:0),sources:sd<0?[]:[[source.name,factor,sd]]});
+    });
+    targetKeys.forEach(function(k){if(sourceKeys.has(k))throw new Error('Parameter link chains are ambiguous. Link each dependent directly to its independent source.');});
     var free=[], index={}, varLimits=[];
     vars.forEach(function(v,j){if(!removed[j]){index[j]=free.length;free.push(v);var first=v.d>=0?v.d:v.ds && v.ds.length?v.ds[0]:0;varLimits.push(limits(problem,v.name,values[first][v.name]).slice());}});
     var links=[];
     raw.forEach(function(r){var offset=r.offset,terms=[];
-      r.sources.forEach(function(t){var j=slots[r.d][t[0]];if(j!=null && !removed[j])terms.push([index[j],t[1]]);else if(j!=null && removed[j] && !held[j])throw new Error('Conflicting constraint dependencies.');else offset+=t[1]*values[r.d][t[0]];});
+      r.sources.forEach(function(t){var sd=t[2]==null?r.d:t[2],j=slots[sd][t[0]];if(j!=null && !removed[j])terms.push([index[j],t[1]]);else if(j!=null && removed[j] && !held[j])throw new Error('Conflicting constraint dependencies.');else offset+=t[1]*values[sd][t[0]];});
       // a dependent of fixed parameters is a constant: set it once
       if(!terms.length){values[r.d][r.name]=offset;return;}
       links.push({d:r.d,name:r.name,offset:offset,terms:terms,limits:limits(problem,r.name,values[r.d][r.name]).slice()});

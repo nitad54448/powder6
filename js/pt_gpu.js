@@ -50,7 +50,7 @@
             return 'metric(' + [a,b,c,al,be,ga].join(',') + ')';
         }
         function widths(P, D, d, name, side) {
-            const sep = C.usesSeparatedProfile(P.def), type = P.def.profileType;
+            const sep = C.usesSeparatedProfile(P.def), type = sep ? D.def.resolutionType || P.def.profileType : P.def.profileType;
             const instrument = new Map(C.instrumentProfileParams(type));
             const get = (n, def = 0) => sep && instrument.has(n) ? param(d,'inst.'+n,instrument.get(n)) : P.profNames.includes(n) ? param(d,P.prefix+n,def) : f(def);
             const suffix = side || '', split = type === 'split_pvoigt';
@@ -133,10 +133,11 @@
                 const op=put(P.reps.flatMap(o=>o.r.concat(o.t)));
                 const g=metricCode(P,d); validCells.push(g+'.valid>0.5');
                 const get=widths(P,D,d,'width_'+pair.index,'');
-                if(P.def.profileType==='split_pvoigt') {
+                const profileType=C.usesSeparatedProfile(P.def) ? D.def.resolutionType || P.def.profileType : P.def.profileType;
+                if(profileType==='split_pvoigt') {
                     widths(P,D,d,'left_'+pair.index,'_L'); widths(P,D,d,'right_'+pair.index,'_R');
                 }
-                const pre=P.prefix, par=n=>param(d,pre+n), type=P.def.profileType==='simple_pvoigt'?1:P.def.profileType==='split_pvoigt'?2:3;
+                const pre=P.prefix, par=n=>param(d,pre+n), type=profileType==='simple_pvoigt'?1:profileType==='split_pvoigt'?2:3;
                 let struct='var height=0.0;';
                 if(P.method==='rietveld') {
                     struct+='var fr=0.0; var fi=0.0;';
@@ -292,7 +293,7 @@
     }
     fn angle2(g:Metric,n:vec3<f32>,axis:vec3<f32>)->f32{let a=g.cart*axis;return clamp(sq(dot(n,a)/max(1e-30,length(a))),0.0,1.0);}
     fn rotate(v:vec3<f32>,axis:u32,t:f32)->vec3<f32>{var r=v;let i=(axis+1u)%3u;let j=(axis+2u)%3u;r[i]=cos(t)*v[i]-sin(t)*v[j];r[j]=sin(t)*v[i]+cos(t)*v[j];return r;}
-    fn positive(x:f32,b:f32)->f32{return 0.5*(x+sqrt(x*x+4.0*b*b));}
+    fn positive(x:f32,b:f32)->f32{let h=sqrt(x*x+4.0*b*b);if(x<0.0){return b*(b/(0.5*h-0.5*x));}return 0.5*x+0.5*h;}
     fn gaussian(x:f32,b:f32)->f32{return sqrt(positive(x,sq(0.25*b/GCONV)))*GCONV;}
     fn lorentzian(x:f32,b:f32)->f32{return positive(x,0.25*b/LCONV)*LCONV;}
     fn softFloor(x:f32,b:f32)->f32{if(!finite(x)||x<=0.0){return b;}if(x>20.0*b){return x;}return b*pow(sq(sq(x/b))+1.0,0.25);}

@@ -21,6 +21,8 @@ RV.plots = (function () {
 
   function plotted() {
     var sel = RV.state.selected(), n = sel.length, m = Math.max(1, S.settings.maxPlots | 0);
+    if(S.settings.plotMode==='focus')return RV.state.first()?[RV.state.first()]:[];
+    if(S.settings.plotMode==='overview')return sel;
     if (n <= m) return sel;
     var out = [];
     for (var i = 0; i < m; i++) out.push(sel[Math.round(i * (n - 1) / (m - 1 || 1))]);
@@ -74,6 +76,10 @@ RV.plots = (function () {
   }
   function build(list) {
     var T = RV.theme.get(), st = S.settings, main = [], diff = [], one = list.length === 1, named = legendIndices(list.length);
+    if(st.plotMode==='overview' && list.length>1){
+      list.forEach(function(ds,n){var x=[],y=[],step=Math.max(1,Math.ceil(ds.tth.length/700)),lo=Infinity,hi=-Infinity;for(var i=0;i<ds.y.length;i++){lo=Math.min(lo,ds.y[i]);hi=Math.max(hi,ds.y[i]);}for(var i=0;i<ds.tth.length;i+=step){var top=i;for(var j=i+1;j<Math.min(ds.y.length,i+step);j++)if(ds.y[j]>ds.y[top])top=j;x.push(ds.tth[top]);y.push(n+.8*(ds.y[top]-lo)/Math.max(1,hi-lo));}main.push({name:ds.name,group:'ds'+ds.id,x:x,y:y,color:color(ds),mode:'lines',width:1,legend:named.includes(n),ds:ds});});
+      return {main:main,diff:diff};
+    }
     // the excluded regions of the first dataset drawn (where the anchors and regions are edited), as shaded bands
     var ex = list.length ? (list[0].inst.excl || []) : [];
     if (ex.length) {
@@ -98,7 +104,7 @@ RV.plots = (function () {
       if (!c) return;
       main.push({ name: 'Calculated', group: 'calc', x: c.tth, y: st.noBackground ? Float64Array.from(c.ycalc,function(y,k){return y-c.bkg[k];}) : preview ? Float64Array.from(c.ycalc,function(y,k){return y-c.bkg[k]+background[k];}) : c.ycalc, color: one ? T.calc : col, mode: 'lines', width: 1.5, legend: n === 0 });
       if (st.showBkg && !st.noBackground) main.push({ name: 'Background', group: 'bkg', x: c.tth, y: background, color: one ? T.bkg : col, mode: 'lines', width: 1.1, dash: [6, 4], legend: n === 0 });
-      if (st.showBkg && !st.noBackground && ds.inst.bkgType === 'spline' && ds.inst.bkgX.length) {
+      if (st.showAnchors && !st.noBackground && ds.inst.bkgType === 'spline' && ds.inst.bkgX.length) {
         [true,false].forEach(function(fit){
           var ax=[],ay=[],ai=[];
           ds.inst.bkgX.forEach(function(x,k){var v=ds.p['bga'+k];if(!!ds.fit['bga'+k]!==fit || !Number.isFinite(v))return;if(preview && k===anchorDrag.index){x=anchorDrag.x;v=anchorDrag.y;}ax.push(x);ay.push(v);ai.push(k);});
@@ -136,6 +142,7 @@ RV.plots = (function () {
 
   function bandPx() { return S.settings.showTicks && S.phases.length ? S.phases.length * 9 + 7 : 0; }
   function yOpts() {
+    if(S.settings.plotMode==='overview' && S.sel.size>1)return {ylog:false,ysqrt:false,ylabel:'Dataset index + normalized intensity'};
     var m = S.settings.yscale; if(S.settings.noBackground && m!=='lin')m='lin';
     return { ylog: m === 'log', ysqrt: m === 'sqrt', ylabel: S.settings.noBackground ? 'Intensity − background /counts' : m === 'sqrt' ? 'Intensity /counts (√ scale)' : m === 'log' ? 'Intensity /counts (log scale)' : 'Intensity /counts' };
   }
@@ -144,6 +151,11 @@ RV.plots = (function () {
     if (!dirty || !shown) return;
     dirty = false;
     var list = plotted(), s = build(list), note = $('#plot-note');
+    var anchors=$('#show-anchors'),anchorLabel=anchors.closest('label');
+    var anchorWhy=!list.some(function(ds){return ds.inst.bkgType==='spline' && ds.inst.bkgX.length;})?'Anchors are used only by spline backgrounds in the plotted datasets.':
+      S.settings.noBackground?'Anchors are hidden while background subtraction is enabled.':
+      S.settings.plotMode==='overview' && list.length>1?'Choose Overlay or Inspect one dataset to display spline anchors.':'';
+    RV.ui.able(anchors,anchorWhy);anchorLabel.classList.toggle('disabled',!!anchorWhy);anchorLabel.title=anchorWhy || 'Show spline background anchors independently of the background curve.';
     var empty = S.datasets.length ? 'Select one or more datasets' : 'No data yet. Use File, drop files on this window, or type demo in the command line below.';
     P.pat.o.empty = empty;
     P.pat.o.legendMax = 10 + S.phases.length;
@@ -155,7 +167,7 @@ RV.plots = (function () {
     if (!P.pat.auto && P.pat.view) P.diff.setXView(P.pat.view.x0, P.pat.view.x1);
     if (note) {
       var bad = list.filter(function (ds) { return !ds.calc && ds.calcErr; })[0], nsel = S.sel.size;
-      note.textContent = bad ? bad.name + ': ' + bad.calcErr : nsel > list.length ? 'Showing ' + list.length + ' of ' + nsel + ' selected' :
+      note.textContent = bad ? bad.name + ': ' + bad.calcErr : nsel > list.length ? 'Showing ' + list.length + ' of ' + nsel + ' fit datasets · use Overview to see the full selection' :
         list.length > 1 && S.settings.showTicks && S.phases.length ? ticksNote(list) : '';
     }
   }
@@ -195,7 +207,7 @@ RV.plots = (function () {
     return best;
   }
   function focusAnchor(info) {
-    var ds=RV.state.first(),match=info && /^bga(\d+)$/.exec(info.name || '');
+    var ds=info && info.dsId!=null?RV.state.byId(info.dsId):RV.state.first(),match=info && /^bga(\d+)$/.exec(info.name || '');
     anchorFocus=ds && match?{dsId:ds.id,index:+match[1]}:null;
     refresh(false);
   }
