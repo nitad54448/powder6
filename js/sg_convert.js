@@ -548,35 +548,66 @@
     if(!wasmLoading)wasmLoading=import('../lib/moyo/moyo_wasm.js').then(async function(m){await m.default();wasmModule=m;return m;}).catch(function(e){wasmLoading=null;throw e;});
     return wasmLoading;
   }
-  function findSymmetryWasm(atoms,ops,cell,groups,opts){
-    if(!wasmModule)throw new Error('The Moyo symmetry engine is not loaded.');
-    opts=opts || {};var G=metric(cell),pts=expandFull(atoms,ops,G),speciesIds=Object.create(null),bySpecies=Object.create(null),next=1;
+  function symmetryInput(atoms,ops,cell){
+    var G=metric(cell),pts=expandFull(atoms,ops,G),speciesIds=Object.create(null),bySpecies=Object.create(null),next=1;
     if(!pts.length)throw new Error('Symmetry analysis needs atomic positions.');
     pts.forEach(function(p){(bySpecies[p.s] || (bySpecies[p.s]=[])).push(p);});
     var r=Math.PI/180,cg=Math.cos(cell.gamma*r),sg=Math.sin(cell.gamma*r),cb=Math.cos(cell.beta*r),ca=Math.cos(cell.alpha*r);
     var cy=cell.c*(ca-cb*cg)/sg;
     var basis=[cell.a,0,0,cell.b*cg,cell.b*sg,0,cell.c*cb,cy,Math.sqrt(Math.max(0,cell.c*cell.c*(1-cb*cb)-cy*cy))];
-    var result=wasmModule.analyze_cell(JSON.stringify({lattice:{basis:basis},positions:pts.map(function(p){return p.x;}),numbers:pts.map(function(p){return speciesIds[p.s] || (speciesIds[p.s]=next++);})}),opts.tol || 0.2,'Standard');
-    var hall=wasmModule.hall_symbol_entry(result.hall_number).hall_symbol;
+    return {G:G,pts:pts,bySpecies:bySpecies,cell:{lattice:{basis:basis},positions:pts.map(function(p){return p.x;}),numbers:pts.map(function(p){return speciesIds[p.s] || (speciesIds[p.s]=next++);})}};
+  }
+  function symmetryFromWasm(input,cell,groups,opts,result,hall){
+    opts=opts || {};var G=input.G,pts=input.pts,bySpecies=input.bySpecies;
     var g=(groups || []).filter(function(g){return g.number===result.number && g.hall===hall;})[0];
     // Resolve the exact standard setting, including the origin choice selected by Moyo.
     if(!g && root.RV && RV.state)g=RV.state.resolveSG(result.number,hall);
     if(!g)throw new Error('Moyo setting '+hall+' is absent from the space-group database.');
     var P=transpose(result.std_linear),p=result.std_origin_shift,cc=transformCell(cell,P);
-    var normalized=opts.normalise?opts.normalise(cc,g):cc;
+    // Use the standardized lattice returned by the public implementation,
+    // rather than rebuilding its refined metric from the assigned group.
+    var A=transpose(result.std_cell.lattice.basis),normalized=cellFromMetric(mul3(transpose(A),A));
     var lengthMisfit=Math.max.apply(null,['a','b','c'].map(function(k){return Math.abs(normalized[k]-cc[k])/cc[k];}));
     var angleMisfit=Math.max.apply(null,['alpha','beta','gamma'].map(function(k){return Math.abs(normalized[k]-cc[k]);}));
     var misfit=Math.max(lengthMisfit,angleMisfit/90);
-    if(lengthMisfit>(opts.lenTol || .01)+1e-9 || angleMisfit>(opts.angTol || 1)+1e-9)throw new Error('The symmetry requires a larger cell tolerance.');
+    var cellWithinTolerance=lengthMisfit<=(opts.lenTol || .01)+1e-9 && angleMisfit<=(opts.angTol || 1)+1e-9;
+    if(!cellWithinTolerance && !opts.reportAll)throw new Error('The symmetry requires a larger cell tolerance.');
     var found=result.operations.map(function(o){
       var op={r:transpose(o.rotation),t:o.translation};op.xyz=opXyz(op);
       op.dev=covers(bySpecies,pts,G,function(x){return apply(op,x);},Infinity);
       return op;
     });
-    return {points:pts.length,latticePoints:found.filter(function(o){return isIdentityRot(o.r);}).length,ops:found,group:g,P:P,p:p,misfit:misfit,cell:cc,latticeSystem:g.system,engine:'Moyo 0.21.0'};
+    return {points:pts.length,latticePoints:found.filter(function(o){return isIdentityRot(o.r);}).length,ops:found,group:g,P:P,p:p,misfit:misfit,cell:cc,standardCell:normalized,cellWithinTolerance:cellWithinTolerance,latticeSystem:g.system,engine:'Moyo 0.21.0',dataset:result};
+  }
+  function findSymmetryWasm(atoms,ops,cell,groups,opts){
+    if(!wasmModule)throw new Error('The Moyo symmetry engine is not loaded.');
+    opts=opts || {};var input=symmetryInput(atoms,ops,cell);
+    var result=wasmModule.analyze_cell(JSON.stringify(input.cell),opts.tol || .2,'Standard');
+    return symmetryFromWasm(input,cell,groups,opts,result,wasmModule.hall_symbol_entry(result.hall_number).hall_symbol);
+  }
+  function symmetryJob(atoms,ops,cell,groups,opts){
+    opts=opts || {};var input=symmetryInput(atoms,ops,cell),worker,timeout,settled=false,resolve,reject,rows=[];
+    var promise=new Promise(function(ok,bad){resolve=ok;reject=bad;});
+    function finish(error){if(settled)return;settled=true;clearTimeout(timeout);if(worker)worker.terminate();if(error)reject(error);else resolve(rows);}
+    try{
+      worker=new Worker(new URL('js/symmetry_worker.js',document.baseURI),{type:'module'});
+      worker.onmessage=function(event){
+        var message=event.data || {};
+        if(message.type==='error'){finish(new Error(message.error));return;}
+        if(message.type==='complete'){finish();return;}
+        if(message.type!=='result')return;
+        var row={tol:message.tol,error:message.error || null,dataset:message.dataset};
+        if(!row.error)try{row.r=symmetryFromWasm(input,cell,groups,Object.assign({},opts,{reportAll:true}),message.dataset,message.hall);}catch(e){row.error=e.message;}
+        rows.push(row);
+      };
+      worker.onerror=function(event){finish(new Error(event.message || 'The public WASM symmetry worker could not load.'));};
+      timeout=setTimeout(function(){finish(new Error('The symmetry search timed out. Reduce the atom count or the tolerance.'));},60000);
+      worker.postMessage({cell:input.cell,tolerances:opts.tolerances || [opts.tol || .2]});
+    }catch(e){finish(e);}
+    return {promise:promise,cancel:function(){var error=new Error('Symmetry search cancelled.');error.name='AbortError';finish(error);}};
   }
 
-  var api = { loadWasm:loadWasm, findSymmetryWasm:findSymmetryWasm, det3: det3, findSymmetry: findSymmetry, opXyz: opXyz, inv3: inv3, metric: metric, cellFromMetric: cellFromMetric, transformCell: transformCell, parseBasis: parseBasis, parseShift: parseShift,
+  var api = { loadWasm:loadWasm, findSymmetryWasm:findSymmetryWasm, symmetryJob:symmetryJob, det3: det3, findSymmetry: findSymmetry, opXyz: opXyz, inv3: inv3, metric: metric, cellFromMetric: cellFromMetric, transformCell: transformCell, parseBasis: parseBasis, parseShift: parseShift,
               formatBasis: formatBasis, formatShift: formatShift, isIdentity: isIdentity, opToNew: opToNew, opToOld: opToOld, relation: relation,
               findTransforms: findTransforms, metricMisfit: metricMisfit, convertStructure: convertStructure, derive: derive, hklToNew: hklToNew, IDENTITY: I3.slice() };
   root.SGConvert = api;

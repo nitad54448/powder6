@@ -30,6 +30,9 @@
     while(!w.document.querySelector('[data-symmetry-report]')?.textContent.includes('higher than P1')){if(Date.now()>coldDeadline)throw Error('First ADDSYM click did not load the engine and find Pnma');await wait(20);}
     w.document.querySelector('#dlg .btns button').click();St.removePhase(coldPhase.key);
     record('Blue ADDSYM button loads the local engine on its first click and finds Pnma');
+    // The dialog uses a worker; load the independent main-thread API for the
+    // direct scientific checks below.
+    await K.loadWasm();
     for(const [number,cell,sites] of cases){
       // Diamond uses origin choice 1 here, so finding origin choice 2 must
       // return a working shift as well as the right group number.

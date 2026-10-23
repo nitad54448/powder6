@@ -73,7 +73,8 @@
     // 3b. Find higher symmetry: NaCl written in P1 is found to be Fm-3m, and Convert… carries it there
     const p1atoms=[[0,0,0],[0,.5,.5],[.5,0,.5],[.5,.5,0]].flatMap((x,i)=>[{label:'Na'+(i+1),type:'Na',x:x[0],y:x[1],z:x[2]},{label:'Cl'+(i+1),type:'Cl',x:(x[0]+.5)%1,y:x[1],z:x[2]}]);
     const flat=St.makePhase({name:'NaCl in P1',sg:St.resolveSG(1),cell:{a:5.64,b:5.64,c:5.64,alpha:90,beta:90,gamma:90},atoms:p1atoms});St.addPhase(flat);St.selectPhase(flat.key);await frame();
-    const fs=q('[data-act="find-symmetry"]');check(fs && !fs.disabled && fs.closest('.phase-bar'),'Find higher symmetry… missing from the Phases toolbar');
+    RV.app.showTab('structure');await frame();
+    const fs=q('#sv-addsym');check(fs && !fs.disabled,'Find higher symmetry… missing from Structure → Space group → ADDSYM');
     fs.click();await wait(900);
     const report=()=>dlg.querySelector('[data-symmetry-report]').textContent;
     check(dlg.open && /Fm-3m \(225\)/.test(report()) && /higher than P1/.test(report()) && /8 → 2/.test(report()) && /4 lattice points per cell/.test(report()) && /operations the structure has and P1 does not use/.test(report()) && /At other tolerances/.test(report()),'Symmetry report: '+report().slice(0,500));
@@ -82,12 +83,12 @@
     [...dlg.querySelectorAll('.btns button')].find(b=>b.textContent==='Convert').click();await frame();
     const done=St.phaseByKey(flat.key);check(!dlg.open && done.sg.number===225 && done.atoms.length===2 && done.atoms.every(x=>x.site.mult===4),'Not converted to Fm-3m: '+done.sg.number+' '+done.atoms.length);
     // nothing beyond Fm-3m: reported, and Convert… refused
-    q('[data-act="find-symmetry"]').click();await wait(900);
+    q('#sv-addsym').click();await wait(900);
     check(/no symmetry beyond Fm-3m/.test(report()),'Full symmetry not recognised: '+report().slice(0,300));
     [...dlg.querySelectorAll('.btns button')].find(b=>b.textContent==='Convert…').click();await frame();
     check(dlg.open && /nothing to convert to/.test(status()),'Convert… should be refused with nothing higher');
     [...dlg.querySelectorAll('.btns button')].find(b=>b.textContent==='Cancel').click();await frame();
-    St.removePhase(flat.key);St.selectPhase(ph.key);await frame();
+    St.removePhase(flat.key);St.selectPhase(ph.key);RV.app.showTab('phases');await frame();
     record('Find higher symmetry reports Fm-3m for NaCl written in P1, hands it to Convert, and has nothing to add afterwards');
 
     // 4. project files: saved as .project; .archive, .powder6 and a renamed zip open; a zip without project.json does not

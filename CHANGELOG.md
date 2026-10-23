@@ -2,6 +2,13 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.10.4 — 23 October 2026
+
+1. ADDSYM calls the public Moyo WebAssembly API in a cancellable module worker and reports its returned group, standardized lattice, axes and origin. Engine errors and conversion restrictions are visible instead of being presented as no higher symmetry.
+2. The active dataset’s fitted Rietveld model is now selected initially. Searches use its coordinates and cell together, including the saved Rietveld calculation while using WPPF or Le Bail. Previously the starting atoms were selected by default, and choosing a dataset could combine Rietveld coordinates with the WPPF cell.
+3. Conversion keeps the chosen atomic source, previews adoption of that fitted model as the phase’s starting atoms and cell, and validates each dataset against its own Rietveld model. Stale starting atoms no longer veto a valid conversion of the selected fitted model. Undo restores the previous starting model and calculation banks.
+4. A PbSO₄ browser regression supplies known Pnma coordinates as the fitted values of a 24-atom P1 phase, with an arbitrary origin and a separately distorted starting model. It checks detection, atomic-source changes, the saved Rietveld cell while using WPPF, conversion to five Pnma sites with Pb₄S₄O₁₆ content, undo, worker cancellation and engine errors. The six other crystal-system examples and existing conversion/project checks remain covered.
+
 ## 2.10.3 — 23 October 2026
 
 1. ADDSYM’s Find higher symmetry… button uses the same blue primary style as Test the space groups. The dialog validates the submitted atomic source and tolerances before opening Convert…; pressing Enter before the delayed preview updated previously passed the old tolerance to conversion. Pending preview updates are cleared when the dialog closes.

@@ -1,6 +1,6 @@
 # Powder 6
 
-Version **2.10.3**, 23 October 2026. See [corrections](CHANGELOG.md).
+Version **2.10.4**, 23 October 2026. See [corrections](CHANGELOG.md).
 
 Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by **Rietveld**, **Le Bail** or **WPPF**, fitted individually or in one global fit, with **structure solution** from the extracted intensities. Everything runs locally; nothing is uploaded.
 
@@ -17,7 +17,7 @@ Full documentation: [`Powder6_documentation.html`](Powder6_documentation.html): 
 - Space-group test, charge flipping (WebGPU with CPU fallback) and a Wyckoff-site search (WebGPU), handing the atoms back for a Rietveld fit.
 - Readers for xy/csv/txt, PANalytical `.xrdml`, Bruker `.brml`/`.uxd`, Rigaku `.ras`/`.rasx`, Philips `.udf`/`.rd`/`.sd`, GSAS `.xra`/`.esd`, Jade `.mdi`, pdCIF, and project files.
 - Results as text, CIF, pdCIF, SHELX HKLF 4 and a PDF report; command line, edit undo, and persistent calculation History with Set/Keep.
-- Structure → Space group has **Test** for systematic absences of the extracted powder intensities and **ADDSYM** for symmetry of an atomic model. Find higher symmetry… uses locally bundled Moyo 0.21.0 WebAssembly ([MIT license](lib/moyo/LICENSE-MIT)) to name the model’s standard setting and hand its axes and origin to Convert…; it works without a WPPF fit.
+- Structure → Space group has **Test** for systematic absences of the extracted powder intensities and **ADDSYM** for symmetry of an atomic model. Find higher symmetry… calls the public, locally bundled Moyo 0.21.0 WebAssembly API ([MIT license](lib/moyo/LICENSE-MIT)) in a worker. It defaults to the active dataset’s Rietveld coordinates and cell, including the saved Rietveld model while using Le Bail or WPPF. Convert… previews the detected group, axes and origin, and can adopt that fitted model as the phase’s starting model; ADDSYM works without a WPPF fit.
 - Phases → Convert… carries a phase to another space group or setting (subgroups split sites, supergroups merge them when the structure has the symmetry); cell, positions and every dataset are transformed.
 - Compressed `.project` files (`.archive` and the `.powder6` files of earlier versions open too), saved dataset groups, and overview/focused inspection for large series.
 
