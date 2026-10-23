@@ -1,6 +1,12 @@
 # Corrections
 
-## 2.7 — 22 October 2026
+Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
+
+## 2.7.1 — 23 October 2026
+
+1. Saving a project always ends with a message and, unless cancelled, a file. After the options, Choose file… opens the browser's Save As dialog before compression, so the name and folder are chosen while the click still counts; the compressed project is then written there. Where the browser has no Save As (or refuses it), the project downloads to its download folder and the message gives the file name and where to look if the browser held the download. Saving while a calculation runs, with nothing to save, a cancel, and a failure while compressing or writing each give a message instead of nothing. Download links stay valid long enough for large files.
+
+## 2.7.0 — 22 October 2026
 
 1. Charge flipping accepts up to 128 random starts (adaptive mode 6–128, manual 1–128). Adaptive mode keeps only the twelve lowest-R density maps for the map-agreement check, so a large budget does not hold every map in memory.
 2. A stopped Wyckoff search keeps its solution. The worker reports each finished value of Z as soon as it is refined, and the page keeps the live best structure of the Z still running. A second Stop, a worker crash or an error after a stop now keeps what was already received instead of discarding it; such a result is labelled, and a structure taken from the live search is marked as not refined. A new CF or Wyckoff result also resets the result selector to the latest solution.
@@ -23,7 +29,6 @@
 19. Charge flipping places every element of the formula it can. A heavy atom needing fewer atoms per cell than its peak's site holds (for example 2 Fe on a peak that landed slightly off a 2-fold inversion centre) has the peak moved onto the nearest free special position of small enough multiplicity, up to 0.6 Å away; the move is shown in the sites table. Elements that still cannot be placed are named in the toast and under the sites table instead of being silently left out.
 20. A Wyckoff composition blocked by a stated coordination number now says so. A constraint such as “Fe C 1 1.2/1.8” gives Fe a coordination of 1; an odd coordination cannot sit on an inversion centre, which can leave Fe no position. The error names the constraint, the excluded positions and the syntax for a distance window alone (“Fe C - 1.2/1.8”), instead of advising to raise the site caps; the constraint editor warns about odd coordination numbers as they are typed.
 21. A Wyckoff failure for a single value of Z is written to the Log once, as the error, instead of twice.
-22. Saving a project always ends with a message and, unless cancelled, a file. After the options, Choose file… opens the browser's Save As dialog before compression, so the name and folder are chosen while the click still counts; the compressed project is then written there. Where the browser has no Save As (or refuses it), the project downloads to its download folder and the message gives the file name and where to look if the browser held the download. Saving while a calculation runs, with nothing to save, a cancel, and a failure while compressing or writing each give a message instead of nothing. Download links stay valid long enough for large files.
 
 ## 2.6 — 21 October 2026
 
