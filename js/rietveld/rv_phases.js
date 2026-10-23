@@ -378,8 +378,8 @@ RV.phasesTab = (function () {
     var key = ph.key, last = null;
     var fields = [
       { key: 'find', label: 'Find', type: 'text', value: '', hint: 'A number or a symbol (14, P21/n, Fm-3m, Pnnn:2): the list below keeps the matches.' },
-      { key: 'target', label: 'New space group', type: 'select', value: preset ? preset.hall : ph.sg.hall, options: St.allSettings().map(function (s) { return [s.hall, s.number + ' · ' + s.symbol + ' · ' + s.system + (s.setting && s.setting !== 'standard' ? ' · ' + s.setting : '')]; }),
-        hint: 'Every setting of the 230 groups. A subgroup splits sites, a supergroup merges atoms the new symmetry relates, another setting changes only the axes.' },
+      { key: 'target', label: 'New space group', type: 'select', value: preset ? preset.hall : ph.sg.hall, options: St.allSettings().map(function (s) { var std = standardHalls().has(s.hall); return [s.hall, s.number + ' · ' + s.symbol + ' · ' + s.system + (s.setting && s.setting !== 'standard' ? ' · ' + s.setting : '') + (std ? ' · standard' : ''), std ? 'sg-std' : '']; }),
+        hint: 'Every setting of the 230 groups; the standard setting of each is in bold and marked standard. A subgroup splits sites, a supergroup merges atoms the new symmetry relates, another setting changes only the axes.' },
       { key: 'mode', label: 'Transformation', type: 'select', value: preset ? 'manual' : 'auto', options: [['auto', 'Find it'], ['manual', 'Enter it']] },
       { key:'source',label:'Atomic model',type:'select',value:preset && preset.source || 'start',options:modelOptions(ph),hint:'The chosen model defines the converted phase starting atoms and cell.' },
       { key: 'basis', label: 'New axes a′, b′, c′', type: 'text', value: preset ? preset.basis : 'a,b,c', when: 'mode:manual', hint: 'In the old axes, e.g. a+b,-a+b,c or 2a,b,c.' },
@@ -454,18 +454,24 @@ RV.phasesTab = (function () {
 
   // ---------------------------------------------------------------- missed symmetry (as ADDSYM in PLATON), handed to Convert
   // one setting per group to name what is found in: the standard one, b-unique cell choice 1, origin choice 2, hexagonal axes
-  var standardGroups = null;
-  function groupsForSearch() {
-    if (standardGroups) return standardGroups;
+  var standardGroups = null, standardList = null, standardSet = null;
+  // the standard setting of each number, as St.allSettings() lists it
+  function standardSettings() {
+    if (standardList) return standardList;
     var by = {};
     St.allSettings().forEach(function (s) { (by[s.number] = by[s.number] || []).push(s); });
-    standardGroups = Object.keys(by).map(function (n) {
+    standardList = Object.keys(by).map(function (n) {
       var list = by[n], pick = function (d) { return list.filter(function (s) { return s.setting === d; })[0]; };
-      var s = pick('standard') || pick('b1') || pick('b') || pick('origin choice 2') || list[0], g = St.resolveSG(s.symbol, s.hall);
-      return g ? Object.assign({}, g) : null;
-    }).filter(Boolean);
+      return pick('standard') || pick('b1') || pick('b') || pick('origin choice 2') || list[0];
+    });
+    return standardList;
+  }
+  function groupsForSearch() {
+    if (standardGroups) return standardGroups;
+    standardGroups = standardSettings().map(function (s) { var g = St.resolveSG(s.symbol, s.hall); return g ? Object.assign({}, g) : null; }).filter(Boolean);
     return standardGroups;
   }
+  function standardHalls() { return standardSet || (standardSet = new Set(standardSettings().map(function (s) { return s.hall; }))); }
   /* The atomic models ADDSYM and Convert… start from: the starting model, and for each dataset holding the phase its
      Rietveld model (active, or saved while another method is) under the dataset id. Fitted by Le Bail or WPPF, a dataset
      also offers its current cell with the atoms it holds ('c:' + id; the plain id when it has no Rietveld model). */

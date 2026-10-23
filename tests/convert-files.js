@@ -32,6 +32,11 @@
     const visible=()=>[...field('target').options].filter(o=>!o.hidden);
     check(dlg.open && /Fm-3m/.test(dlg.textContent) && field('target').tagName==='SELECT' && field('target').options.length===520 && /225 · Fm-3m · cubic/.test(field('target').selectedOptions[0].textContent),'Dialog did not open with every setting, the current one chosen');
     check(/is in Fm-3m \(225\)/.test(preview()) && dlg.querySelector('[data-convert-preview] .hint'),'Opening preview should be guidance, not a warning');
+    const std=[...field('target').options].filter(o=>o.classList.contains('sg-std')),stdOf=n=>std.find(o=>o.textContent.startsWith(n+' · '));
+    check(std.length===230 && new Set(std.map(o=>o.textContent.split(' · ')[0])).size===230 && std.every(o=>/ · standard$/.test(o.textContent)),'Not one marked standard setting per group: '+std.length);
+    check(/P121\/c1/.test(stdOf(14).textContent) && /Fd-3m:2/.test(stdOf(227).textContent) && /R-3m:H/.test(stdOf(166).textContent),'Wrong standard settings: '+[14,227,166].map(n=>stdOf(n).textContent).join(' | '));
+    check(w.getComputedStyle(std[0]).fontWeight==='700' && w.getComputedStyle([...field('target').options].find(o=>!o.classList.contains('sg-std'))).fontWeight==='400' && w.getComputedStyle(field('target')).fontWeight==='700','Standard settings are not bold');
+    record('Convert… marks the standard setting of each of the 230 groups in bold');
     choose('14');await wait(300);
     check(visible().length===9 && visible().every(o=>/^14 · /.test(o.textContent)) && /P121\/c1/.test(field('target').selectedOptions[0].textContent),'Find 14: '+visible().length+' '+field('target').selectedOptions[0].textContent);
     choose('P21/n');await wait(300);

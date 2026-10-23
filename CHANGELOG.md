@@ -2,6 +2,10 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.11.1 — 23 October 2026
+
+1. Convert…: in the New space group list the standard setting of each of the 230 groups (standard, b-unique cell choice 1, origin choice 2, hexagonal axes: the settings ADDSYM names its results in) is in bold and ends in “· standard”; the closed list is bold while a standard setting is chosen. Typing “standard” in Find lists only them. Browsers that draw the list natively (Safari on macOS) show the label but not the bold.
+
 ## 2.11.0 — 23 October 2026
 
 1. Wyckoff search, speed. Every wave of assignments cost restarts × iterations, and pruning acted only inside a wave, so an enumeration of up to 4000 assignments (10 per wave at 512 particles) could ask for 400 full waves. When the assignments need more than two waves, each is now screened first (10 % of the iterations, at least 60, one restart), re-scored on every reflection group, and only the best two waves’ worth get the full search, continuing from what the screening found. A simulated P-1 PbO₂ screens 155 assignments in 31 short waves and searches 10 in full.

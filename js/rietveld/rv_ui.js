@@ -6,7 +6,7 @@
  *  'settings', 'theme', 'tab', 'tables', 'shared'.
  */
 var RV = window.RV || (window.RV = {});
-RV.version = '2.11.0 (23 oct 2026)';
+RV.version = '2.11.1 (23 oct 2026)';
 
 RV.bus = (function () {
   'use strict';
@@ -130,12 +130,12 @@ RV.ui = (function () {
     });
   }
 
-  // fields: [{key, label, type: number|text|select|checkbox, value, options [[v, label]], hint, when: 'key:v1,v2'}]
+  // fields: [{key, label, type: number|text|select|checkbox, value, options [[v, label, class]], hint, when: 'key:v1,v2'}]
   function fieldHTML(f) {
     var id = 'f_' + f.key, v = f.value == null ? '' : f.value, ctl, w = f.when ? ' data-when="' + esc(f.when) + '"' : '';
     if (f.type === 'select') {
       ctl = '<select id="' + id + '" data-key="' + f.key + '">' + f.options.map(function (o) {
-        return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(v) ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+        return '<option value="' + esc(o[0]) + '"' + (o[2] ? ' class="' + esc(o[2]) + '"' : '') + (String(o[0]) === String(v) ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
       }).join('') + '</select>';
     } else if (f.type === 'checkbox') {
       ctl = '<input type="checkbox" id="' + id + '" data-key="' + f.key + '"' + (v ? ' checked' : '') + '>';
