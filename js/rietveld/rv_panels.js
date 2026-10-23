@@ -544,7 +544,8 @@ RV.panels = (function () {
   }
   function syncFitMode() {
     var canGlobal = S.sel.size >= 2;
-    if (!canGlobal && St.load('fitmode') === 'global') St.store('fitmode','single');
+    // Selection controls whether a global fit is available; rendering must
+    // not overwrite the saved method preference while a project is loading.
     var g = canGlobal && fitMode() === 'global';
     document.querySelectorAll('[data-fitmode]').forEach(function (b) { b.setAttribute('aria-pressed', String((b.getAttribute('data-fitmode') === 'global') === g)); ui.able(b,S.busy ? 'Calculation running.' : b.getAttribute('data-fitmode') === 'global' && !canGlobal ? 'Select at least two datasets for a global fit.' : ''); });
     var button = $('#btn-fit');

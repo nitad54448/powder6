@@ -1,0 +1,21 @@
+{
+  "name": "@spglib/moyo-wasm",
+  "type": "module",
+  "description": "WebAssembly bindings for moyo crystal symmetry analysis",
+  "version": "0.21.0",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/spglib/moyo"
+  },
+  "files": [
+    "moyo_wasm_bg.wasm",
+    "moyo_wasm.js",
+    "moyo_wasm.d.ts"
+  ],
+  "main": "moyo_wasm.js",
+  "types": "moyo_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

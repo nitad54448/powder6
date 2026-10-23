@@ -10,7 +10,7 @@ if(!browser)throw new Error('Pass a Chromium executable path.');
 const server=http.createServer((req,res)=>{
   const filename=path.resolve(root,'.'+decodeURIComponent(req.url.split('?')[0]));
   if(!filename.startsWith(root+path.sep)){res.writeHead(403);res.end();return;}
-  const mime={'.js':'text/javascript','.html':'text/html','.css':'text/css','.json':'application/json','.svg':'image/svg+xml','.wgsl':'text/plain'}[path.extname(filename)] || 'application/octet-stream';
+  const mime={'.js':'text/javascript','.html':'text/html','.css':'text/css','.json':'application/json','.svg':'image/svg+xml','.wgsl':'text/plain','.wasm':'application/wasm'}[path.extname(filename)] || 'application/octet-stream';
   fs.readFile(filename,(e,data)=>{res.writeHead(e?404:200,{'Content-Type':mime});res.end(e?'not found':data);});
 });
 let proc,ws,dir;

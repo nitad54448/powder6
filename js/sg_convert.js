@@ -542,7 +542,41 @@
     return out;
   }
 
-  var api = { det3: det3, findSymmetry: findSymmetry, opXyz: opXyz, inv3: inv3, metric: metric, cellFromMetric: cellFromMetric, transformCell: transformCell, parseBasis: parseBasis, parseShift: parseShift,
+  // Pinned, locally hosted Moyo 0.21.0 (MIT). No structure data leaves the browser.
+  var wasmModule=null,wasmLoading=null;
+  async function loadWasm(){
+    if(!wasmLoading)wasmLoading=import('../lib/moyo/moyo_wasm.js').then(async function(m){await m.default();wasmModule=m;return m;}).catch(function(e){wasmLoading=null;throw e;});
+    return wasmLoading;
+  }
+  function findSymmetryWasm(atoms,ops,cell,groups,opts){
+    if(!wasmModule)throw new Error('The Moyo symmetry engine is not loaded.');
+    opts=opts || {};var G=metric(cell),pts=expandFull(atoms,ops,G),speciesIds=Object.create(null),bySpecies=Object.create(null),next=1;
+    if(!pts.length)throw new Error('Symmetry analysis needs atomic positions.');
+    pts.forEach(function(p){(bySpecies[p.s] || (bySpecies[p.s]=[])).push(p);});
+    var r=Math.PI/180,cg=Math.cos(cell.gamma*r),sg=Math.sin(cell.gamma*r),cb=Math.cos(cell.beta*r),ca=Math.cos(cell.alpha*r);
+    var cy=cell.c*(ca-cb*cg)/sg;
+    var basis=[cell.a,0,0,cell.b*cg,cell.b*sg,0,cell.c*cb,cy,Math.sqrt(Math.max(0,cell.c*cell.c*(1-cb*cb)-cy*cy))];
+    var result=wasmModule.analyze_cell(JSON.stringify({lattice:{basis:basis},positions:pts.map(function(p){return p.x;}),numbers:pts.map(function(p){return speciesIds[p.s] || (speciesIds[p.s]=next++);})}),opts.tol || 0.2,'Standard');
+    var hall=wasmModule.hall_symbol_entry(result.hall_number).hall_symbol;
+    var g=(groups || []).filter(function(g){return g.number===result.number && g.hall===hall;})[0];
+    // Resolve the exact standard setting, including the origin choice selected by Moyo.
+    if(!g && root.RV && RV.state)g=RV.state.resolveSG(result.number,hall);
+    if(!g)throw new Error('Moyo setting '+hall+' is absent from the space-group database.');
+    var P=transpose(result.std_linear),p=result.std_origin_shift,cc=transformCell(cell,P);
+    var normalized=opts.normalise?opts.normalise(cc,g):cc;
+    var lengthMisfit=Math.max.apply(null,['a','b','c'].map(function(k){return Math.abs(normalized[k]-cc[k])/cc[k];}));
+    var angleMisfit=Math.max.apply(null,['alpha','beta','gamma'].map(function(k){return Math.abs(normalized[k]-cc[k]);}));
+    var misfit=Math.max(lengthMisfit,angleMisfit/90);
+    if(lengthMisfit>(opts.lenTol || .01)+1e-9 || angleMisfit>(opts.angTol || 1)+1e-9)throw new Error('The symmetry requires a larger cell tolerance.');
+    var found=result.operations.map(function(o){
+      var op={r:transpose(o.rotation),t:o.translation};op.xyz=opXyz(op);
+      op.dev=covers(bySpecies,pts,G,function(x){return apply(op,x);},Infinity);
+      return op;
+    });
+    return {points:pts.length,latticePoints:found.filter(function(o){return isIdentityRot(o.r);}).length,ops:found,group:g,P:P,p:p,misfit:misfit,cell:cc,latticeSystem:g.system,engine:'Moyo 0.21.0'};
+  }
+
+  var api = { loadWasm:loadWasm, findSymmetryWasm:findSymmetryWasm, det3: det3, findSymmetry: findSymmetry, opXyz: opXyz, inv3: inv3, metric: metric, cellFromMetric: cellFromMetric, transformCell: transformCell, parseBasis: parseBasis, parseShift: parseShift,
               formatBasis: formatBasis, formatShift: formatShift, isIdentity: isIdentity, opToNew: opToNew, opToOld: opToOld, relation: relation,
               findTransforms: findTransforms, metricMisfit: metricMisfit, convertStructure: convertStructure, derive: derive, hklToNew: hklToNew, IDENTITY: I3.slice() };
   root.SGConvert = api;

@@ -1301,6 +1301,7 @@ function classifyWeakOrbits(model, fraction, grouping) {
 //  reference implementation, not a simplified stand-in.
 // ===========================================================================
 function runChargeFlippingCPU(job) {
+    postMessage({type:'cf-status',message:'Calculating on the CPU…'});
     const N = job.gridSize;
     const N3 = N * N * N;
     const maxIter = job.maxIterations;
@@ -1568,9 +1569,10 @@ function compareCFMaps(mapA,mapB,N) {
     }
     return {correlation:Math.max(0,Math.min(1,best/norm)),hand:hand,shift:[index%N,Math.floor(index/N)%N,Math.floor(index/(N*N))].map(function(v){return v/N;})};
 }
+let cfGPUFailure=null;
 async function runChargeFlipping(job) {
     const wantGPU = job.backend !== 'cpu';
-    if (wantGPU && typeof runChargeFlippingGPU === 'function') {
+    if (wantGPU && !cfGPUFailure && typeof runChargeFlippingGPU === 'function') {
         try {
             const out = await runChargeFlippingGPU(job);
             if (out && out.__noGPU) {
@@ -1579,6 +1581,9 @@ async function runChargeFlipping(job) {
                 return out;
             }
         } catch (gpuErr) {
+            // Each search reuses this worker for all random starts. A broken
+            // shader/device must not repeat the same timeout at every start.
+            cfGPUFailure=(gpuErr && gpuErr.message) || String(gpuErr);
             console.warn('GPU charge flipping failed, falling back to CPU:', gpuErr);
             postMessage({ type: 'cf-info', message: 'GPU path failed; using CPU. (' + ((gpuErr && gpuErr.message) || gpuErr) + ')' });
         }
@@ -1654,14 +1659,23 @@ globalThis.onunhandledrejection = function (ev) {
 // ===========================================================================
 
 let _gpuDevicePromise = null;
+async function cfWaitForGPU(promise,what,timeout=15000){
+    let timer;
+    try{
+        return await Promise.race([promise,new Promise((_,reject)=>{
+            timer=setTimeout(()=>reject(new Error('Timed out '+what+'. Using CPU charge flipping.')),timeout);
+        })]);
+    }finally{clearTimeout(timer);}
+}
 async function cfAcquireGPU() {
     if (_gpuDevicePromise) return _gpuDevicePromise;
     _gpuDevicePromise = (async () => {
         if (typeof navigator === 'undefined' || !navigator.gpu) return null;
         try {
-            const adapter = await navigator.gpu.requestAdapter();
+            postMessage({type:'cf-status',message:'Preparing the GPU…'});
+            const adapter = await cfWaitForGPU(navigator.gpu.requestAdapter(),'requesting a GPU adapter');
             if (!adapter) return null;
-            const device = await adapter.requestDevice();
+            const device = await cfWaitForGPU(adapter.requestDevice(),'requesting a GPU device');
             // Record the loss so a RUNNING loop can see it. Clearing the
             // cache is not enough: when the driver resets the device mid-run
             // (a TDR, which a long 128^3 job can provoke) every pending
@@ -1678,7 +1692,7 @@ async function cfAcquireGPU() {
             return device;
         } catch (e) {
             console.warn('WebGPU unavailable:', e);
-            return null;
+            throw e;
         }
     })();
     return _gpuDevicePromise;
@@ -1734,9 +1748,10 @@ let _cfShaderSrc = null;
 async function cfLoadShader() {
     if (_cfShaderSrc) return _cfShaderSrc;
 
-    const resp = await fetch('../charge_flipping.wgsl', {
+    postMessage({type:'cf-status',message:'Loading the charge-flipping shader…'});
+    const resp = await cfWaitForGPU(fetch('../charge_flipping.wgsl', {
         cache: 'reload'
-    });
+    }),'loading the charge-flipping shader');
 
     if (!resp.ok) {
         throw new Error(
@@ -1745,7 +1760,7 @@ async function cfLoadShader() {
         );
     }
 
-    const source = await resp.text();
+    const source = await cfWaitForGPU(resp.text(),'reading the charge-flipping shader');
     const requiredAbi = 'CF_KERNEL_ABI: orbit-weak-v1';
 
     if (!source.includes(requiredAbi)) {
@@ -1813,9 +1828,10 @@ async function cfGetPipelines(device) {
         bindGroupLayouts: [layout0, layoutEmpty, layoutBest]
     });
 
-    const mk = (entryPoint, pipelineLayout) => device.createComputePipeline({
+    postMessage({type:'cf-status',message:'Compiling the GPU calculation…'});
+    const mk = (entryPoint, pipelineLayout) => cfWaitForGPU(device.createComputePipelineAsync({
         layout: pipelineLayout, compute: { module, entryPoint }
-    });
+    }),'compiling the charge-flipping shader',30000);
 
     const pipelines = {
         layout0, layout1, layoutBest, layoutEmpty,
@@ -1835,6 +1851,9 @@ async function cfGetPipelines(device) {
         constrain:        mk('constrain', plSym),
         zero_absent:      mk('zero_absent', plSym)
     };
+    const entries=Object.keys(pipelines).filter(k=>!k.startsWith('layout'));
+    const compiled=await Promise.all(entries.map(k=>pipelines[k]));
+    entries.forEach((k,i)=>{pipelines[k]=compiled[i];});
 
     device.__cfPipelines = pipelines;
     return pipelines;
@@ -2319,6 +2338,7 @@ for (let g = 0; g < model.nOrbits; g++) {
     const nowMs = () => (typeof performance !== 'undefined' && performance.now)
         ? performance.now() : Date.now();
 
+    postMessage({type:'cf-status',message:'Calculating the first GPU cycle…'});
     for (let iter = 0; iter < maxIter; iter++) {
         // The first pass runs inside an error scope. Anything the driver
         // rejects -- an oversized dispatch, a buffer that is too big for this
@@ -2368,7 +2388,7 @@ for (let g = 0; g < model.nOrbits; g++) {
         device.queue.submit([enc.finish()]);
 
         if (iter === 0) {
-            const gpuErr = await device.popErrorScope();
+            const gpuErr = await cfWaitForGPU(device.popErrorScope(),'checking the first GPU cycle',30000);
             if (gpuErr) throw new Error('WebGPU rejected the charge-flipping pass: ' + gpuErr.message);
         }
 

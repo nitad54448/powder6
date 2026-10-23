@@ -929,3 +929,67 @@ test('result inspection preserves the selected phase and restores working state 
   assert.equal(a.S.phases,phases);assert.equal(a.S.sel,selection);
   assert.equal(a.ds.p.bkg0,91);assert.equal(h.viewing(),false);
 });
+
+
+test('projects replace acquisition, method settings and defaults without inheriting the previous session', async () => {
+  const a=model();a.state.setInstrument([a.ds],{lambda1:.71073,lambda2:0,ratio:0,radiation:'neutron',pol:'none',tthMin:20,tthMax:60});
+  a.state.store('fitmode','global');a.S.phaseSel='p2';a.S.presetDefaults={simple_pvoigt:{GW:.2}};
+  const saved=await a.context.RV.project.pack();
+  a.state.setInstrument([a.ds],{lambda1:1.788965,lambda2:1.79285,ratio:.5});
+  a.state.store('fitmode','single');a.S.presetDefaults={stale:{GW:99}};a.S.nextId=800;
+  a.state.commitProject(a.state.prepareProject(await a.context.RV.project.unpack(saved)));
+  const d=a.S.datasets[0];assert.equal(d.inst.lambda1,.71073);assert.equal(d.inst.lambda2,0);assert.equal(d.inst.ratio,0);assert.equal(d.inst.radiation,'neutron');
+  assert.equal(a.state.problemFor([d]).datasets[0].lambda1,.71073);assert.equal(a.state.load('fitmode'),'global');assert.equal(a.S.phaseSel,'p2');assert.deepEqual(plain(a.S.presetDefaults),{simple_pvoigt:{GW:.2}});
+  const legacy=JSON.parse(a.state.projectJSON([]));delete legacy.fitmode;delete legacy.presetDefaults;
+  a.state.commitProject(a.state.prepareProject(legacy));assert.equal(a.state.load('fitmode'),'single');assert.deepEqual(plain(a.S.presetDefaults),{});
+});
+
+test('Chebyshev backgrounds recover signed slope and curvature in all three methods, with exclusions', () => {
+  for(const method of ['rietveld','lebail','wppf']){
+    const a=model();a.state.setCalculation(method);a.state.setInstrument([a.ds],{bkgN:6,excl:[[30,35]]});
+    // An independent polynomial oracle, rather than the model's own basis.
+    const coefficients=[100,-12,8,3,-2,1];const lo=a.ds.tth[0],hi=a.ds.tth[a.ds.tth.length-1];
+    const peaks=a.ds.y;
+    a.ds.y=Float64Array.from(a.ds.tth,(t,i)=>{const x=2*(t-lo)/(hi-lo)-1;return peaks[i]-17+100-12*x+8*(2*x*x-1)+3*(4*x**3-3*x)-2*(8*x**4-8*x*x+1)+(16*x**5-20*x**3+5*x);});
+    Object.keys(a.ds.fit).forEach(k=>a.ds.fit[k]=/^bkg/.test(k));
+    const result=a.core.refine(a.state.jobFor(a.ds));assert.equal(result.ok,true,result.msg);
+    coefficients.forEach((c,k)=>assert.ok(Math.abs(result.values[0]['bkg'+k]-c)<1e-3,method+' coefficient '+k));
+  }
+});
+
+test('returning to an unchanged method reuses its calculated plot, but an acquisition edit invalidates it',()=>{
+  const a=model(),plot=a.state.calcFor(a.ds);a.state.setCalculation('wppf');a.state.setCalculation('rietveld');assert.equal(a.state.calcFor(a.ds),plot);
+  a.state.setCalculation('wppf');a.state.setInstrument([a.ds],{lambda1:.8,lambda2:0,ratio:0});a.state.setCalculation('rietveld');assert.notEqual(a.state.calcFor(a.ds),plot);
+});
+
+test('changing the fitted range preserves the Chebyshev curve, including inactive method backgrounds',()=>{
+  const a=model();a.state.setInstrument([a.ds],{bkgN:6});
+  [100,-12,8,3,-2,1].forEach((c,k)=>a.ds.p['bkg'+k]=c);
+  const original=a.state.calcFor(a.ds),expected=new Map(Array.from(original.tth,(t,i)=>[t,original.bkg[i]]));
+  a.state.setCalculation('wppf');
+  a.state.setInstrument([a.ds],{tthMin:22.3,tthMax:62.9});
+  for(const method of ['wppf','rietveld']){
+    a.state.setCalculation(method);const plot=a.state.calcFor(a.ds);
+    plot.tth.forEach((t,i)=>assert.ok(Math.abs(plot.bkg[i]-expected.get(t))<1e-8,method+' changed background at '+t));
+  }
+});
+
+test('repeated inspection of a saved fit reuses its pattern without borrowing the working model',()=>{
+  const a=fitted(),h=a.context.RV.fitHistory,r=h.complete(h.begin([a.ds],false),[a.ds],false);
+  const first=h.withResult(r,()=>a.state.calcFor(a.S.datasets[0]));
+  a.state.setInstrument([a.ds],{lambda1:.8,lambda2:0,ratio:0});
+  const second=h.withResult(r,()=>a.state.calcFor(a.S.datasets[0]));
+  assert.equal(first,second);assert.notEqual(first,a.state.calcFor(a.ds));
+  h.importData(h.exportData(false));
+  const reloaded=h.withResult(h.find(r.id),()=>a.state.calcFor(a.S.datasets[0]));
+  assert.notEqual(reloaded,first);
+});
+
+test('method plot caches notice edits to inactive parameters and replacement observations',()=>{
+  const a=model(),original=a.state.calcFor(a.ds);a.state.setCalculation('wppf');
+  a.ds.calculations.rietveld.p.bkg0+=4;
+  a.state.setCalculation('rietveld');const changed=a.state.calcFor(a.ds);
+  assert.notEqual(changed,original);assert.ok(Math.abs(changed.bkg[0]-original.bkg[0]-4)<1e-9);
+  a.state.setCalculation('wppf');a.ds.dataKey='replacement';a.ds.y=Float64Array.from(a.ds.y,y=>y+10);
+  a.state.setCalculation('rietveld');assert.notEqual(a.state.calcFor(a.ds),changed);
+});

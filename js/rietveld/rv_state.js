@@ -569,6 +569,36 @@ RV.state = (function () {
     S.datasets.splice(at < 0 ? S.datasets.length : at, 0, d);
     RV.bus.emit('datasets');
   }
+  function backgroundRange(ds, inst) {
+    var first=-1,last=-1;
+    for(var i=0;i<ds.tth.length;i++)if(ds.tth[i]>=inst.tthMin && ds.tth[i]<=inst.tthMax && Number.isFinite(ds.y[i])){if(first<0)first=i;last=i;}
+    return first>=0 && last>first ? [ds.tth[first],ds.tth[last]] : null;
+  }
+  // The Chebyshev coordinate is defined by the endpoints of the fitted data.
+  // Re-express the same polynomial when those endpoints change, including a
+  // background restored from another method's parameter bank.
+  function rebaseBackground(ds, from, to) {
+    if(!from || from.bkgType!=='cheb' || to.bkgType!=='cheb')return;
+    var oldRange=backgroundRange(ds,from),newRange=backgroundRange(ds,to),n=Math.min(from.bkgN,to.bkgN);
+    if(!oldRange || !newRange || !n || oldRange[0]===newRange[0] && oldRange[1]===newRange[1])return;
+    var scale=(newRange[1]-newRange[0])/(oldRange[1]-oldRange[0]);
+    var offset=(newRange[0]+newRange[1]-oldRange[0]-oldRange[1])/(oldRange[1]-oldRange[0]);
+    var prev=new Float64Array(n),term=new Float64Array(n),out=new Float64Array(n);
+    term[0]=1;
+    for(var k=0;k<n;k++){
+      var value=ds.p['bkg'+k] || 0;
+      for(var j=0;j<n;j++)out[j]+=value*term[j];
+      if(k===n-1)break;
+      var next=new Float64Array(n),factor=k===0?1:2;
+      for(j=0;j<n;j++){
+        next[j]+=factor*offset*term[j]-(k===0?0:prev[j]);
+        if(j===0){if(n>1)next[1]+=factor*scale*term[j];}
+        else {next[j-1]+=.5*factor*scale*term[j];if(j+1<n)next[j+1]+=.5*factor*scale*term[j];}
+      }
+      prev=term;term=next;
+    }
+    for(k=0;k<n;k++)ds.p['bkg'+k]=out[k];
+  }
   // instrument, range and background of some datasets; another kind or number of background terms changes their names.
   // The values of spline anchors that stay where they were are kept; a new anchor starts at the data.
   function setInstrument(list, inst) {
@@ -577,6 +607,7 @@ RV.state = (function () {
       oldX.forEach(function (x, k) { if (own(ds.p, 'bga' + k)) oldVals[x] = [ds.p['bga' + k], ds.fit['bga' + k]]; });
       ds.inst = cleanInst(Object.assign({}, old, inst));
       if (!(ds.inst.tthMin < ds.inst.tthMax)) { ds.inst.tthMin = old.tthMin; ds.inst.tthMax = old.tthMax; }
+      rebaseBackground(ds,old,ds.inst);
       if (ds.inst.bkgType === 'spline' && ds.inst.bkgX.length < 2) ds.inst.bkgX = autoAnchors(ds, S.settings.nAnchors);
       var sameX = ds.inst.bkgX.length === oldX.length && ds.inst.bkgX.every(function (x, k) { return x === oldX[k]; });
       if (ds.inst.bkgN !== old.bkgN || ds.inst.bkgType !== old.bkgType || !sameX) {
@@ -1184,7 +1215,12 @@ RV.state = (function () {
 
   // A calculation owns numerical values, flags, uncertainties, results and background.
   // Observations, phase definitions and their dataset assignments belong to the project.
-  function cloneCalculation(o) { return o == null ? o : JSON.parse(JSON.stringify(o, function (k, v) { return ArrayBuffer.isView(v) ? Array.from(v) : v; })); }
+  function cloneCalculation(o) {
+    if (o == null || typeof o !== 'object') return o;
+    if (ArrayBuffer.isView(o)) return o.slice();
+    if (Array.isArray(o)) return o.map(cloneCalculation);
+    var out={}; Object.keys(o).forEach(function(k){out[k]=cloneCalculation(o[k]);}); return out;
+  }
   function cleanCalculations(raw) {
     var out = {};
     C.METHODS.forEach(function (m) {
@@ -1199,7 +1235,8 @@ RV.state = (function () {
     return out;
   }
   function calculationSignature(ds) {
-    return JSON.stringify({ weight: S.settings.weight, inst: ds.inst, phases: phasesIn(ds).map(function (p) {
+    return JSON.stringify({ dataKey:ds.dataKey, weight:S.settings.weight, inst:ds.inst, disabledPhases:S.disabledPhases, parameterLinks:S.parameterLinks,
+      linkValues:S.parameterLinks.map(function(l){var source=byId(l.source.datasetId);return source && source.p[l.source.name];}), phases: phasesIn(ds).map(function (p) {
       var signature=[p.key, p.sg.hall, p.sg.symbol, p.profileType, p.separatedProfile === true, p.broadening, p.poDir, p.atoms, p.method];
       if(p.method==='rietveld' && p.constraints && p.constraints.length)signature.push(p.constraints);return signature;
     }) });
@@ -1212,6 +1249,10 @@ RV.state = (function () {
       d.calculations = d.calculations || {};
       d.calculations[m] = { p: Object.assign({}, d.p), fit: Object.assign({}, d.fit), esd: Object.assign({}, d.esd),
         ints: cloneCalculation(d.ints), stats: cloneCalculation(d.stats), signature: calculationSignature(d), inst: instCopy(d.inst), apart: Object.assign({}, d.apart) };
+      // A plot is immutable after evaluation. Retain it in memory only; project
+      // files and undo copies do not need another copy of all its arrays.
+      Object.defineProperty(d.calculations[m],'plot',{value:d.calc,configurable:true});
+      Object.defineProperty(d.calculations[m],'plotValues',{value:JSON.stringify(d.p),configurable:true});
     });
   }
   function setCalculation(m) {
@@ -1242,12 +1283,20 @@ RV.state = (function () {
         // calculation restores its background model, not an old acquisition.
         if (b.inst) ['bkgType', 'bkgN', 'bkgX'].forEach(function (n) { d.inst[n] = cloneCalculation(b.inst[n]); });
         d.p = Object.assign({}, b.p); d.fit = Object.assign({}, b.fit); d.mem = {};
+        rebaseBackground(d,b.inst,d.inst);
         d.apart = Object.assign({}, b.apart);
-        var valid = b.signature === calculationSignature(d);
-        d.esd = valid ? Object.assign({}, b.esd) : {}; d.stats = valid ? cloneCalculation(b.stats) : null;
-      } else { d.esd = {}; d.stats = null; }
-      remap(d); invalidate(d); d.ints = b && b.signature === calculationSignature(d) ? cloneCalculation(b.ints) : null;
+      }
+      d.esd={};d.stats=null;d.ints=null;
+      remap(d);invalidate(d);
       if (!b && !d.sim) newR.forEach(function (k) { if (d.phases.indexOf(k) >= 0) estimateScales(d, k); });
+    });
+    // A link may read another dataset: validate caches only once all method
+    // values are restored. Calibration imports can also edit inactive banks.
+    S.datasets.forEach(function(d){
+      var b=d.calculations && d.calculations[m];
+      if(!b || b.signature!==calculationSignature(d))return;
+      d.esd=Object.assign({},b.esd);d.stats=cloneCalculation(b.stats);d.ints=cloneCalculation(b.ints);
+      if(b.plot && b.plotValues===JSON.stringify(d.p))d.calc=b.plot;
     });
     RV.bus.emit('fitmode'); RV.bus.emit('settings', 'maxIter'); RV.bus.emit('settings', '*'); RV.bus.emit('calculation', m); RV.bus.emit('phases'); RV.bus.emit('params', {}); RV.bus.emit('stats'); RV.bus.emit('shared', {});
     return true;
@@ -1266,7 +1315,7 @@ RV.state = (function () {
       format: PROJECT, version: 3, parameterUnits: {sampleSize:'um'}, program: 'Powder 6, ' + RV.version, saved: new Date().toISOString(),
       datasetGroups:S.datasetGroups, disabledPhases:S.disabledPhases, parameterLinks:S.parameterLinks, selection:Array.from(S.sel), focus:S.focus,
       fitHistory:!opts.noHistory && RV.fitHistory ? RV.fitHistory.exportData(!!opts.metadataOnly) : null,
-      calculation: S.calculation, calculationOptions: S.calculationOptions, settings: S.settings, shared: S.shared, limits: lim,
+      calculation: S.calculation, calculationOptions: S.calculationOptions, fitmode:load('fitmode') || 'single', phaseSelection:S.phaseSel, presetDefaults:S.presetDefaults, settings: S.settings, shared: S.shared, limits: lim,
       phases: S.phases.map(function (ph) {
         return { key: ph.key, color: ph.color || null, name: ph.name, method: ph.method, number: ph.sg.number, symbol: ph.sg.symbol, hall: ph.sg.hall, profileType: ph.profileType, separatedProfile: ph.separatedProfile === true, broadening: RVCore.broadeningConfig(ph.broadening), poDir: ph.poDir,
                  constraints:JSON.parse(JSON.stringify(ph.constraints || [])), provenance:ph.provenance || null, atoms: ph.atoms.map(function (a) { return { label: a.label, type: a.type }; }), v: mapOut(ph.v), fit: ph.fit };
@@ -1349,17 +1398,24 @@ RV.state = (function () {
     if(doc.parameterLinks!=null && (!Array.isArray(doc.parameterLinks) || doc.parameterLinks.some(function(l){return !l || !l.source || !l.target || !Number.isInteger(l.source.datasetId) || !Number.isInteger(l.target.datasetId) || typeof l.source.name!=='string' || typeof l.target.name!=='string' || !Number.isFinite(l.factor) || l.factor===0 || !Number.isFinite(l.offset || 0);})))bad('parameter links');
     var log = (Array.isArray(doc.log) ? doc.log : []).filter(function (e) { return isObj(e) && typeof e.msg === 'string' && typeof e.t === 'string'; })
       .slice(-5000).map(function (e) { return { t: e.t, kind: KINDS.indexOf(e.kind) >= 0 ? e.kind : 'info', msg: e.msg.slice(0, 2000) }; });
-    return { calculation: C.METHODS.indexOf(doc.calculation) >= 0 ? doc.calculation : (phases[0] ? phases[0].method : 'lebail'), calculationOptions: isObj(doc.calculationOptions) ? doc.calculationOptions : {}, settings: cleanSettings(doc.settings), shared: isObj(doc.shared) ? doc.shared : {}, limits: limits, phases: phases, raws: raws, log: log, datasetGroups:doc.datasetGroups || [], disabledPhases:doc.disabledPhases || [],  parameterLinks:doc.parameterLinks || [],selection:doc.selection,focus:doc.focus,fitHistory:RV.fitHistory?RV.fitHistory.validate(doc.fitHistory,raws.map(function(r){return r.dataKey;}).filter(Boolean)):null };
+    return { fitmode:doc.fitmode, phaseSelection:doc.phaseSelection, presetDefaults:isObj(doc.presetDefaults)?doc.presetDefaults:{}, calculation: C.METHODS.indexOf(doc.calculation) >= 0 ? doc.calculation : (phases[0] ? phases[0].method : 'lebail'), calculationOptions: isObj(doc.calculationOptions) ? doc.calculationOptions : {}, settings: cleanSettings(doc.settings), shared: isObj(doc.shared) ? doc.shared : {}, limits: limits, phases: phases, raws: raws, log: log, datasetGroups:doc.datasetGroups || [], disabledPhases:doc.disabledPhases || [],  parameterLinks:doc.parameterLinks || [],selection:doc.selection,focus:doc.focus,fitHistory:RV.fitHistory?RV.fitHistory.validate(doc.fitHistory,raws.map(function(r){return r.dataKey;}).filter(Boolean)):null };
   }
   function commitProject(pj) {
+    if(RV.solve && RV.solve.restoreArchive)RV.solve.restoreArchive(null,{silent:true});
+    S.nextId=1; S.anchor=null; S.presetDefaults=cloneCalculation(pj.presetDefaults || {});
+    store('fitmode',pj.fitmode==='global'?'global':'single');
     S.calculation = pj.calculation; S.calculationOptions = pj.calculationOptions;
     S.settings = pj.settings; store('settings', S.settings);
     S.phases = pj.phases; S.phases.forEach(function (ph) { ph.method = S.calculation; }); S.shared = Object.assign({}, pj.shared); S.limits = pj.limits;
     S.nextPhase = 1 + S.phases.reduce(function (m, p) { return Math.max(m, +p.key.slice(1)); }, 0);
-    S.phaseSel = S.phases.length ? S.phases[0].key : null;
+    S.phaseSel = S.phases.some(function(p){return p.key===pj.phaseSelection;}) ? pj.phaseSelection : S.phases.length ? S.phases[0].key : null;
     S.datasets = []; S.sel.clear(); S.focus = null; S.version++;
     S.datasets = pj.raws.map(function(r){var d=makeDataset(r);if(Number.isInteger(r.savedId) && r.savedId>0){d.id=r.savedId;S.nextId=Math.max(S.nextId,d.id+1);}return d;});
     S.datasetGroups=pj.datasetGroups;S.disabledPhases=pj.disabledPhases || [];S.parameterLinks=pj.parameterLinks;
+    // Populate the selection before notifying views. They must never observe
+    // new instruments with the previous project's dataset selection.
+    var selection=Array.isArray(pj.selection)?pj.selection.filter(function(id){return !!byId(id);}):S.datasets.length?[S.datasets[0].id]:[];
+    S.sel=new Set(selection);S.anchor=selection[0] || null;S.focus=S.sel.has(pj.focus)?pj.focus:null;
     if(RV.fitHistory)RV.fitHistory.importData(pj.fitHistory);
     // Dataset IDs are assigned anew on import. Reconnect the complete fitted
     // sets in active results and every saved calculation bank.
@@ -1370,9 +1426,8 @@ RV.state = (function () {
       st.globalSummary = Object.assign({},st.globalSummary,{datasetIds:st.globalSummary.datasetIds.map(function(id){return ids[id] == null ? null : ids[id];})});
     }
     S.datasets.forEach(function(d){reconnect(d.stats);Object.keys(d.calculations || {}).forEach(function(m){reconnect(d.calculations[m].stats);});});
-    RV.bus.emit('settings', '*'); RV.bus.emit('phases'); RV.bus.emit('phaseSel'); RV.bus.emit('datasets');
-    selectIds(Array.isArray(pj.selection)?pj.selection.filter(function(id){return !!byId(id);}):S.datasets.length ? [S.datasets[0].id] : []);
-    if(pj.focus && S.sel.has(pj.focus))setFocus(pj.focus);
+    RV.bus.emit('settings', '*'); RV.bus.emit('calculation',S.calculation); RV.bus.emit('fitmode'); RV.bus.emit('phases'); RV.bus.emit('phaseSel'); RV.bus.emit('datasets');
+    RV.bus.emit('selection');
   }
 
   function setBusy(b,label) { S.busy = !!b; S.busyLabel = b ? label || 'Calculation running…' : ''; RV.bus.emit('busy',!!b); }

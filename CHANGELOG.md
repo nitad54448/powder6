@@ -2,6 +2,23 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.10.3 — 23 October 2026
+
+1. ADDSYM’s Find higher symmetry… button uses the same blue primary style as Test the space groups. The dialog validates the submitted atomic source and tolerances before opening Convert…; pressing Enter before the delayed preview updated previously passed the old tolerance to conversion. Pending preview updates are cleared when the dialog closes.
+2. Browser checks now exercise the first button click with the local WASM engine still unloaded, immediate submission after changing tolerance, phase selection independent of the active phase, and refusal to convert an already symmetric Pnma phase. Detection and conversion remain verified for Pnma and five other representative space groups.
+
+## 2.10.2 — 23 October 2026
+
+1. Charge flipping reports GPU preparation, shader loading and compilation, and the first calculation cycle instead of displaying a fixed 0 % during startup. Adapter/device requests and shader loading have 15-second timeouts; pipeline compilation and first-cycle validation have 30-second timeouts, followed by CPU fallback. Compilation is asynchronous. A failed GPU is bypassed for the remaining random starts of that search. Tests exercise stalled adapters, devices, shader transfers and compilation, verify the CPU fallback against the same seeded calculation, and check the running panel’s startup/cycle progress and Stop action.
+2. The symmetry controls are visibly grouped under Commands → Structure → Space group: **Test · powder intensities** and **ADDSYM · atomic model**. Find higher symmetry… has moved out of the Phases toolbar into ADDSYM, with its own phase selector and no WPPF requirement. The Pnma dialog-to-conversion regression now uses this route.
+
+## 2.10.1 — 23 October 2026
+
+1. Find higher symmetry uses the locally bundled Moyo 0.21.0 WebAssembly engine (MIT license), including its standard-setting axes and origin shift. Atom mismatches are measured, and length and angle tolerances are checked independently. Browser regressions cover Pnma, Fm-3m, Fd-3m with an origin change, rhombohedral, hexagonal and monoclinic structures, and the full Pnma search-to-conversion workflow. Pmmm versus Pnma from powder intensities remains the systematic-absence test in Structure; a higher-symmetry search operates on the supplied atomic model.
+2. Project loading clears the previous structure-search and extraction caches, restores saved fit mode, selected phase, profile defaults and search settings, and populates the selection before refreshing views. Acquisition wavelengths remain dataset properties across method changes; older projects use clean defaults for missing fields. Refreshing fit controls no longer overwrites the saved global-fit preference.
+3. Chebyshev background coefficients are re-expressed when the fitted range changes, preserving the curve at the retained angles, including backgrounds restored from another method. Signed slope and curvature are checked against an independent polynomial with diffraction peaks and exclusions in Rietveld, Le Bail and WPPF.
+4. Method changes preserve cached plots of unchanged calculations. Repeated inspection of an immutable saved fit also reuses its evaluated patterns instead of solving its intensities again on each UI refresh; project loading clears these caches.
+
 ## 2.10.0 — 23 October 2026
 
 1. Phases → **Find higher symmetry…** looks for symmetry a structure has but its space group does not use, in the manner of ADDSYM in PLATON (after Le Page's MISSYM), and hands the result to Convert…. It works on the starting model or on the refined positions of any dataset holding the phase, with a distance tolerance for the atoms (0.2 Å by default) and a tolerance for the cell (1 % and 1°).

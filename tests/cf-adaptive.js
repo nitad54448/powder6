@@ -26,6 +26,17 @@
     change(q('#sv-cf-adaptive'),true);await frame();
     check(+q('#sv-cf-trials').value>=6 && q('#sv-cf-threshold').parentElement.hidden && q('#sv-cf-quality table tbody').rows.length===3,'Adaptive search preview missing');
     record('adaptive CF previews three settings and a bounded budget without overwriting manual choices');
+    const NativeWorker=w.Worker;let pendingWorker;
+    w.Worker=function(url,options){if(!String(url).includes('charge_flipping_worker'))return new NativeWorker(url,options);pendingWorker={postMessage(){},terminate(){}};return pendingWorker;};
+    q('#sv-cf-run').click();
+    check(S.busy && q('#busy-track').classList.contains('indet') && /Preparing charge flipping/.test(q('#busy-detail').textContent),'CF shows a false 0% while waiting for its worker');
+    pendingWorker.onmessage({data:{type:'cf-status',message:'Compiling the GPU calculation…'}});
+    check(q('#busy-track').classList.contains('indet') && /Compiling the GPU calculation/.test(q('#busy-detail').textContent),'GPU startup status is not visible in the running panel');
+    pendingWorker.onmessage({data:{type:'cf-progress',iter:3,total:12,R:.4,bestR:.4}});
+    check(!q('#busy-track').classList.contains('indet') && parseFloat(q('#busy-track i').style.width)>0 && /cycle 3\/12/.test(q('#busy-detail').textContent),'CF cycles did not update global progress');
+    RV.solve.stop();w.Worker=NativeWorker;
+    check(!S.busy && !RV.solve.state.cfRun,'CF cannot be stopped during startup');
+    record('CF reports preparation and compilation, advances global cycle progress and stops cleanly');
     const OriginalWorker=w.Worker,jobs=[];let stopOnCompare=false,failNext=false;
     w.Worker=function(url,options){const worker=new OriginalWorker(url,options);if(String(url).includes('charge_flipping_worker')){const post=worker.postMessage.bind(worker);worker.postMessage=function(job,transfer){if(job.type==='run-charge-flipping'){jobs.push(job);if(failNext){failNext=false;return post({type:'deliberately-invalid-test-message'});}}if(job.type==='compare-cf-maps' && stopOnCompare){stopOnCompare=false;setTimeout(()=>RV.solve.stop(),0);}return post(job,transfer);};}return worker;};restoreWorker=()=>{w.Worker=OriginalWorker;};
     const model=()=>JSON.stringify({phases:S.phases.map(RV.fitHistory.phaseDoc),datasets:S.datasets.map(d=>({id:d.id,p:d.p,fit:d.fit,inst:d.inst}))}),before=model(),raw=JSON.stringify(I.det);
@@ -35,7 +46,7 @@
     check(jobs.length===6 && jobs.every(j=>j.overlapFwhmFraction===.5 && j.weakGrouping==='cluster' && j.hklList.length===I.det.length),'Adaptive jobs changed the reflection set or grouping policy across starts');
     check(new Set(jobs.map(j=>j.seed)).size===2 && new Set(jobs.map(j=>j.thresholdSigma)).size===3,'Settings were not compared with repeated independent seeds');
     check(model()===before && JSON.stringify(I.det)===raw,'Adaptive CF changed the fitted model or measured intensities');
-    record('actual CF workers execute the previewed settings with paired seeds and unchanged observations',{backend:result.best.backend});
+    record('actual CF workers execute the previewed settings with paired seeds and unchanged observations',{backend:result.best.backend,bestR:result.best.bestR});
     check(result.search.trials.every(r=>Number.isFinite(r.mapCorrelation) && r.mapCorrelation>=0 && r.mapCorrelation<=1),'Map comparisons did not complete');
     RV.layout.structureResult('cf');await frame();check(q('#sv-cf-out').textContent.includes('other independent seeds') && q('#sv-cf-out table tbody').rows.length===6,'Trial diagnostics missing from the selected result');
     const saved=RV.fitHistory.list('wppf','cf').slice(-1)[0];check(saved.solution.search.trials.length===6 && !saved.solution.search.candidates,'Search metadata was lost or temporary candidate maps were archived');

@@ -7,7 +7,7 @@
  *  2. Space group: the test of Markvardsen, David, Johnson and Shankland (2001) over the settings of the Laue class
  *     (rv_sgtest.js); a row sets the space group of the phase.
  *  3. Charge flipping (Oszlányi and Sütő 2004) and the Wyckoff search of powder5, in their own workers
- *     (js/charge_flipping_worker.js, js/wyckoff_worker.js, unchanged), on the intensities with the French–Wilson
+ *     (js/charge_flipping_worker.js, js/wyckoff_worker.js), on the intensities with the French–Wilson
  *     correction of the weak ones (polarization.js), as powder5 prepared them.
  *  4. The sites found replace the atoms of the phase in every dataset; the phase can then be fitted by Rietveld.
  *  RV.solve = { init, render, running(), stop(), report() -> { lines, image } for the PDF, state (for tests) }
@@ -553,6 +553,8 @@ RV.solve = (function () {
       if (m.type === 'cf-progress') {
         var R = Number.isFinite(m.bestR) ? m.bestR : m.R;
         progress('cf', ((run.trial - 1) + m.iter / m.total) / o.trials, (o.trials > 1 ? 'start ' + run.trial + '/' + o.trials + ', ' : '') + 'cycle ' + m.iter + '/' + m.total + (Number.isFinite(R) ? ', R ' + R.toFixed(4) : ''));
+      } else if(m.type==='cf-status'){
+        progress('cf',-1,(o.trials>1?'start '+run.trial+'/'+o.trials+', ':'')+m.message);
       } else if (m.type === 'cf-info' || m.type === 'cf-wyckoff-start') {
         if (run.infos.indexOf(m.message) < 0) { run.infos.push(m.message); ui.log('Charge flipping: ' + m.message, 'info'); }
       } else if (m.type === 'cf-error') {
@@ -595,7 +597,7 @@ RV.solve = (function () {
            plural(o.trials, 'random start') + ' of ' + o.iterations + ' cycles, threshold ' + o.threshold + ' σ, symmetry ' + (I.symops ? o.symLambda : 'none') + '. ' + inp.note, 'info');
     if(search)ui.log('Adaptive CF: '+cfQualityText(search.quality)+' Seed '+run.seed+'. Three parameter settings; pairwise fitted-width overlap grouping.','info');
     St.setBusy(true,'Charge flipping…');
-    progress('cf', 0, 'starting…');
+    progress('cf', -1, 'Preparing charge flipping…');
     syncRun();
     try { trial(); } catch(e) { finishCf(e.message); }
   }
@@ -985,15 +987,15 @@ RV.solve = (function () {
     paintProgress(k);
   }
   function paintProgress(k) {
+    var s = progState[k];
+    if(s && SV[k+'Run'])ui.busyProgress(s.frac,(k==='cf'?'Charge flipping: ':'Wyckoff search: ')+s.label);
     var p = $('#sv-' + k + '-prog');
     if (!p) return;
-    var s = progState[k];
     p.hidden = !s;
     if (!s) return;
     p.classList.toggle('indet', s.frac < 0);
     p.querySelector('i').style.width = s.frac >= 0 ? (100 * Math.min(1, s.frac)).toFixed(1) + '%' : '';
     p.querySelector('span').textContent = s.label;
-    if (SV[k + 'Run']) ui.busyProgress(s.frac, (k === 'cf' ? 'Charge flipping: ' : 'Wyckoff search: ') + s.label);
   }
 
   // ---------------------------------------------------------------- rendering
@@ -1049,10 +1051,15 @@ RV.solve = (function () {
         '<p class="hint" id="sv-fit-status"></p><div class="sv-int" id="sv-int"></div>' +
       '</div>' +
       block('wppf-sgt', 'Space group',
+        block('sgt-test', 'Test · powder intensities',
         '<p class="hint">The probability of each set of systematic absences of the Laue class, from the WPPF intensities and their full correlation (Markvardsen, David, Johnson and Shankland 2001). For a complete test, fit in the space group of the Laue class with no absences (P2/m, Pmmm, P4/mmm, Pm-3m …): a reflection the WPPF fit did not contain was never measured.</p>' +
         '<p class="buttons sv-actions"><button type="button" class="primary" data-sv="sgt">Test the space groups</button>' +
           '<label class="sv-inline" for="sv-sgtn">Number of reflections</label><input id="sv-sgtn" type="number" min="4" step="1" class="num sv-short" data-opt="sgtN" inputmode="numeric" aria-describedby="sv-sgtn-note" title="Whole number of lowest-angle determined intensities to test"></p><p class="hint" id="sv-sgtn-note"></p>' +
-        '<div id="sv-sgt-out"></div>', true) +
+        '<div id="sv-sgt-out"></div>', true, null, 'sub') +
+        block('sgt-addsym', 'ADDSYM · atomic model',
+          '<p class="hint">Find symmetry present in the atomic positions, then preview conversion to the detected space group. This uses the starting model or a dataset’s Rietveld positions and does not require WPPF intensities.</p>' +
+          '<div class="form-grid sv-form">'+select('sv-sym-phase','Phase',St.currentPhase() && St.currentPhase().key,S.phases.map(function(p){return [p.key,p.name+' · '+St.sgText(p.sg)];}),'Choose a phase with atoms.','')+'</div>' +
+          '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-addsym" data-sv="find-symmetry" title="Find higher symmetry of the selected atomic model">Find higher symmetry…</button></p>',true,null,'sub'), true) +
       block('wppf-cf', 'Charge flipping',
           formulaRow('cf') +
           '<p class="hint">Charge flipping (Oszlányi and Sütő 2004) on the extracted intensities, in the worker of powder5: GPU where there is one. The peaks of the map, put on the origin of the space group and reduced to the asymmetric unit, become sites; the formula unit names them.</p>' +
@@ -1138,6 +1145,11 @@ RV.solve = (function () {
     ui.able(document.querySelector('#solve [data-sv="sgt"]'), S.busy?'Calculation running.':sgtCountIssue() || (!I || !I.pre || !I.pre.n?'The extraction holds no precision block.':''));
     ui.able($('#sv-cf-run'), S.busy?'Calculation running.':!I?none:cfOptions().error || '');
     ui.able($('#sv-wy-run'), !I ? none : !parseFormula(SV.opts.formula) ? 'Give the formula unit in Commands → Structure.' : '');
+    syncSymmetry();
+  }
+  function syncSymmetry(){
+    var select=$('#sv-sym-phase'),ph=select && St.phaseByKey(select.value);
+    ui.able($('#sv-addsym'),S.busy?'Calculation running.':!ph?'Select a phase.':!ph.atoms.length?'This phase has no atoms; ADDSYM needs an atomic model.':'');
   }
   function renderInt() {
     var el = $('#sv-int');
@@ -1375,6 +1387,7 @@ RV.solve = (function () {
       case 'extract': extract(); break;
       case 'to-wppf': { var ph = phase(); if (ph) RV.cmd.setMethod(ph, 'wppf'); break; }
       case 'sgt': runSgt(); break;
+      case 'find-symmetry': {var select=$('#sv-sym-phase'),ph=select && St.phaseByKey(select.value);if(ph && !S.busy)RV.phasesTab.findSymmetry(ph);break;}
       case 'density-reset': if(typeof Density3D!=='undefined')Density3D.resetView(); break;
       case 'density-map': saveDensityMap(); break;
       case 'density-png': { var cv=$('#sv-density-canvas');if(cv){var a=document.createElement('a');a.href=cv.toDataURL('image/png');a.download='cf_density_'+ui.fileStamp()+'.png';a.click();}break; }
@@ -1389,6 +1402,7 @@ RV.solve = (function () {
     }
   }
   function onChange(e) {
+    if(e.target.id==='sv-sym-phase'){syncSymmetry();return;}
     var resultKind=e.target.closest('#structure-result-cf')?'cf':e.target.closest('#structure-result-wy')?'wy':null;
     if(resultKind && solutionSelection[resultKind] && !inspectingSolution)return withSolution(resultKind,function(){onChange(e);});
     var t = e.target, k;
@@ -1482,8 +1496,22 @@ RV.solve = (function () {
     return { lines: L, image: image, densityImage:densityImage };
   }
   function labelled(list) { var n = {}; return list.map(function (s) { n[s.element] = (n[s.element] || 0) + 1; return Object.assign({ label: s.element + n[s.element] }, s); }); }
-  function archive(includeDensity){return JSON.parse(JSON.stringify({cf:SV.cf,wy:SV.wy,ints:SV.ints,opts:SV.opts,dsId:SV.dsId,phaseKey:SV.phaseKey},function(k,v){if(!includeDensity && k==='map' && (Array.isArray(v)||ArrayBuffer.isView(v)))return undefined;return ArrayBuffer.isView(v)?Array.from(v):v;}));}
-  function restoreArchive(value){if(!value){SV.cf=null;SV.wy=null;SV.ints=null;return;}['cf','wy','ints','opts','dsId','phaseKey'].forEach(function(k){if(value[k]!==undefined)SV[k]=value[k];});if(SV.opts.sgtAuto!==false || !Number.isSafeInteger(SV.opts.sgtN) || SV.opts.sgtN<4 || SV.opts.sgtN>C.MAX_PRECISION_REFLECTIONS){SV.opts.sgtN=0;SV.opts.sgtAuto=true;}if(SV.cf){if(SV.cf.best && SV.cf.best.map)SV.cf.best.map=Float32Array.from(SV.cf.best.map);if(SV.cf.structure && SV.cf.structure.map)SV.cf.structure.map=Float32Array.from(SV.cf.structure.map);}dirty=true;render();}
+  function archive(includeDensity){return JSON.parse(JSON.stringify({cf:SV.cf,wy:SV.wy,ints:SV.ints,sgt:SV.sgt,shown:SV.shown,opts:SV.opts,dsId:SV.dsId,phaseKey:SV.phaseKey},function(k,v){if(!includeDensity && k==='map' && (Array.isArray(v)||ArrayBuffer.isView(v)))return undefined;return ArrayBuffer.isView(v)?Array.from(v):v;}));}
+  function restoreArchive(value,options){
+    // Project boundaries must also clear caches keyed by IDs reused by the new project.
+    SV.extractions={};SV.sgt=null;SV.cf=null;SV.wy=null;SV.ints=null;
+    SV.dsId=null;SV.phaseKey=null;SV.shown=null;SV.opts=defaults();
+    solutionSelection={};solutionViews={};inspectingSolution=false;
+    value=value || {};
+    ['cf','wy','ints','dsId','phaseKey','shown','sgt'].forEach(function(k){if(value[k]!==undefined)SV[k]=value[k];});
+    var o=value.opts || {};
+    Object.keys(SV.opts).forEach(function(k){if(o[k]!==undefined)SV.opts[k]=k==='cf'||k==='wy'?Object.assign({},SV.opts[k],o[k]):o[k];});
+    if(SV.opts.sgtAuto!==false || !Number.isSafeInteger(SV.opts.sgtN) || SV.opts.sgtN<4 || SV.opts.sgtN>C.MAX_PRECISION_REFLECTIONS){SV.opts.sgtN=0;SV.opts.sgtAuto=true;}
+    var d=SV.ints && St.byId(SV.ints.dsId);
+    if(d && d.inst.lambda1===SV.ints.lambda)SV.extractions[d.id]={I:SV.ints,stats:d.stats};else SV.ints=null;
+    if(SV.cf){if(SV.cf.best && SV.cf.best.map)SV.cf.best.map=Float32Array.from(SV.cf.best.map);if(SV.cf.structure && SV.cf.structure.map)SV.cf.structure.map=Float32Array.from(SV.cf.structure.map);}
+    saveOpts();dirty=true;if(!(options && options.silent))render();
+  }
 
   // ---------------------------------------------------------------- init
   function refresh() {

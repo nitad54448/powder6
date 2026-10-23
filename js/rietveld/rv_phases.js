@@ -33,7 +33,6 @@ RV.phasesTab = (function () {
   function renderBar() {
     var bar = $('#phase-select'), cur = St.currentPhase();
     ui.able($('#ph-tab-atom'), cur ? '' : 'No phase yet.');
-    ui.able(document.querySelector('[data-act="find-symmetry"]'), cur && cur.atoms.length ? '' : 'Select a phase with atoms: the search looks at their positions.');
     var cb=document.querySelector('[data-atomic-constraints]');if(cb){ui.able(cb,cur && cur.atoms.length?'':'Select a phase with atoms.');cb.textContent='Atomic constraints…'+(cur && cur.constraints && cur.constraints.length?' ('+cur.constraints.length+')':'');}
     if (!bar) return;
     bar.innerHTML = S.phases.map(function (ph, i) {
@@ -291,7 +290,6 @@ RV.phasesTab = (function () {
     else if (a === 'rename-phase' && ph && !busy()) renamePhase(ph);
     else if (a === 'sg-browse' && ph && !busy()) openBrowser(ph);
     else if (a === 'sg-convert' && ph && !busy()) convertDialog(ph);
-    else if (a === 'find-symmetry' && ph && !busy()) findSymmetryDialog(ph);
     else if (a === 'preset-load' && ph && !busy()) {RV.app.showTab('datasets');RV.cmd.loadPreset();}
     else if (a === 'preset-save' && ph) RV.cmd.savePreset();
     else if (a === 'del-atom' && ph && !busy()) {
@@ -465,7 +463,7 @@ RV.phasesTab = (function () {
     var K = SGConvert, ds = f.source === 'start' ? null : St.byId(+f.source), tol = tolOverride || f.tol;
     var values = ds ? Object.assign({}, ds.p, St.atomicValues(ds)) : ph.v, cell = St.cellOf(ph, ds ? ds.p : ph.v) || St.cellOf(ph, ph.v), atoms = atomList(ph, values);
     var norm = function (c, g) { return normaliseCell(c, g.system, g.uniqueAxis); };
-    var r = K.findSymmetry(atoms, ph.ops, cell, groupsForSearch(), { tol: tol, lenTol: f.cellTol / 100, angTol: f.cellTol, normalise: norm });
+    var r = K.findSymmetryWasm(atoms, ph.ops, cell, groupsForSearch(), { tol: tol, lenTol: f.cellTol / 100, angTol: f.cellTol, normalise: norm });
     var out = { r: r, cell: cell, atoms: atoms, tol: tol };
     if (!r.group) return out;
     out.newCell = norm(r.cell, r.group);
@@ -508,7 +506,8 @@ RV.phasesTab = (function () {
   async function findSymmetryDialog(ph) {
     if (typeof SGConvert === 'undefined' || !S.sgReady) { ui.toast('The space-group database is not loaded.', 'warn'); return; }
     if (!ph.atoms.length) { ui.toast('Find higher symmetry looks at the atoms; ' + ph.name + ' has none.', 'warn'); return; }
-    var key = ph.key, last = null, holders = St.holdersOf(ph);
+    try { await SGConvert.loadWasm(); } catch(e) { ui.toast('Could not load the local Moyo symmetry engine: '+e.message,'err'); return; }
+    var key = ph.key, last = null, holders = St.holdersOf(ph), timer = 0;
     var fields = [
       { key: 'source', label: 'Positions of', type: 'select', value: 'start', options: [['start', 'The starting model (Phases)']].concat(holders.map(function (d) { return [String(d.id), 'Dataset ' + d.name + (S.calculation === 'rietveld' ? '' : ' (its Rietveld values)')]; })) },
       { key: 'tol', label: 'Atoms within /Å', type: 'number', value: 0.2, hint: 'How far an atom may move to take a symmetry; ADDSYM-like searches commonly use 0.1–0.5 Å.' },
@@ -517,31 +516,41 @@ RV.phasesTab = (function () {
     function read(body) { return { source: body.querySelector('[data-key="source"]').value, tol: ui.parseNum(body.querySelector('[data-key="tol"]').value), cellTol: ui.parseNum(body.querySelector('[data-key="cellTol"]').value) }; }
     function valid(f) { return f.tol > 0 && f.tol <= 2 && f.cellTol > 0 && f.cellTol <= 10; }
     var res = await ui.prompt('Find higher symmetry of ' + ph.name, fields, 'Convert…',
-      'Looks for symmetry the structure has but ' + esc(St.sgText(ph.sg)) + ' does not use, as ADDSYM in PLATON (after Le Page): extra lattice translations, then every rotation the cell allows that maps the atoms onto atoms of the same kind.',
+      'Looks for symmetry the atomic model has but ' + esc(St.sgText(ph.sg)) + ' does not use, as ADDSYM in PLATON. The positions are expanded with the current space group; atoms of the same type and occupancy are compared. To choose a space group from powder intensities (for example Pmmm versus Pnma), use Structure → Space group → Test.',
       { wide: true, after: '<div class="convert-preview" data-symmetry-report aria-live="polite"></div>',
         onOpen: function (body) {
-          var timer = 0, out = body.querySelector('[data-symmetry-report]');
+          var out = body.querySelector('[data-symmetry-report]');
           function update() {
             var f = read(body), p = St.phaseByKey(key);
             if (!p) return;
             if (!valid(f)) { out.innerHTML = '<p class="warn">The atom tolerance is between 0 and 2 Å, the cell tolerance between 0 and 10 (% and °).</p>'; last = null; return; }
             try {
               last = symmetrySearch(p, f);
-              var sweep = [0.05, 0.1, 0.2, 0.3, 0.5].concat([f.tol]).filter(function (t, i, a) { return a.indexOf(t) === i; }).sort(function (x, y) { return x - y; }).map(function (t) { return Math.abs(t - f.tol) < 1e-9 ? last : symmetrySearch(p, f, t); });
+              var sweep = [0.05, 0.1, 0.2, 0.3, 0.5].concat([f.tol]).filter(function (t, i, a) { return a.indexOf(t) === i; }).sort(function (x, y) { return x - y; }).map(function (t) { try { return Math.abs(t - f.tol) < 1e-9 ? last : symmetrySearch(p, f, t); } catch(e) { return {tol:t,r:{group:null},conv:null}; } });
               out.innerHTML = symmetryHTML(p, f, last, sweep);
             } catch (e) { last = null; out.innerHTML = '<p class="warn">The search failed: ' + esc(e.message) + '</p>'; }
           }
           out.innerHTML = '<p class="hint">Searching…</p>';
           body.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(update, 300); });
           body.addEventListener('change', function () { clearTimeout(timer); update(); });
-          setTimeout(update, 30);
+          timer = setTimeout(update, 30);
         },
-        check: function (v) {
+        check: function (v, body) {
+          clearTimeout(timer);
           if (!valid(v)) return 'The atom tolerance is between 0 and 2 Å, the cell tolerance between 0 and 10 (% and °).';
+          var p = St.phaseByKey(key);
+          if (!p) return 'The phase is gone.';
+          // Enter can submit before the debounced preview runs. Validate the
+          // current source and tolerances, and pass that same result to Convert.
+          try {
+            last = symmetrySearch(p, v);
+            body.querySelector('[data-symmetry-report]').innerHTML = symmetryHTML(p, v, last);
+          } catch (e) { last = null; return 'The search failed: ' + e.message; }
           if (!last || !last.r.group) return 'No space group was found at these tolerances.';
-          if (!last.higher) return 'No symmetry beyond ' + St.sgText(St.phaseByKey(key).sg) + ' within ' + v.tol + ' Å: nothing to convert to.';
+          if (!last.higher) return 'No symmetry beyond ' + St.sgText(p.sg) + ' within ' + v.tol + ' Å: nothing to convert to.';
           return '';
         } });
+    clearTimeout(timer);
     if (!res || !last || !last.higher) return;
     ph = St.phaseByKey(key);
     if (!ph || busy()) return;
@@ -587,5 +596,5 @@ RV.phasesTab = (function () {
     build();
   }
 
-  return { init: init, build: build, values: values, content: content };
+  return { init: init, build: build, values: values, content: content, findSymmetry:findSymmetryDialog };
 })();
