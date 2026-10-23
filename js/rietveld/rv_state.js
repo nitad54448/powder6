@@ -121,7 +121,7 @@ RV.state = (function () {
   var S = {
     datasets: [], sel: new Set(), anchor: null, focus: null, nextId: 1, busy: false,
     phases: [], phaseSel: null, nextPhase: 1, shared: {}, limits: {}, settings: defaults(),
-    tables: null, sgReady: false, version: 0, presetDefaults: {}, calculation: 'lebail', calculationOptions: {}, datasetGroups:[], parameterLinks:[], disabledPhases:[]
+    tables: null, sgReady: false, version: 0, presetDefaults: {}, calculation: 'lebail', calculationOptions: {}, parameterLinks:[], disabledPhases:[]
   };
 
   function store(key, val) { try { localStorage.setItem(LS + key, JSON.stringify(val)); } catch (e) { /* private mode */ } }
@@ -1313,7 +1313,7 @@ RV.state = (function () {
     Object.keys(S.limits).forEach(function (n) { lim[n] = S.limits[n].map(function (v) { return Number.isFinite(v) ? v : (v > 0 ? 'inf' : '-inf'); }); });
     return JSON.stringify({
       format: PROJECT, version: 3, parameterUnits: {sampleSize:'um'}, program: 'Powder 6, ' + RV.version, saved: new Date().toISOString(),
-      datasetGroups:S.datasetGroups, disabledPhases:S.disabledPhases, parameterLinks:S.parameterLinks, selection:Array.from(S.sel), focus:S.focus,
+      disabledPhases:S.disabledPhases, parameterLinks:S.parameterLinks, selection:Array.from(S.sel), focus:S.focus,
       fitHistory:!opts.noHistory && RV.fitHistory ? RV.fitHistory.exportData(!!opts.metadataOnly) : null,
       calculation: S.calculation, calculationOptions: S.calculationOptions, fitmode:load('fitmode') || 'single', phaseSelection:S.phaseSel, presetDefaults:S.presetDefaults, settings: S.settings, shared: S.shared, limits: lim,
       absorption: RV.absorption && RV.absorption.exportUser ? RV.absorption.exportUser() : null,
@@ -1397,12 +1397,11 @@ RV.state = (function () {
       if (lo < hi) limits[n] = [lo, hi];
     });
     var KINDS = ['info', 'ok', 'warn', 'err', 'cmd'];
-    if(doc.datasetGroups!=null && (!Array.isArray(doc.datasetGroups) || doc.datasetGroups.some(function(g){return !g || !/^[A-Za-z0-9_-]+$/.test(g.id) || typeof g.name!=='string' || !Array.isArray(g.ids) || g.ids.some(function(id){return !Number.isInteger(id) || id<=0;});})))bad('dataset groups');
     if(doc.disabledPhases!=null && (!Array.isArray(doc.disabledPhases) || doc.disabledPhases.some(function(k){return typeof k!=='string';})))bad('method phase inclusion');
     if(doc.parameterLinks!=null && (!Array.isArray(doc.parameterLinks) || doc.parameterLinks.some(function(l){return !l || !l.source || !l.target || !Number.isInteger(l.source.datasetId) || !Number.isInteger(l.target.datasetId) || typeof l.source.name!=='string' || typeof l.target.name!=='string' || !Number.isFinite(l.factor) || l.factor===0 || !Number.isFinite(l.offset || 0);})))bad('parameter links');
     var log = (Array.isArray(doc.log) ? doc.log : []).filter(function (e) { return isObj(e) && typeof e.msg === 'string' && typeof e.t === 'string'; })
       .slice(-5000).map(function (e) { return { t: e.t, kind: KINDS.indexOf(e.kind) >= 0 ? e.kind : 'info', msg: e.msg.slice(0, 2000) }; });
-    return { fitmode:doc.fitmode, phaseSelection:doc.phaseSelection, presetDefaults:isObj(doc.presetDefaults)?doc.presetDefaults:{}, calculation: C.METHODS.indexOf(doc.calculation) >= 0 ? doc.calculation : (phases[0] ? phases[0].method : 'lebail'), calculationOptions: isObj(doc.calculationOptions) ? doc.calculationOptions : {}, settings: cleanSettings(doc.settings), shared: isObj(doc.shared) ? doc.shared : {}, limits: limits, phases: phases, raws: raws, log: log, datasetGroups:doc.datasetGroups || [], disabledPhases:doc.disabledPhases || [],  parameterLinks:doc.parameterLinks || [],selection:doc.selection,focus:doc.focus,fitHistory:RV.fitHistory?RV.fitHistory.validate(doc.fitHistory,raws.map(function(r){return r.dataKey;}).filter(Boolean)):null };
+    return { fitmode:doc.fitmode, phaseSelection:doc.phaseSelection, presetDefaults:isObj(doc.presetDefaults)?doc.presetDefaults:{}, calculation: C.METHODS.indexOf(doc.calculation) >= 0 ? doc.calculation : (phases[0] ? phases[0].method : 'lebail'), calculationOptions: isObj(doc.calculationOptions) ? doc.calculationOptions : {}, settings: cleanSettings(doc.settings), shared: isObj(doc.shared) ? doc.shared : {}, limits: limits, phases: phases, raws: raws, log: log, disabledPhases:doc.disabledPhases || [],  parameterLinks:doc.parameterLinks || [],selection:doc.selection,focus:doc.focus,fitHistory:RV.fitHistory?RV.fitHistory.validate(doc.fitHistory,raws.map(function(r){return r.dataKey;}).filter(Boolean)):null };
   }
   function commitProject(pj) {
     S.nextId=1; S.anchor=null; S.presetDefaults=cloneCalculation(pj.presetDefaults || {});
@@ -1414,7 +1413,7 @@ RV.state = (function () {
     S.phaseSel = S.phases.some(function(p){return p.key===pj.phaseSelection;}) ? pj.phaseSelection : S.phases.length ? S.phases[0].key : null;
     S.datasets = []; S.sel.clear(); S.focus = null; S.version++;
     S.datasets = pj.raws.map(function(r){var d=makeDataset(r);if(Number.isInteger(r.savedId) && r.savedId>0){d.id=r.savedId;S.nextId=Math.max(S.nextId,d.id+1);}return d;});
-    S.datasetGroups=pj.datasetGroups;S.disabledPhases=pj.disabledPhases || [];S.parameterLinks=pj.parameterLinks;
+    S.disabledPhases=pj.disabledPhases || [];S.parameterLinks=pj.parameterLinks;
     // Populate the selection before notifying views. They must never observe
     // new instruments with the previous project's dataset selection.
     var selection=Array.isArray(pj.selection)?pj.selection.filter(function(id){return !!byId(id);}):S.datasets.length?[S.datasets[0].id]:[];
@@ -1482,7 +1481,7 @@ RV.history = (function () {
         return { key: ph.key, color: ph.color || null, name: ph.name, method: ph.method, sg: copy(ph.sg), ops: ph.ops, wyckoff: ph.wyckoff, profileType: ph.profileType, separatedProfile: ph.separatedProfile === true, broadening: RVCore.broadeningConfig(ph.broadening), poDir: ph.poDir.slice(),
                  constraints:JSON.parse(JSON.stringify(ph.constraints || [])), provenance:ph.provenance || null, atoms: ph.atoms.map(function (a) { return { label: a.label, type: a.type, site: a.site }; }), v: copy(ph.v), fit: copy(ph.fit) };
       }),
-      datasetGroups:JSON.parse(JSON.stringify(S.datasetGroups)),disabledPhases:S.disabledPhases.slice(),parameterLinks:JSON.parse(JSON.stringify(S.parameterLinks)),fitHistory:RV.fitHistory?RV.fitHistory.undoSnapshot():null,
+      disabledPhases:S.disabledPhases.slice(),parameterLinks:JSON.parse(JSON.stringify(S.parameterLinks)),fitHistory:RV.fitHistory?RV.fitHistory.undoSnapshot():null,
       calculationSettings: { weight: S.settings.weight, bkgN: S.settings.bkgN, nAnchors: S.settings.nAnchors, inst: RV.state.instCopy(S.settings.inst) },
       refinement: RV.state.refinementOptions(), calculation: S.calculation, maxIter: S.settings.maxIter, tol: S.settings.tol, fitmode: RV.state.load('fitmode'), calculationOptions: JSON.parse(JSON.stringify(S.calculationOptions)), sel: Array.from(S.sel), focus: S.focus, anchor: S.anchor, phaseSel: S.phaseSel, shared: copy(S.shared), limits: lim,
       nextId: S.nextId, nextPhase: S.nextPhase
@@ -1496,7 +1495,7 @@ RV.history = (function () {
       return { key: p.key, color: p.color || null, name: p.name, method: p.method, sg: copy(p.sg), ops: p.ops, wyckoff: p.wyckoff, profileType: p.profileType, separatedProfile: p.separatedProfile === true, broadening: RVCore.broadeningConfig(p.broadening), poDir: p.poDir.slice(),
                constraints:JSON.parse(JSON.stringify(p.constraints || [])), provenance:p.provenance || null, atoms: p.atoms.map(function (a) { return { label: a.label, type: a.type, site: a.site }; }), v: copy(p.v), fit: copy(p.fit) };
     });
-    S.disabledPhases=st.disabledPhases || [];S.datasetGroups=st.datasetGroups || [];S.parameterLinks=st.parameterLinks || [];if(RV.fitHistory)RV.fitHistory.importData(st.fitHistory);
+    S.disabledPhases=st.disabledPhases || [];S.parameterLinks=st.parameterLinks || [];if(RV.fitHistory)RV.fitHistory.importData(st.fitHistory);
     S.calculation = st.calculation || 'lebail'; S.calculationOptions = JSON.parse(JSON.stringify(st.calculationOptions || {}));
     if (st.calculationSettings) {
       ['weight', 'bkgN', 'nAnchors'].forEach(function (k) { S.settings[k] = st.calculationSettings[k]; });

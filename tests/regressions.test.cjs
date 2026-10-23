@@ -846,14 +846,13 @@ test('a project History is checked record by record: unrestorable runs are dropp
   assert.throws(()=>h.validate(dup,[]),/Invalid calculation checkpoint run-\d+/);
   h.importData(out);const next=h.complete(h.begin([a.ds],false),[a.ds]);assert.ok(+next.id.slice(4)>=42);
 });
-test('compressed projects retain datasets, groups, observations and restorable history', async () => {
+test('compressed projects retain datasets, observations and restorable history', async () => {
   const a=fitted(),h=a.context.RV.fitHistory,r=h.complete(h.begin([a.ds],false),[a.ds]);
-  a.S.datasetGroups=[{id:'group',name:'Measurements',ids:[a.ds.id]}];
   const packed=await a.context.RV.project.pack();assert.equal(packed[0],80);assert.equal(packed[1],75);
   const doc=await a.context.RV.project.unpack(packed);
   assert.equal(doc.observations.length,1);assert.equal(doc.fitHistory.records.length,1);
   a.state.commitProject(a.state.prepareProject(doc));
-  assert.deepEqual(plain(a.S.datasetGroups),[{id:'group',name:'Measurements',ids:[a.ds.id]}]);
+  assert.equal(doc.datasetGroups,undefined,'projects no longer carry dataset groups');
   assert.deepEqual(Array.from(a.S.datasets[0].y),Array.from(a.ds.y));
   a.context.RV.fitHistory.restore(r.id);assert.equal(a.S.datasets[0].p.bkg0,r.datasets[0].p.bkg0);
 });

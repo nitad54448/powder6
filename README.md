@@ -19,7 +19,7 @@ Full documentation: [`Powder6_documentation.html`](Powder6_documentation.html): 
 - Results as text, CIF, pdCIF, SHELX HKLF 4 and a PDF report; command line, edit undo, and persistent calculation History with Set/Keep.
 - Structure → Space group has **Test** for systematic absences of the extracted powder intensities and **ADDSYM** for symmetry of an atomic model. Find higher symmetry… calls the public, locally bundled Moyo 0.21.0 WebAssembly API in a worker. The starting model, a dataset’s Rietveld model, or after a Le Bail or WPPF fit the dataset’s refined cell with its atoms can be selected. See [atomic-model symmetry](#atomic-model-symmetry) and the [bundled Moyo code](#bundled-moyo-code).
 - Phases → Convert… carries a phase to another space group or setting (subgroups split sites, supergroups merge them when the structure has the symmetry); cell, positions and every dataset are transformed.
-- Compressed `.project` files (`.archive` and the `.powder6` files of earlier versions open too), saved dataset groups, and overview/focused inspection for large series.
+- Compressed `.project` files (`.archive` and the `.powder6` files of earlier versions open too), and overview/focused inspection for large series.
 
 ## Run it
 
@@ -81,7 +81,7 @@ The atomic distance tolerance defaults to **0.2 Å**; the report also scans **0.
 
 The workspace has two independently navigable panels, inspired by Powder5. **Commands** contains **Datasets, Phases, Method, Structure, Settings**. **Results** contains **Plots, Le Bail, WPPF, Rietveld, Structure, Log, History**. Drag the wider divider by its visible grip to resize them; arrow keys resize it too, and **⇄ Panels** swaps their positions. Dataset checkboxes under **Datasets for fitting and plotting** define one target set for fitting and plotting. Use **All datasets**, saved groups or range selection, then choose **Overview** or **Inspect one dataset** for large series.
 
-**About** is immediately left of **⇄ Panels**. In Phases, **Edit** beside the colour picker renames the phase; each row in **Choose a phase** has a remove icon. Dataset groups save selections for reuse without linking parameters; **Delete selected** sits beside **Save group**. Exclusions are inside the active dataset after Background. Resolution loads and saves calibrations above the coefficients and detects their profile type automatically.
+**About** is immediately left of **⇄ Panels**. In Phases, **Edit** beside the colour picker renames the phase; each row in **Choose a phase** has a remove icon. **Delete selected** sits beside the dataset scope menu. Exclusions are inside the active dataset after Background. Resolution loads and saves calibrations above the coefficients and detects their profile type automatically.
 
 Choose the instrument profile only in the dataset's **Instrument resolution → Profile** control. TCH is the default; pseudo-Voigt and split pseudo-Voigt also use independent sample size and strain for each phase contribution. There is one TCH choice. Phases contains the crystallographic and sample-broadening models. `absorption.json` loads automatically at startup. The copy controls name their source dataset and copy matching parameter values and refinement flags; they are hidden with fewer than two datasets. FIT runs the method selected in **Commands → Method**, without a separate Next calculation inspector.
 

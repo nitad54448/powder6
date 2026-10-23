@@ -194,7 +194,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 </section>
 
 <section id="workspace-history"><h2>Selection, history and project storage</h2>
-<p>One dataset selection drives fitting and plotting. Inspecting a selected member does not change membership. Choose All datasets, a saved named group, a range or individual checkboxes. A group saves an explicit list of datasets for reuse, such as all scans from one synthesis; choosing it reselects those scans. Saving a group does not link parameters or select a global fit. Delete selected, beside Save group, removes the checked datasets after confirmation. FIT uses each selected dataset's current values for the active method. Conflicting shared starting values in a global fit require an explicit choice.</p>
+<p>One dataset selection drives fitting and plotting. Inspecting a selected member does not change membership. Choose All datasets, a range (Shift+click) or individual checkboxes; the search box above the list narrows it by name. Delete selected removes the checked datasets after confirmation. FIT uses each selected dataset's current values for the active method. Conflicting shared starting values in a global fit require an explicit choice.</p>
 <p>A completed fit updates the dataset's working values. For example, if Le Bail changes a lattice from 3.5 to 3.49 Å, the next Le Bail fit starts at 3.49 Å; the shared phase starting model remains at 3.5 Å. Edit the dataset value, undo the fit or explicitly restore a saved run to return to an earlier starting point. Empty Datasets shows only the loading hint and demo link. The phase chooser appears once a phase exists; Method setup appears once both phases and datasets exist.</p>
 <p>Each method retains its own setup, background and results. Switching methods restores those values and reuses an unchanged calculated plot when its cache is still valid. Inspecting a saved fit similarly reuses its evaluated pattern. Editing the model or acquisition invalidates the affected cache. Wavelength, doublet ratio and fitted range remain acquisition properties of the dataset across method changes.</p>
 <p>History stores immutable calculation checkpoints with values, flags, bounds, settings, uncertainties, intensities and the model needed to interpret them. Results → Run selects what is displayed and exported without changing the working setup.</p>
@@ -1013,8 +1013,9 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
 
 <section id="corrections">
 <h2>Recent changes</h2>
-<p>Version 2.11.1, 23 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
+<p>Version 2.12.0, 23 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 <ul>
+  <li>Dataset groups are removed: datasets are chosen with the selection alone.</li>
   <li>Convert… shows the standard setting of each space group in bold, marked “standard”.</li>
   <li>The Wyckoff search screens long lists of assignments before the full search, searches equivalent assignments once, accepts up to 32 distance rules and 256 coordination slots, and reports its live best structure and the progress of the whole run.</li>
   <li>ADDSYM runs directly after a Le Bail or WPPF fit, tolerates slightly different refined occupancies, searches mixed sites and keeps its engine loaded between searches.</li>

@@ -2,6 +2,10 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.12.0 — 23 October 2026
+
+1. Dataset groups are removed. They only saved a fixed list of datasets for reselection, linked nothing, could not be edited or deleted, and looked like a second selection concept. Datasets are chosen with the selection alone: All, Shift+click ranges, checkboxes and the search box. Save group… is gone from the dataset toolbar, the scope menu offers the selection and all datasets, and projects, restore points and History restores no longer carry groups.
+
 ## 2.11.1 — 23 October 2026
 
 1. Convert…: in the New space group list the standard setting of each of the 230 groups (standard, b-unique cell choice 1, origin choice 2, hexagonal axes: the settings ADDSYM names its results in) is in bold and ends in “· standard”; the closed list is bold while a standard setting is chosen. Typing “standard” in Find lists only them. Browsers that draw the list natively (Safari on macOS) show the label but not the bold.
