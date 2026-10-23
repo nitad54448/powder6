@@ -87,7 +87,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <div class="layout">
 <nav class="toc" aria-label="Contents">
   <a class="brand" href="#top"><svg viewBox="0 0 26 20" aria-hidden="true"><path d="M1 17.5h5.2l1.6-2.2 1.2 2.2h3.4l1.3-14.2 1.5 14.2h2.6l1.3-6.6 1.1 6.6H25" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Powder 6</a>
-  <p class="ver">Version 2.10.3 · 23 October 2026</p>
+  <p class="ver">Version 2.10.4 · 23 October 2026</p>
   <ol>
     <li><a href="#overview">Overview</a></li>
     <li><a href="#start">Getting started</a>
@@ -106,14 +106,14 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
     <li><a href="#results">Results and export</a>
       <ol><li><a href="#merit">Agreement factors</a></li><li><a href="#esd">Uncertainties</a></li><li><a href="#chi2">χ² and the weights</a></li><li><a href="#overlap">Overlapping reflections</a></li><li><a href="#export">Export</a></li></ol></li>
     <li><a href="#solve">Structure solution</a>
-      <ol><li><a href="#s-extract">Extract</a></li><li><a href="#s-sg">Space-group test</a></li><li><a href="#s-cf">Charge flipping</a></li><li><a href="#s-wy">Wyckoff search</a></li><li><a href="#s-bv">Contacts and bond valence</a></li></ol></li>
+      <ol><li><a href="#s-extract">Extract</a></li><li><a href="#s-sg">Space-group test</a></li><li><a href="#s-addsym">Atomic-model symmetry</a></li><li><a href="#s-cf">Charge flipping</a></li><li><a href="#s-wy">Wyckoff search</a></li><li><a href="#s-bv">Contacts and bond valence</a></li></ol></li>
     <li><a href="#commands">Command line</a></li>
     <li><a href="#keys">Mouse and keys</a></li>
     <li><a href="#settings">Settings</a></li>
     <li><a href="#storage">Saved data</a></li>
-    <li><a href="#arch">Code layout</a></li>
+    <li><a href="#arch">Code layout</a><ol><li><a href="#moyo-code">Bundled Moyo code</a></li></ol></li>
     <li><a href="#trouble">Troubleshooting</a></li>
-    <li><a href="#corrections">Corrections in 2.6</a></li>
+    <li><a href="#corrections">Recent changes</a></li>
     <li><a href="#refs">References</a></li>
     <li><a href="#about">About</a></li>
   </ol>
@@ -157,6 +157,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <tr><td><code>sg/all.json</code> <span class="tag opt">data</span></td><td>The 530-odd space-group settings, with operators and Wyckoff positions.</td><td>No space groups: no new phases, no CIF import, no Solve.</td></tr>
 <tr><td><code>scatters/index.json</code> and the element files <span class="tag opt">data</span></td><td>X-ray and neutron scattering factors.</td><td>Rietveld calculations and the demo are unavailable. Le Bail and WPPF remain usable.</td></tr>
 <tr><td><code>lib/jszip.min.js</code> <span class="tag opt">data</span></td><td>JSZip, to open the ZIP-based <code>.brml</code> and <code>.rasx</code> files.</td><td>Those two formats are refused with a message; all others work.</td></tr>
+<tr><td><code>lib/moyo/moyo_wasm.js</code>, <code>lib/moyo/moyo_wasm_bg.wasm</code></td><td>Public Moyo 0.21.0 bindings and compiled atomic-model symmetry engine.</td><td>Find higher symmetry cannot run. The powder-intensity space-group test remains available.</td></tr>
 <tr><td><code>absorption.json</code> <span class="tag opt">data</span></td><td>Mass attenuation coefficients for the transparency estimate.</td><td>Load your own table in Datasets → Absorption.</td></tr>
 <tr><td><code>Voigt_default.json</code>, <code>TCH_default.json</code>, <code>Split_default.json</code></td><td>Starting peak-shape presets, offered by <em>Load a peak-shape preset</em>.</td><td>Load a preset of your own, or start from the built-in defaults.</td></tr>
 </table></div>
@@ -183,7 +184,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
   <dt>Phases</dt><dd>Edit shared crystallographic definitions, atoms, broadening models and starting values. These starting-model edits do not rewrite existing dataset values. The used-in list opens the corresponding dataset tab.</dd>
   <dt>Method</dt><dd>Select Le Bail, WPPF or Rietveld and the included phases, then start FIT. FIT runs that method directly. Dataset parameter values and refinement flags are edited in Datasets; numerical conditions are in Settings.</dd>
   <dt>Le Bail, WPPF and Rietveld results</dt><dd>Each Results tab shows one completed run. The Run selector opens previous runs without changing the working method, values or dataset selection; Latest follows newly completed runs. Use as start explicitly restores the viewed calculation. Exports and Report use the viewed run. Saved atomic constraints are listed read-only.</dd>
-  <dt>Structure</dt><dd>Commands contains intensity extraction, space-group test, charge-flipping and Wyckoff search settings and actions. Results contains the space-group output, CF density/sites and Wyckoff candidates, with a previous-solution selector for CF and Wyckoff.</dd>
+  <dt>Structure</dt><dd>Commands contains intensity extraction, Space group with separate Test · powder intensities and ADDSYM · atomic model sections, charge-flipping and Wyckoff search settings and actions. Results contains the space-group test output, CF density/sites and Wyckoff candidates, with a previous-solution selector for CF and Wyckoff. Atomic-model symmetry is reported in its own dialog.</dd>
   <dt>History</dt><dd>Completed calculations grouped by method, showing one chosen run with Set, Keep and storage accounting. Global sets restore together.</dd>
   <dt>Log</dt><dd>Verbose messages and diagnostics. Ctrl+Z separately undoes recent editing.</dd>
   <dt>Fit selection</dt><dd>The expandable Datasets for fitting and plotting list in Commands → Datasets defines the plot/fit selection. Coloured tabs independently choose the dataset to inspect. Use All datasets or a saved group for large batches. With multiple datasets, Copy transfers matching parameter values and refinement flags from the named active dataset; observations, phase assignments and instrument metadata are retained by the destinations. Copy controls are hidden for a single dataset.</dd>
@@ -195,6 +196,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <section id="workspace-history"><h2>Selection, history and project storage</h2>
 <p>One dataset selection drives fitting and plotting. Inspecting a selected member does not change membership. Choose All datasets, a saved named group, a range or individual checkboxes. A group saves an explicit list of datasets for reuse, such as all scans from one synthesis; choosing it reselects those scans. Saving a group does not link parameters or select a global fit. Delete selected, beside Save group, removes the checked datasets after confirmation. FIT uses each selected dataset's current values for the active method. Conflicting shared starting values in a global fit require an explicit choice.</p>
 <p>A completed fit updates the dataset's working values. For example, if Le Bail changes a lattice from 3.5 to 3.49 Å, the next Le Bail fit starts at 3.49 Å; the shared phase starting model remains at 3.5 Å. Edit the dataset value, undo the fit or explicitly restore a saved run to return to an earlier starting point. Empty Datasets shows only the loading hint and demo link. The phase chooser appears once a phase exists; Method setup appears once both phases and datasets exist.</p>
+<p>Each method retains its own setup, background and results. Switching methods restores those values and reuses an unchanged calculated plot when its cache is still valid. Inspecting a saved fit similarly reuses its evaluated pattern. Editing the model or acquisition invalidates the affected cache. Wavelength, doublet ratio and fitted range remain acquisition properties of the dataset across method changes.</p>
 <p>History stores immutable calculation checkpoints with values, flags, bounds, settings, uncertainties, intensities and the model needed to interpret them. Results → Run selects what is displayed and exported without changing the working setup.</p>
 <dl>
   <dt>Set</dt><dd>Restores the saved model, dataset values, refinement flags, settings and results into the working setup, just like <b>Use as start</b>. It does not launch a fit or mark the run as kept. Global fits restore their whole set; fixed sources used by cross-dataset links are restored too.</dd>
@@ -324,7 +326,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 
 <h3 id="background">Background and exclusions</h3>
 <ul>
-  <li><b>Chebyshev</b> polynomial over the fitted range, 0 to 24 terms. The terms enter the model linearly, so their derivatives are exact.</li>
+  <li><b>Chebyshev</b> polynomial over the fitted range, 0 to 24 terms. The range is mapped to −1 … +1; the coefficients may have either sign and enter the model linearly, so their derivatives are exact. Changing the fitted range re-expresses the coefficients to preserve the existing background at retained angles, including when restoring another method’s saved background.</li>
   <li><b>Spline</b> through anchors whose heights are the parameters (monotone cubic Hermite, Fritsch and Carlson 1980), 2 to 200 anchors. Their 2θ positions stay fixed during refinement. The monotone form gives a smooth, physically realistic baseline without overshoot between anchors. <b>Place anchors now</b> and <code>anchors&gt;&gt;n</code> put them at the two ends of the fitted range and at the lowest point of equal stretches between them, never in an excluded region; new heights are estimated from the data and existing anchors keep their values. Ctrl+click on the pattern places an anchor at both cursor coordinates (on an anchor it removes it) and turns the background into a spline. This also works with logarithmic and square-root intensity axes. <b>Right-drag an anchor</b> to move it in angle and height; <kbd>Escape</kbd> cancels the move. Filled magenta squares are refinable anchors; hollow grey squares are fixed. Editing an anchor height in Parameters shows a yellow vertical line at its position.</li>
   <li><b>Excluded regions</b>, immediately after Background inside the dataset editor, are left out of the fit, the extraction and the statistics, but the pattern is still calculated there. Exclude edits the active dataset tab. On the plot, Ctrl+Shift+drag marks a region and Ctrl+Shift+click inside removes it for the first selected dataset. Manual anchor placement also uses the first selected dataset; right-dragging edits the visible anchor under the cursor.</li>
 </ul>
@@ -352,7 +354,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 
 <h3 id="sg">Space group</h3>
 <p>Type a symbol, a number or a Hall symbol, or press <b>Browse</b> for the space-group browser: filter by crystal system, centring and axis choice, search by number or symbol, and read the reflection conditions of the selected setting before pressing <b>Apply</b>. Every setting of a group is offered separately, because the reflection conditions differ between them (No. 62 appears as <i>Pnma</i>, <i>Pmnb</i>, <i>Pbnm</i>, <i>Pcmn</i>, <i>Pmcn</i> and <i>Pnam</i>). Applying a space group re-derives the sites of the atoms, the free cell parameters and the constraints that still hold (see <a href="#constraints">Constraints</a>).</p>
-<p><b>Finding higher symmetry.</b> Commands → Structure → Space group → <b>ADDSYM</b> contains a phase selector and <b>Find higher symmetry…</b>. It analyses an atomic model using the locally bundled <a href="https://github.com/spglib/moyo">Moyo</a> 0.21.0 WebAssembly engine (<a href="lib/moyo/LICENSE-MIT">MIT license</a>), in the manner of ADDSYM in PLATON, and works without a WPPF fit. The starting model, or a dataset’s Rietveld positions, is expanded with its current space-group operators; element and occupancy distinguish atom types. Moyo returns the space group and the transformation to its standard setting, including the origin shift. Length and angle tolerances are checked separately (1 % and 1° by default). The report gives the new axes and origin, how sites merge, how far atoms move, additional symmetry operations with their atomic mismatch, and results at tolerances from 0.05 to 0.5 Å. <b>Convert…</b> opens conversion to that setting and checks every dataset’s model before applying it. A powder pattern may not distinguish a small distortion from higher symmetry: refine both and compare. Comparing Pmmm and Pnma from measured intensities uses the separate <b>Test</b> section of the same Space group block.</p>
+<p><b>Finding higher symmetry.</b> Open <b>Commands → Structure → Space group → ADDSYM → Find higher symmetry…</b> to analyse the starting model or a dataset’s Rietveld model with Moyo WebAssembly. Both sources can be selected; the active dataset is selected initially. See <a href="#s-addsym">Atomic-model symmetry</a> for the controls, conversion and limitations, and <a href="#moyo-code">Bundled Moyo code</a> for the local engine files and license.</p>
 <p><b>Converting to another space group.</b> Phases → <b>Convert…</b> (left of Browse…) describes the structure in another space group or setting, as in International Tables A, 1.5: new axes (a′, b′, c′) = (a, b, c)P and origin p, x′ = P<sup>−1</sup>(x − p), G′ = P<sup>T</sup>GP, h′ = hP. The structure is expanded to the full cell, carried to the new axes and reduced with the new symmetry. A <i>subgroup</i> keeps every atom and splits the sites the lower symmetry no longer relates (Fe1 → Fe1a, Fe1b); a <i>supergroup</i> merges atoms the new symmetry relates, and is refused, naming the atom and the distance, unless the structure and each dataset’s refined positions have that symmetry within the tolerance (0.1 Å by default); another <i>setting</i> of the same group changes only the axes and origin (P2<sub>1</sub>/c → P2<sub>1</sub>/n, Fd-3m origin choice 1 → 2). <b>Find it</b> searches axis changes with entries −1, 0, 1 and origin shifts in eighths whose cell fits the new crystal system within 3 %, preferring unchanged axes, then the most compact cell with obtuse angles, then the smallest shift; <b>Enter it</b> takes any transformation, e.g. “a+b,-a+b,c” and “0,0,1/4”, including centred or larger cells. The cell, positions, B, occupancies and fit flags of the starting model, of every dataset holding the phase (from its own values) and of their saved calculations are converted; the preferred-orientation direction and uniaxial broadening axes follow the axes. Fit results are cleared, atomic constraints and parameter links of the old atoms are removed, and Ctrl+Z undoes the conversion.</p>
 <p><b>Monoclinic settings.</b> All three unique-axis choices are supported. The unique axis is read from the symmetry operators of the setting, and the cell then offers the one angle that is free: β for unique axis b (<i>P</i>12<sub>1</sub>/<i>c</i>1), γ for unique axis c, α for unique axis a. The other two are fixed at 90° and are not parameters. Reflection orbits and multiplicities follow the same axis, so the three settings of one lattice give identical peak positions and intensities.</p>
 
@@ -652,7 +654,7 @@ R_Bragg = Σ|I_obs − I_calc| / Σ I_obs   (Rietveld phases)</div>
 <p>Extraction takes the WPPF intensities of the phase in one dataset at the current values, with uncertainties obtained by integrating out the ticked parameters (the full Pawley normal matrix). It does not iterate. It needs the phase to be WPPF and the dataset to have been fitted by WPPF with the present model (the button says what is missing, for example “Fit this dataset in WPPF first. Refit after changing the model or point weights”). All determined intensities remain available for structure solution and export; the space-group test uses a bounded precision block as described below. The extraction is marked stale when the cell, profile or space group changes afterwards. Intensities are Kα<sub>1</sub> areas; |F<sub>o</sub>|² = I/(m·Lp) uses the Lp of the dataset's polarisation model (<a href="#lp">Lorentz-polarisation</a>), which is why the polarisation setting matters here even though it does not change a Le Bail or WPPF fit.</p>
 
 <h3 id="s-sg">2. Space-group test</h3>
-<p>The test scores every setting compatible with the current Laue class against the extracted intensities and returns a ranked list of posterior probabilities (Markvardsen, David, Johnson and Shankland 2001).</p>
+<p>Open <b>Commands → Structure → Space group → Test · powder intensities</b>. The test scores every setting compatible with the current Laue class against the extracted intensities and returns a ranked list of posterior probabilities (Markvardsen, David, Johnson and Shankland 2001). The separate ADDSYM section searches atomic coordinates.</p>
 <p><b>Number of reflections</b> specifies how many lowest-angle determined intensities enter the test. Its default is the available count, capped at 600 to bound the matrix calculation. Only whole numbers from 4 to the smaller of the available count and 600 are accepted; letters, fractions and excessive counts are rejected. The input and test stay disabled until enough intensities are available, and the available count is shown below the input. Changing the count rebuilds the precision block at the current WPPF model before testing, without iterating the fit; refit first if that model has changed. The old value 220 was a fixed computation default, with no relationship to the number of intensities in a dataset.</p>
 <h4>Principle</h4>
 <p>A candidate space group makes exactly one testable statement about a powder pattern: a particular subset of the reflections is systematically absent, so their true integrated intensities are zero. The question is not “does this space group fit?” but “are the reflections it forbids consistent with zero, given how well the data determine them?” A WPPF refinement makes this answerable because every intensity is a least-squares parameter, so the refinement returns not only the intensities but the normal matrix behind them, hence their full covariance. In a powder pattern overlapping intensities are strongly correlated: a reflection that should be absent can carry a large apparent intensity simply by borrowing it from a neighbour it cannot be resolved from. Judging each reflection on its own I/σ ignores this and can mislead in either direction. Le Bail intensities are partitioned, not fitted; they have no covariance, so the test needs WPPF intensities.</p>
@@ -669,6 +671,24 @@ B_S = Q_ff + diag(1/τ_f²),   b_S = (Q·Î)_f      (f = reflections the group a
   <li><b>The Laue class is not under test</b>, only the absences. It fixes the reflection orbits and multiplicities. A test run from <i>Pm</i>-3<i>m</i> cannot return <i>Pa</i>-3. If the Laue class is in doubt, run the test from each candidate in turn.</li>
   <li><b>Exact coincidences</b> (333/511 in a cubic cell) are handled, because the test is formulated in precision space, where Q may be singular while B<sub>S</sub> never is. The I/σ columns fall back to conditional estimates and are flagged.</li>
 </ul>
+
+<h3 id="s-addsym">Atomic-model symmetry (ADDSYM)</h3>
+<p><b>Commands → Structure → Space group</b> contains two sections: <b>Test · powder intensities</b> and <b>ADDSYM · atomic model</b>. ADDSYM has its own phase selector and a blue <b>Find higher symmetry…</b> button, matching the Test button. It needs a phase with atomic coordinates; it works without a WPPF fit or extracted intensities. Comparing Pmmm and Pnma from measured intensities uses <a href="#s-sg">Test</a>.</p>
+<p><b>The engine is Moyo 0.21.0.</b> ADDSYM is Powder 6’s interface label for this atomic-model search; the bundled code is Moyo’s public WebAssembly implementation. PLATON’s ADDSYM implementation is a separate program. Moyo runs locally in a worker, with no WebGPU requirement and no upload of the model. See <a href="#moyo-code">the bundled code and license</a>.</p>
+<h4>Choose the model and tolerances</h4>
+<ol>
+  <li>Select the phase in the ADDSYM section and open <b>Find higher symmetry…</b>.</li>
+  <li>In <b>Positions of</b>, choose <b>The starting model (Phases)</b> or a dataset’s <b>Rietveld model</b>. The active dataset is selected initially when it holds the phase. Both choices remain available. A dataset supplies its coordinates and cell together; while using Le Bail or WPPF, the saved Rietveld calculation supplies these values when available.</li>
+  <li><b>Atoms within /Å</b> sets the distance tolerance passed to Moyo (default 0.2 Å). The report also scans 0.05, 0.1, 0.2, 0.3 and 0.5 Å, plus the entered value.</li>
+  <li><b>Cell within /% and °</b> limits the permitted adjustment to the standardized lattice: 1 % for lengths and 1° for angles by default. Length and angle adjustments are checked separately before conversion is allowed.</li>
+</ol>
+<p>Changing a source or tolerance starts a new search and cancels the previous worker. The report identifies the selected model and engine, the returned space group, lattice points, new axes and origin, standardized cell, site count and atomic mismatches. Errors from the engine are shown. A higher group that exceeds the permitted cell adjustment or fails conversion checks is still displayed, together with the reason conversion is blocked.</p>
+<h4>Preview and apply the conversion</h4>
+<p><b>Convert…</b> opens the conversion dialog with the detected setting, axes, origin, tolerance and atomic source. Its preview lists merged sites, cell content and model mismatches. Choosing a dataset as the atomic source adopts its Rietveld atoms and cell as the phase’s starting model; the preview explains this before applying it. Each dataset’s own Rietveld model must also satisfy the new symmetry within the conversion tolerance. Conversion transforms the starting model, dataset values and saved calculation banks, clears affected fit results, and can be undone with <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</p>
+<h4>What the search can establish</h4>
+<p>The selected atoms are expanded with the phase’s assigned space-group operators, then the lattice and full-cell positions are passed to Moyo. The assigned group number is not passed to the engine. Atom types are distinguished by their stored scattering type and occupancy rounded to three decimal places; B values do not enter the symmetry search. Occupancy differences can therefore reduce the detected positional symmetry even when the coordinates are close.</p>
+<p>In P1, every atom of the full cell must be present. Typing P1 into the space-group field of an asymmetric-unit model changes its symmetry without generating the missing equivalent atoms; use <b>Phases → Convert…</b> when the full structure must be preserved in a subgroup. If every tolerance returns P1, inspect the actual full-cell atom list, types, occupancies and cell. A known composition or an expected space group alone does not supply missing coordinates.</p>
+<p>The result characterizes the supplied model at the chosen tolerances. A powder pattern may not distinguish a small distortion from a higher-symmetry model: refine the alternatives and compare the data, geometry and chemistry.</p>
 
 <h3 id="s-cf">3. Charge flipping</h3>
 <p>The running panel reports preparation, GPU shader loading and compilation, then the calculated cycles. Preparation uses an animated indicator; percentages begin once cycles have actually completed. GPU startup waits are bounded, and a stalled or failed GPU falls back to the CPU for the remaining starts of that search. Stop is available during preparation as well as iteration.</p>
@@ -887,11 +907,12 @@ O  O      2.40          # keep the tetrahedra from interpenetrating</code></pre>
   <li><b>Calibration and peak-shape presets</b>: JSON files (<code>powder6-instrument-resolution</code>, <code>powder6-profile</code>).</li>
   <li>Nothing leaves the browser. There are no accounts and no network calls apart from reading the files of the program itself.</li>
 </ul>
+<p>Opening a project replaces the previous session’s datasets, model, saved method states, numerical settings, profile defaults and structure-search options. Instrument values are restored per dataset, including λ<sub>1</sub>, λ<sub>2</sub>, their ratio, radiation and polarisation. Previous extraction and display caches are cleared. Fields absent from older projects use clean defaults, so an old session’s wavelength or search options are not inherited.</p>
 </section>
 
 <section id="arch">
 <h2>Code layout</h2>
-<p>For anyone extending the program. The page loads classic scripts in this order; modules that run in workers are loaded with <code>importScripts</code> in the same order.</p>
+<p>For anyone extending the program. Most application and numerical files are classic scripts; the numerical workers load their dependencies with <code>importScripts</code>. The symmetry worker is an ES module and imports the public Moyo bindings.</p>
 <pre class="tree"><code>index.html              the page: header, panes, side panel, dialogs
 powder6.css             tokens (light/dark), layout, components
 charge_flipping.wgsl    GPU kernel for charge flipping
@@ -909,6 +930,8 @@ js/
   data_io.js            pdCIF reader
   cif_structure.js      structure CIF reader
   sg_engine.js          space-group lookup (loaded after sg/all.json)
+  sg_convert.js         structure conversion and the Moyo input/output adapter
+  symmetry_worker.js    ES module calling the public Moyo WebAssembly API
   spacegroup_ui.js      the space-group browser
   wyckoff_report.js     structure report (packing, contacts, bond valence)
   density3d.js          3D density and cell viewer
@@ -929,7 +952,25 @@ js/
     rv_sgtest.js, rv_solve.js   space-group test and the Solve tab
     rv_absorption.js, rv_constraints.js, rv_rietveld_structure.js
     rv_app.js           start-up, tabs, databases, keyboard
-    rv_theme_startup.js applies the saved theme before first paint</code></pre>
+    rv_theme_startup.js applies the saved theme before first paint
+
+lib/moyo/
+  moyo_wasm.js          public JavaScript bindings and WASM loader
+  moyo_wasm_bg.wasm     compiled Moyo 0.21.0 symmetry engine
+  moyo_wasm.d.ts        public API types
+  package.json          upstream package identity and version
+  NOTICE.md, LICENSE-MIT attribution and redistribution terms</code></pre>
+<h3 id="moyo-code">Bundled Moyo code and license</h3>
+<p>Powder 6 includes a local copy of the public <code>@spglib/moyo-wasm</code> package, version <b>0.21.0</b>. The compiled <a href="lib/moyo/moyo_wasm_bg.wasm">WASM binary</a> and <a href="lib/moyo/moyo_wasm.js">JavaScript bindings</a> are distributed with the application. No npm installation, compilation, external service or CDN is needed to run this copy. Serve these files over HTTP with the rest of Powder 6.</p>
+<p><a href="js/rietveld/rv_phases.js"><code>rv_phases.js</code></a> selects the model and calls <code>SGConvert.symmetryJob</code> in <a href="js/sg_convert.js"><code>sg_convert.js</code></a>. That adapter builds Cartesian lattice vectors, fractional full-cell positions and integer identifiers for the stored atom-type/occupancy classes. It starts <a href="js/symmetry_worker.js"><code>js/symmetry_worker.js</code></a>, which initializes the bundled binary and makes this direct public API call:</p>
+<pre><code>import init, { analyze_cell } from '../lib/moyo/moyo_wasm.js';
+await init({
+  module_or_path: new URL('../lib/moyo/moyo_wasm_bg.wasm', import.meta.url)
+});
+const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code></pre>
+<p>The worker returns Moyo’s dataset and Hall symbol. The adapter uses the returned space-group number, standardized lattice, axes and origin shift, converts Moyo’s column-major matrices to the application’s row-major convention, measures atomic mismatches and checks permitted cell adjustments. It sends no assigned group number to Moyo. Cancelling the dialog or changing its inputs terminates the worker. A load failure or timeout is reported in the search dialog.</p>
+<p>Upstream offers <b>MIT OR Apache-2.0</b>; this bundled copy is distributed under the included <a href="lib/moyo/LICENSE-MIT">MIT license</a>. Retain its copyright and permission notice when redistributing the code. Attribution and the upstream citation are in <a href="lib/moyo/NOTICE.md">NOTICE.md</a>. See the <a href="https://github.com/spglib/moyo">Moyo source repository</a> and <a href="https://spglib.github.io/moyo/js/api/">public JavaScript API reference</a>.</p>
+<p>Browser checks in <a href="tests/project-symmetry.html"><code>tests/project-symmetry.html</code></a>, <a href="tests/addsym-pbso4.html"><code>tests/addsym-pbso4.html</code></a> and <a href="tests/convert-files.html"><code>tests/convert-files.html</code></a> exercise the public engine, model selection, conversion and undo. The PbSO<sub>4</sub> fixture supplies known Pnma coordinates as a P1 dataset’s fitted values: 24 full-cell atoms become five independent sites. These checks verify the integration and transformations; they do not run an actual PbSO<sub>4</sub> refinement.</p>
 <h3>Design rules worth knowing</h3>
 <ul>
   <li><b>One fit core.</b> <code>rietveld_core.js</code> has no DOM access. The page, the worker and tests load the same file.</li>
@@ -954,6 +995,10 @@ js/
 <tr><td>A constraint is refused: “already in another relationship”, “fixed or dependent by site symmetry”, “cannot be met within the parameter limits”</td><td>A parameter can be in one relationship only; only free directions of a site can be constrained; a sum that the limits cannot reach (occupancies limited to 0–1 summing to 3) is refused. See <a href="#c-atomic">Atomic constraints</a>.</td></tr>
 <tr><td>“Constraint sharing conflict”</td><td>In a global fit, the terms of one constraint equation have different shared/local flags. Make them all shared or all local.</td></tr>
 <tr><td>The space-group test finds no difference between groups</td><td>The WPPF fit was run in a group that already forbids the reflections. Refit in the condition-free group of the Laue class. See <a href="#s-sg">Space-group test</a>.</td></tr>
+<tr><td>Find higher symmetry returns P1 for both parameter sources</td><td>Inspect the actual coordinates and cell for each source, the full-cell atom count, stored atom types and occupancies. The result describes the supplied model at the selected tolerances; diagnosing an unexpected group requires that model’s input. See <a href="#s-addsym">Atomic-model symmetry</a>.</td></tr>
+<tr><td>Find higher symmetry cannot load its WASM engine</td><td>Serve the folder over HTTP and check <code>js/symmetry_worker.js</code>, <code>lib/moyo/moyo_wasm.js</code> and <code>lib/moyo/moyo_wasm_bg.wasm</code> are present and served from their original relative paths. Moyo needs WebAssembly and module workers; it needs no WebGPU. The dialog reports the load error.</td></tr>
+<tr><td>Higher symmetry is found but Convert… is refused</td><td>The report separates detection from conversion. Check the lattice-adjustment limit, atomic mismatch messages and each dataset’s Rietveld model in the conversion preview. A group reported at a larger tolerance may be pseudo-symmetry.</td></tr>
+<tr><td>Charge flipping is still preparing its first cycle</td><td>The running panel reports GPU preparation, shader loading and compilation before cycle percentages begin. GPU startup waits have timeouts and CPU fallback; Stop works during preparation. See <a href="#s-cf">Charge flipping</a>.</td></tr>
 <tr><td>The Wyckoff search says the ranking is withheld</td><td>Fewer effective observations than free parameters. Extract more reflections, add distance constraints, or lower Z. See <a href="#s-wy">Wyckoff search</a>.</td></tr>
 <tr><td>Distance constraints refused (“make N rules; the kernel holds 8”)</td><td>Drop upper bounds you do not need or turn them into floors. See <a href="#s-wy-dist">Distance constraints</a>.</td></tr>
 <tr><td>Settings or theme came back unexpectedly</td><td>They live in local storage under <code>powder6.</code>. Use <b>Reset settings</b> or clear site data.</td></tr>
@@ -961,8 +1006,17 @@ js/
 </section>
 
 <section id="corrections">
-<h2>Corrections in 2.6</h2>
-<p>Released 21 October 2026. The complete correction list and regression command are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
+<h2>Recent changes</h2>
+<p>Version 2.10.4, 23 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
+<ul>
+  <li>Structure → Space group now groups the powder-intensity Test and atomic-model ADDSYM controls, with a separate phase selector for the latter.</li>
+  <li>Find higher symmetry calls the bundled public Moyo WebAssembly engine in a cancellable worker. Reports show the selected atomic source, returned group and conversion restrictions. Conversion retains the selected model and uses each dataset’s Rietveld coordinates and cell together.</li>
+  <li>Project opening replaces saved acquisition, method and search settings and clears the previous session’s calculation caches.</li>
+  <li>Chebyshev coefficients are re-expressed when the fitted range changes. Method switches and saved-result inspection reuse unchanged calculated plots.</li>
+  <li>Charge flipping reports GPU startup stages and completed cycles, with bounded startup waits, CPU fallback and Stop during preparation.</li>
+</ul>
+<h3>Corrections in 2.6</h3>
+<p>Released 21 October 2026.</p>
 <ul>
   <li>Restored scale estimation and cleared obsolete fit statistics and uncertainties after phase additions or deletions.</li>
   <li>Preserved measurement uncertainties, explicit weights and zero-weight exclusions through import, saving and undo.</li>
@@ -1015,13 +1069,14 @@ js/
   <li>Brown, I. D. (2009). Recent developments in the methods and applications of the bond valence model. <i>Chem. Rev.</i> 109, 6858–6919.</li>
   <li>Cordero, B., Gómez, V., Platero-Prats, A. E., Revés, M., Echeverría, J., Cremades, E., Barragán, F., Alvarez, S. (2008). Covalent radii revisited. <i>Dalton Trans.</i> (21), 2832–2838.</li>
   <li>Grosse-Kunstleve, R. W., Sauter, N. K., Moriarty, N. W., Adams, P. D. (2002). The Computational Crystallography Toolbox: crystallographic algorithms in a reusable software framework. <i>J. Appl. Cryst.</i> 35, 126–136. (Space-group symmetry and systematic-absence rules.)</li>
+  <li>Shinohara, K. (2026). <i>moyo: A fast and robust crystal symmetry finder, written in Rust.</i> <a href="https://doi.org/10.6084/m9.figshare.31081162.v1">doi:10.6084/m9.figshare.31081162.v1</a>. Powder 6 bundles <code>@spglib/moyo-wasm</code> 0.21.0 for atomic-model symmetry; see <a href="lib/moyo/NOTICE.md">attribution</a> and the <a href="lib/moyo/LICENSE-MIT">MIT license</a>.</li>
 </ul>
 </section>
 
 <section id="about">
 <h2>About</h2>
 <p>Powder 6 was developed by Nita Dragoe, Université Paris-Saclay, as a browser-based implementation of powder pattern decomposition, Rietveld refinement and structure solution. It descends from PowderV2 (Dragoe, N. (2001). <i>J. Appl. Cryst.</i> 34, 535) and includes whole-powder-pattern fitting (WPPF; Toraya 1986, with Pawley-type intensity extraction) and modern global optimisation.</p>
-<p>All numerical work (the skyline Cholesky behind the covariance matrix and the uncertainties, the banded solver for the WPPF intensities, the non-negative least squares and the minimisers) is implemented in the program itself, so a refinement can never be blocked by a content-delivery network and the application works fully offline once served. Plots are drawn on canvas and the PDF report by a built-in writer. Space-group symmetry data is derived from the Computational Crystallography Toolbox (cctbx).</p>
+<p>The fit solvers (skyline Cholesky for covariance and uncertainties, the banded WPPF intensity solver, non-negative least squares and the minimisers) are implemented in the program itself. Atomic-model symmetry uses the locally bundled public Moyo WebAssembly code. These calculations require no content-delivery network. Plots are drawn on canvas and the PDF report by a built-in writer. Space-group lookup data and systematic-absence rules are derived from the Computational Crystallography Toolbox (cctbx).</p>
 <p>This document was written and checked against the code with the assistance of an AI.</p>
 <div class="warn"><b>Disclaimer.</b> This application is provided for educational and research purposes. While it implements standard and robust algorithms, it is not a substitute for fully validated, peer-reviewed software packages (for example GSAS-II, FullProf or TOPAS) for analyses intended for publication.</div>
 </section>
