@@ -33,6 +33,7 @@ RV.phasesTab = (function () {
   function renderBar() {
     var bar = $('#phase-select'), cur = St.currentPhase();
     ui.able($('#ph-tab-atom'), cur ? '' : 'No phase yet.');
+    ui.able(document.querySelector('[data-act="find-symmetry"]'), cur && cur.atoms.length ? '' : 'Select a phase with atoms: the search looks at their positions.');
     var cb=document.querySelector('[data-atomic-constraints]');if(cb){ui.able(cb,cur && cur.atoms.length?'':'Select a phase with atoms.');cb.textContent='Atomic constraints…'+(cur && cur.constraints && cur.constraints.length?' ('+cur.constraints.length+')':'');}
     if (!bar) return;
     bar.innerHTML = S.phases.map(function (ph, i) {
@@ -290,6 +291,7 @@ RV.phasesTab = (function () {
     else if (a === 'rename-phase' && ph && !busy()) renamePhase(ph);
     else if (a === 'sg-browse' && ph && !busy()) openBrowser(ph);
     else if (a === 'sg-convert' && ph && !busy()) convertDialog(ph);
+    else if (a === 'find-symmetry' && ph && !busy()) findSymmetryDialog(ph);
     else if (a === 'preset-load' && ph && !busy()) {RV.app.showTab('datasets');RV.cmd.loadPreset();}
     else if (a === 'preset-save' && ph) RV.cmd.savePreset();
     else if (a === 'del-atom' && ph && !busy()) {
@@ -369,17 +371,18 @@ RV.phasesTab = (function () {
     if (plan.dsBad.length) h += '<p class="warn"><b>Not converted:</b> the refined positions of ' + plan.dsBad.length + ' dataset(s) do not have this symmetry. ' + esc(plan.dsBad.slice(0, 2).join(' ')) + '</p>';
     return h + '</div>';
   }
-  async function convertDialog(ph) {
+  // preset (from Find higher symmetry): { hall, basis, shift, tol } — the group and the transformation, entered by hand
+  async function convertDialog(ph, preset) {
     if (typeof SGConvert === 'undefined' || !S.sgReady) { ui.toast('The space-group database is not loaded.', 'warn'); return; }
     var key = ph.key, last = null;
     var fields = [
       { key: 'find', label: 'Find', type: 'text', value: '', hint: 'A number or a symbol (14, P21/n, Fm-3m, Pnnn:2): the list below keeps the matches.' },
-      { key: 'target', label: 'New space group', type: 'select', value: ph.sg.hall, options: St.allSettings().map(function (s) { return [s.hall, s.number + ' · ' + s.symbol + ' · ' + s.system + (s.setting && s.setting !== 'standard' ? ' · ' + s.setting : '')]; }),
+      { key: 'target', label: 'New space group', type: 'select', value: preset ? preset.hall : ph.sg.hall, options: St.allSettings().map(function (s) { return [s.hall, s.number + ' · ' + s.symbol + ' · ' + s.system + (s.setting && s.setting !== 'standard' ? ' · ' + s.setting : '')]; }),
         hint: 'Every setting of the 230 groups. A subgroup splits sites, a supergroup merges atoms the new symmetry relates, another setting changes only the axes.' },
-      { key: 'mode', label: 'Transformation', type: 'select', value: 'auto', options: [['auto', 'Find it'], ['manual', 'Enter it']] },
-      { key: 'basis', label: 'New axes a′, b′, c′', type: 'text', value: 'a,b,c', when: 'mode:manual', hint: 'In the old axes, e.g. a+b,-a+b,c or 2a,b,c.' },
-      { key: 'shift', label: 'New origin', type: 'text', value: '0,0,0', when: 'mode:manual', hint: 'In the old axes, e.g. 1/8,1/8,1/8.' },
-      { key: 'tol', label: 'Tolerance /Å', type: 'number', value: 0.1, hint: 'How far an atom may be from where the new symmetry puts its equivalent (supergroups only).' }
+      { key: 'mode', label: 'Transformation', type: 'select', value: preset ? 'manual' : 'auto', options: [['auto', 'Find it'], ['manual', 'Enter it']] },
+      { key: 'basis', label: 'New axes a′, b′, c′', type: 'text', value: preset ? preset.basis : 'a,b,c', when: 'mode:manual', hint: 'In the old axes, e.g. a+b,-a+b,c or 2a,b,c.' },
+      { key: 'shift', label: 'New origin', type: 'text', value: preset ? preset.shift : '0,0,0', when: 'mode:manual', hint: 'In the old axes, e.g. 1/8,1/8,1/8.' },
+      { key: 'tol', label: 'Tolerance /Å', type: 'number', value: preset && preset.tol ? preset.tol : 0.1, hint: 'How far an atom may move to take the new symmetry (supergroups only).' }
     ];
     function read(body) { var o = {}; fields.forEach(function (f) { var e = body.querySelector('[data-key="' + f.key + '"]'); o[f.key] = f.type === 'number' ? ui.parseNum(e.value) : e.value; }); return o; }
     var res = await ui.prompt('Convert ' + ph.name + ' to another space group', fields, 'Convert',
@@ -441,6 +444,108 @@ RV.phasesTab = (function () {
       ph.atoms.length + ' site' + (ph.atoms.length === 1 ? '' : 's') + ', ' + (r.datasets ? r.datasets + ' dataset' + (r.datasets === 1 ? '' : 's') + (r.banks ? ' and ' + r.banks + ' saved calculation' + (r.banks === 1 ? '' : 's') : '') + ' converted' : 'starting model converted') +
       (r.constraintsDropped ? '; ' + r.constraintsDropped + ' atomic constraint(s) removed' : '') + (r.linksDropped ? '; ' + r.linksDropped + ' parameter link(s) to the old atoms removed' : '') + '. Fit again.';
     ui.toast(msg, r.constraintsDropped || r.linksDropped ? 'warn' : 'ok');
+  }
+
+  // ---------------------------------------------------------------- missed symmetry (as ADDSYM in PLATON), handed to Convert
+  // one setting per group to name what is found in: the standard one, b-unique cell choice 1, origin choice 2, hexagonal axes
+  var standardGroups = null;
+  function groupsForSearch() {
+    if (standardGroups) return standardGroups;
+    var by = {};
+    St.allSettings().forEach(function (s) { (by[s.number] = by[s.number] || []).push(s); });
+    standardGroups = Object.keys(by).map(function (n) {
+      var list = by[n], pick = function (d) { return list.filter(function (s) { return s.setting === d; })[0]; };
+      var s = pick('standard') || pick('b1') || pick('b') || pick('origin choice 2') || list[0], g = St.resolveSG(s.symbol, s.hall);
+      return g ? Object.assign({}, g) : null;
+    }).filter(Boolean);
+    return standardGroups;
+  }
+  // f: { source ('start' or a dataset id), tol (Å), cellTol (% and degrees) } -> the search, its conversion and what it adds
+  function symmetrySearch(ph, f, tolOverride) {
+    var K = SGConvert, ds = f.source === 'start' ? null : St.byId(+f.source), tol = tolOverride || f.tol;
+    var values = ds ? Object.assign({}, ds.p, St.atomicValues(ds)) : ph.v, cell = St.cellOf(ph, ds ? ds.p : ph.v) || St.cellOf(ph, ph.v), atoms = atomList(ph, values);
+    var norm = function (c, g) { return normaliseCell(c, g.system, g.uniqueAxis); };
+    var r = K.findSymmetry(atoms, ph.ops, cell, groupsForSearch(), { tol: tol, lenTol: f.cellTol / 100, angTol: f.cellTol, normalise: norm });
+    var out = { r: r, cell: cell, atoms: atoms, tol: tol };
+    if (!r.group) return out;
+    out.newCell = norm(r.cell, r.group);
+    out.conv = K.convertStructure(atoms, ph.ops, r.group.ops, cell, r.P, r.p, { tol: tol, cell: out.newCell });
+    // symmetry per volume: operators per cell over the cell's volume, so a larger or smaller new cell compares fairly
+    out.perOld = r.group.ops.length / Math.abs(K.det3(r.P));
+    out.higher = out.perOld > ph.ops.length + 1e-9 && !out.conv.violations.length;
+    var cur = ph.ops, curIdx = new Map();
+    cur.forEach(function (o) { var k = o.r.map(Math.round).join(','); if (!curIdx.has(k)) curIdx.set(k, []); curIdx.get(k).push(o.t); });
+    out.missing = r.ops.filter(function (o) {
+      var ts = curIdx.get(o.r.map(function (v) { return Math.round(v); }).join(','));
+      return !(ts && ts.some(function (t) { return [0, 1, 2].every(function (k) { var d = o.t[k] - t[k]; return Math.abs(d - Math.round(d)) < 0.02; }); }));
+    });
+    out.centring = cur.filter(function (o) { return o.r.every(function (v, i) { return Math.abs(v - [1, 0, 0, 0, 1, 0, 0, 0, 1][i]) < 1e-9; }); }).length;
+    return out;
+  }
+  function symmetryHTML(ph, f, s, sweep) {
+    var K = SGConvert, r = s.r, h = '<div class="convert-preview-body">';
+    h += '<p>Now <b>' + esc(St.sgText(ph.sg)) + '</b>' + (ph.sg.setting && ph.sg.setting !== 'standard' ? ', ' + esc(ph.sg.setting) : '') + ': ' + ph.atoms.length + ' site' + (ph.atoms.length === 1 ? '' : 's') + ', ' + r.points + ' atom' + (r.points === 1 ? '' : 's') + ' in the cell, ' + ph.ops.length + ' operator' + (ph.ops.length === 1 ? '' : 's') + '.</p>';
+    h += '<dl class="sv-dl"><dt>Cell metric</dt><dd>' + esc(r.latticeSystem || 'not determined') + (r.latticeOps ? ' (' + r.latticeOps + ' lattice operations)' : '') + ' within ' + f.cellTol + ' % and ' + f.cellTol + '°</dd>' +
+      '<dt>Lattice</dt><dd>' + r.latticePoints + ' lattice point' + (r.latticePoints === 1 ? '' : 's') + ' per cell' + (r.latticePoints > s.centring ? ' <b>(' + (r.latticePoints - s.centring) + ' more than ' + esc(ph.sg.symbol) + ' has: extra centring, or a smaller true cell)</b>' : '') + '</dd>';
+    if (!r.group) {
+      h += '<dt>Symmetry found</dt><dd class="warn">' + r.ops.length + ' operations, which could not be named as a space group; lower the tolerances.</dd></dl>';
+    } else {
+      var c = s.conv;
+      h += '<dt>Symmetry found</dt><dd><b>' + esc(St.sgText(r.group)) + '</b>' + (r.group.setting && r.group.setting !== 'standard' ? ', ' + esc(r.group.setting) : '') + ' · ' + (s.higher ? '<b>higher than ' + esc(ph.sg.symbol) + '</b>' : 'no symmetry beyond ' + esc(ph.sg.symbol)) + '</dd>';
+      if (s.higher) h += '<dt>New axes</dt><dd>a′, b′, c′ = ' + esc(K.formatBasis(r.P)) + '; origin ' + esc(K.formatShift(r.p)) + ' in the old axes</dd>' +
+        '<dt>New cell</dt><dd>' + esc(cellText(s.newCell)) + (r.misfit > 1e-4 ? ' <span class="warn">(adjusted by up to ' + (100 * r.misfit).toFixed(2) + ' % to the ' + esc(r.group.system) + ' metric)</span>' : '') + '</dd>' +
+        '<dt>Sites</dt><dd>' + ph.atoms.length + ' → ' + c.atoms.length + '; atoms move by at most ' + c.maxShift.toFixed(3) + ' Å to take the new symmetry</dd>';
+      h += '</dl>';
+      if (s.missing.length) h += '<p><b>' + s.missing.length + ' operation' + (s.missing.length === 1 ? '' : 's') + ' the structure has and ' + esc(ph.sg.symbol) + ' does not use</b> (in the present axes; the largest miss of an atom):</p><div class="table-wrap"><table class="grid compact"><thead><tr><th>Operation</th><th>Largest miss /Å</th></tr></thead><tbody>' +
+        s.missing.slice(0, 24).map(function (o) { return '<tr><td><code>' + esc(o.xyz) + '</code></td><td>' + o.dev.toFixed(3) + '</td></tr>'; }).join('') + '</tbody></table></div>' + (s.missing.length > 24 ? '<p class="hint">and ' + (s.missing.length - 24) + ' more.</p>' : '');
+    }
+    if (sweep && sweep.length) h += '<p><b>At other tolerances</b> (cell ' + f.cellTol + ' %, ' + f.cellTol + '°):</p><div class="table-wrap"><table class="grid compact"><thead><tr><th>Tolerance /Å</th><th>Space group</th><th>Largest move /Å</th></tr></thead><tbody>' +
+      sweep.map(function (w) { return '<tr' + (Math.abs(w.tol - s.tol) < 1e-9 ? ' class="best"' : '') + '><td>' + w.tol + '</td><td>' + (w.r.group ? esc(St.sgText(w.r.group)) + (w.higher ? '' : ' (no more than now)') : '—') + '</td><td>' + (w.conv ? w.conv.maxShift.toFixed(3) : '—') + '</td></tr>'; }).join('') + '</tbody></table></div>';
+    h += '<p class="hint">' + (s.higher ? 'Convert… opens the conversion with this group and transformation; it merges the atoms the new symmetry relates and converts every dataset. Check the result against the data: a powder pattern may not tell a small distortion from the higher symmetry.'
+                                        : 'No symmetry beyond ' + esc(ph.sg.symbol) + ' within ' + s.tol + ' Å. Larger tolerances find pseudo-symmetry; check them against the data.') + '</p>';
+    return h + '</div>';
+  }
+  async function findSymmetryDialog(ph) {
+    if (typeof SGConvert === 'undefined' || !S.sgReady) { ui.toast('The space-group database is not loaded.', 'warn'); return; }
+    if (!ph.atoms.length) { ui.toast('Find higher symmetry looks at the atoms; ' + ph.name + ' has none.', 'warn'); return; }
+    var key = ph.key, last = null, holders = St.holdersOf(ph);
+    var fields = [
+      { key: 'source', label: 'Positions of', type: 'select', value: 'start', options: [['start', 'The starting model (Phases)']].concat(holders.map(function (d) { return [String(d.id), 'Dataset ' + d.name + (S.calculation === 'rietveld' ? '' : ' (its Rietveld values)')]; })) },
+      { key: 'tol', label: 'Atoms within /Å', type: 'number', value: 0.2, hint: 'How far an atom may move to take a symmetry; ADDSYM-like searches commonly use 0.1–0.5 Å.' },
+      { key: 'cellTol', label: 'Cell within /% and °', type: 'number', value: 1, hint: 'How far the cell may be from the metric of the higher symmetry, in % for lengths and degrees for angles.' }
+    ];
+    function read(body) { return { source: body.querySelector('[data-key="source"]').value, tol: ui.parseNum(body.querySelector('[data-key="tol"]').value), cellTol: ui.parseNum(body.querySelector('[data-key="cellTol"]').value) }; }
+    function valid(f) { return f.tol > 0 && f.tol <= 2 && f.cellTol > 0 && f.cellTol <= 10; }
+    var res = await ui.prompt('Find higher symmetry of ' + ph.name, fields, 'Convert…',
+      'Looks for symmetry the structure has but ' + esc(St.sgText(ph.sg)) + ' does not use, as ADDSYM in PLATON (after Le Page): extra lattice translations, then every rotation the cell allows that maps the atoms onto atoms of the same kind.',
+      { wide: true, after: '<div class="convert-preview" data-symmetry-report aria-live="polite"></div>',
+        onOpen: function (body) {
+          var timer = 0, out = body.querySelector('[data-symmetry-report]');
+          function update() {
+            var f = read(body), p = St.phaseByKey(key);
+            if (!p) return;
+            if (!valid(f)) { out.innerHTML = '<p class="warn">The atom tolerance is between 0 and 2 Å, the cell tolerance between 0 and 10 (% and °).</p>'; last = null; return; }
+            try {
+              last = symmetrySearch(p, f);
+              var sweep = [0.05, 0.1, 0.2, 0.3, 0.5].concat([f.tol]).filter(function (t, i, a) { return a.indexOf(t) === i; }).sort(function (x, y) { return x - y; }).map(function (t) { return Math.abs(t - f.tol) < 1e-9 ? last : symmetrySearch(p, f, t); });
+              out.innerHTML = symmetryHTML(p, f, last, sweep);
+            } catch (e) { last = null; out.innerHTML = '<p class="warn">The search failed: ' + esc(e.message) + '</p>'; }
+          }
+          out.innerHTML = '<p class="hint">Searching…</p>';
+          body.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(update, 300); });
+          body.addEventListener('change', function () { clearTimeout(timer); update(); });
+          setTimeout(update, 30);
+        },
+        check: function (v) {
+          if (!valid(v)) return 'The atom tolerance is between 0 and 2 Å, the cell tolerance between 0 and 10 (% and °).';
+          if (!last || !last.r.group) return 'No space group was found at these tolerances.';
+          if (!last.higher) return 'No symmetry beyond ' + St.sgText(St.phaseByKey(key).sg) + ' within ' + v.tol + ' Å: nothing to convert to.';
+          return '';
+        } });
+    if (!res || !last || !last.higher) return;
+    ph = St.phaseByKey(key);
+    if (!ph || busy()) return;
+    convertDialog(ph, { hall: last.r.group.hall, basis: SGConvert.formatBasis(last.r.P), shift: SGConvert.formatShift(last.r.p), tol: last.tol });
   }
 
   // the space-group browser (spacegroup_ui.js); Apply sets the space group of the phase it was opened for

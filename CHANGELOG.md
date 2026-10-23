@@ -2,6 +2,15 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.10.0 — 23 October 2026
+
+1. Phases → **Find higher symmetry…** looks for symmetry a structure has but its space group does not use, in the manner of ADDSYM in PLATON (after Le Page's MISSYM), and hands the result to Convert…. It works on the starting model or on the refined positions of any dataset holding the phase, with a distance tolerance for the atoms (0.2 Å by default) and a tolerance for the cell (1 % and 1°).
+   - The structure is expanded to the full cell; lattice translations that map every atom onto one of the same kind give the true primitive cell (extra centring, or a smaller cell); the rotations its Delaunay-reduced lattice allows within the cell tolerance are tested for a translation that maps all atoms onto atoms of the same kind; the group they form is named in the standard setting (standard, b-unique cell choice 1, origin choice 2, hexagonal axes for R groups), with the new axes and origin.
+   - The report gives the cell metric, the lattice points per cell, the group found and whether it is higher than the present one, the new cell, how the sites merge and how far atoms must move, the operations the structure has and the present group does not use (with the largest miss of an atom), and the group found at 0.05, 0.1, 0.2, 0.3 and 0.5 Å.
+   - Convert… opens the conversion already set to that group and transformation; the conversion merges the atoms and converts every dataset, as before.
+   - Checked on NaCl, Si (Fd-3m origin 2), CsCl, W, spinel, wurtzite, Mg, Bi₂Te₃ (R-3m), rutile, anatase, P2₁/c, C2/c, Pnma, P2₁2₁2₁ and P-1 structures written in P1: each is named correctly, in well under a second.
+2. Convert…: the tolerance is now how far an atom may move to take the new symmetry (the distance to the symmetric average), as in the new search; before, two equivalent atoms each moved by up to the tolerance could be refused. Atoms merged from the pieces of one split atom get its name back (Na1a … Na1d → Na1).
+
 ## 2.9.2 — 23 October 2026
 
 1. Convert…: the new space group is chosen from a drop-down list of all 520 settings of the 230 groups (number · symbol · crystal system · setting), with a Find box above it that keeps the matches as you type a number or a symbol and selects the setting the text names (14 → P121/c1, P21/n → P121/n1, Pnnn:2). Enter in Find accepts the match instead of starting the conversion; a Find with no match is refused. The previous field showed a drop-down arrow that opened an empty list.

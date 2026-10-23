@@ -17,6 +17,7 @@ Full documentation: [`Powder6_documentation.html`](Powder6_documentation.html): 
 - Space-group test, charge flipping (WebGPU with CPU fallback) and a Wyckoff-site search (WebGPU), handing the atoms back for a Rietveld fit.
 - Readers for xy/csv/txt, PANalytical `.xrdml`, Bruker `.brml`/`.uxd`, Rigaku `.ras`/`.rasx`, Philips `.udf`/`.rd`/`.sd`, GSAS `.xra`/`.esd`, Jade `.mdi`, pdCIF, and project files.
 - Results as text, CIF, pdCIF, SHELX HKLF 4 and a PDF report; command line, edit undo, and persistent calculation History with Set/Keep.
+- Phases → Find higher symmetry… finds symmetry a structure has but its space group does not use (as ADDSYM in PLATON), names the group in its standard setting and hands it to Convert….
 - Phases → Convert… carries a phase to another space group or setting (subgroups split sites, supergroups merge them when the structure has the symmetry); cell, positions and every dataset are transformed.
 - Compressed `.project` files (`.archive` and the `.powder6` files of earlier versions open too), saved dataset groups, and overview/focused inspection for large series.
 

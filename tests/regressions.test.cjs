@@ -206,6 +206,26 @@ test('every space-group setting resolves from its own symbol; short monoclinic s
   assert.equal(sym('14'),'P121/c1');assert.equal(sym('15'),'C12/c1');assert.equal(sym('225'),'Fm-3m');assert.equal(sym('F m -3 m'),'Fm-3m');
   assert.equal(a.state.resolveSG('-P 2yn').symbol,'P121/n1','a Hall symbol still resolves');
 });
+test('Find higher symmetry names the space group of structures given in P1, with the transformation to it', () => {
+  const a=app(),St=a.state,E=a.context.SG_ENGINE,K=a.context.SGConvert;
+  const groups=[];for(let n=1;n<=230;n++){const s=E.listSettings(n),pick=d=>s.find(x=>x.setting_description===d);groups.push(Object.assign({},St.resolveSG(n,(pick('standard')||pick('b1')||pick('b')||pick('origin choice 2')||s[0]).hall)));}
+  const norm=(c,g)=>a.context.normaliseCell(c,g.system,g.uniqueAxis),P1=St.resolveSG(1);
+  const inP1=(sg,atoms,cell)=>K.convertStructure(atoms,sg.ops,P1.ops,cell,K.IDENTITY,[0,0,0]).atoms.map(x=>({label:x.label,type:x.type,x:x.x,y:x.y,z:x.z,occ:1}));
+  const find=(atoms,cell,tol=0.2)=>{const r=K.findSymmetry(atoms,P1.ops,cell,groups,{tol,normalise:norm});const c=r.group&&K.convertStructure(atoms,P1.ops,r.group.ops,cell,r.P,r.p,{tol,cell:norm(r.cell,r.group)});return {r,c};};
+  const cub=x=>({a:x,b:x,c:x,alpha:90,beta:90,gamma:90});
+  const cases=[
+    [225,inP1(St.resolveSG(225),[{label:'Na',type:'Na',x:0,y:0,z:0},{label:'Cl',type:'Cl',x:.5,y:.5,z:.5}],cub(5.64)),cub(5.64),2],
+    [227,inP1(St.resolveSG(227,E.listSettings(227)[0].hall),[{label:'Si',type:'Si',x:0,y:0,z:0}],cub(5.43)),cub(5.43),1],
+    [166,inP1(St.resolveSG(166),[{label:'Bi',type:'Bi',x:0,y:0,z:.4},{label:'Te1',type:'Te',x:0,y:0,z:0},{label:'Te2',type:'Te',x:0,y:0,z:.21}],{a:4.38,b:4.38,c:30.5,alpha:90,beta:90,gamma:120}),{a:4.38,b:4.38,c:30.5,alpha:90,beta:90,gamma:120},3],
+    [186,inP1(St.resolveSG(186),[{label:'Zn',type:'Zn',x:1/3,y:2/3,z:0},{label:'O',type:'O',x:1/3,y:2/3,z:.382}],{a:3.25,b:3.25,c:5.21,alpha:90,beta:90,gamma:120}),{a:3.25,b:3.25,c:5.21,alpha:90,beta:90,gamma:120},2],
+    [62,inP1(St.resolveSG(62),[{label:'Ca',type:'Ca',x:.05,y:.25,z:.99},{label:'O1',type:'O',x:.48,y:.25,z:.08},{label:'O2',type:'O',x:.29,y:.04,z:.71},{label:'Ti',type:'Ti',x:0,y:0,z:.5}],{a:5.44,b:7.64,c:5.38,alpha:90,beta:90,gamma:90}),{a:5.44,b:7.64,c:5.38,alpha:90,beta:90,gamma:90},4],
+    [15,inP1(St.resolveSG(15,E.listSettings(15).find(x=>x.setting_description==='b1').hall),[{label:'Fe',type:'Fe',x:0,y:.2,z:.25},{label:'O',type:'O',x:.31,y:.12,z:.05}],{a:9.7,b:8.8,c:5.3,alpha:90,beta:107,gamma:90}),{a:9.7,b:8.8,c:5.3,alpha:90,beta:107,gamma:90},2]];
+  for(const [number,atoms,cell,sites] of cases){const {r,c}=find(atoms,cell);assert.equal(r.group&&r.group.number,number,'group '+number);assert.equal(c.violations.length,0);assert.equal(c.atoms.length,sites,'sites of '+number);assert.ok(c.maxShift<1e-6);}
+  // NaCl with one Cl moved 0.17 A: Fm-3m at 0.2 A (the move is reported), not at 0.1 A
+  const d=cases[0][1].map(x=>({...x}));d.find(x=>x.type==='Cl').z+=0.03;
+  let f=find(d,cub(5.64),0.2);assert.equal(f.r.group.number,225);assert.ok(f.c.maxShift>0.15 && f.c.maxShift<0.2);
+  f=find(d,cub(5.64),0.1);assert.notEqual(f.r.group.number,225);
+});
 function convertible(sgNumber, atoms, cell, hall) {
   const a=app();a.S.calculation='rietveld';
   const sg=a.state.resolveSG(sgNumber,hall),ph=a.state.makePhase({name:'X',sg,cell,atoms});a.state.addPhase(ph);
