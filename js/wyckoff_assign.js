@@ -51,20 +51,20 @@ const SHARKO_WYCKOFF_ASSIGN_VERSION = '1.1.0';
                    raising one without the other silently truncates instead.
      WY_MAX_ELEM   local_rMin is WY_MAX_ELEM^2 floats of workgroup memory.
      WY_MAX_OPS    genOp is packed into 12 bits. Group orders top out at 192.
-     WY_MAX_RULES  MAX_BOND_RULES.
-     WY_MAX_COORD_SLOTS  width of the private `slot` array, shared across every
-                   counted rule. Private, not workgroup - it does not compete
-                   with MAX_GEN_ATOMS for the 16 kB, and the kernel initialises
-                   only the slots the rules claimed - so 64 (= WY_MAX_RULES x 8)
-                   is affordable and stops this bound binding on any real
-                   coordination shell. PbSO4 with S-O 4, Pb-O 8 and Pb-S 8
-                   needs 20, which the old 16 refused.
+     WY_MAX_RULES  the most MAX_BOND_RULES the kernel is compiled with
+                   (js/wyckoff_limits.js). swInject() sizes MAX_BOND_RULES and
+                   MAX_COORD_SLOTS for each run from what buildRestraintTables()
+                   returns, so a run within the base sizes pays nothing for
+                   the larger maxima.
+     WY_MAX_COORD_SLOTS  the most MAX_COORD_SLOTS: the width of the private
+                   `slot` array, shared across every counted rule.
    ------------------------------------------------------------------ */
+const WY_L = (typeof WY_LIMITS !== 'undefined') ? WY_LIMITS : require('./wyckoff_limits.js').WY_LIMITS;
 const WY_MAX_SITES = 32;
 const WY_MAX_ELEM = 8;
 const WY_MAX_OPS = 4096;
-const WY_MAX_RULES = 8;
-const WY_MAX_COORD_SLOTS = 64;
+const WY_MAX_RULES = WY_L.maxRules;
+const WY_MAX_COORD_SLOTS = WY_L.maxCoordSlots;
 
 /* ------------------------------------------------------------------ */
 /*  Wyckoff position helpers                                           */
@@ -369,7 +369,7 @@ function enumerateAssignments(wyckoff, demand, options = {}) {
         // times one position may be reused
         maxRepeat: Math.min(ceiling, Math.max(options.maxRepeat ?? 4, needed)),
         maxPerElement: options.maxPerElement ?? 500,
-        maxTotal: options.maxTotal ?? 4000
+        maxTotal: options.maxTotal ?? WY_L.maxAssignments
     };
 
     // Sites in ONE assignment, across every element. maxSites above is the
@@ -639,6 +639,90 @@ function rankAssignments(assignments, ctx) {
     }
     assignments.sort((a, b) => a.priorScore - b.priorScore);
     return assignments;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Equivalent assignments                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The permutations of the Wyckoff positions induced by the origin shifts
+ * (multiples of 1/4) and the inversion through the origin that map the group
+ * onto itself: elements of its Euclidean normalizer valid for any metric.
+ *
+ * Such a map carries a structure of one assignment onto a structure of the
+ * permuted assignment that has the same |F|^2 for every reflection (a shift
+ * changes only phases, an inversion is Friedel's law) and the same distances,
+ * so searching both measures the same thing twice. Returned as arrays
+ * perm[wIdx] = wIdx'.
+ */
+function normalizerPermutations(wyckoff, symOps) {
+    if (wyckoff._normPerms && wyckoff._normOps === symOps) return wyckoff._normPerms;
+    const close = (a, b) => { const d = a - b; return Math.abs(d - Math.round(d)) < 1e-6; };
+    const byRot = new Map();
+    for (const op of symOps || []) {
+        const k = op.r.join(',');
+        if (!byRot.has(k)) byRot.set(k, []);
+        byRot.get(k).push(op.t || [0, 0, 0]);
+    }
+    const member = (r, t) => (byRot.get(r.join(',')) || [])
+        .some(u => close(u[0], t[0]) && close(u[1], t[1]) && close(u[2], t[2]));
+    const apply = (op, x) => {
+        const r = op.r, t = op.t || [0, 0, 0];
+        return [r[0] * x[0] + r[1] * x[1] + r[2] * x[2] + t[0],
+                r[3] * x[0] + r[4] * x[1] + r[5] * x[2] + t[1],
+                r[6] * x[0] + r[7] * x[1] + r[8] * x[2] + t[2]];
+    };
+    const generic = wyckoff.map(w => projectOnto(w, _SS_GENERIC[0], _SS_GENERIC[1], _SS_GENERIC[2], new Float64Array(3)));
+    const tmp = new Float64Array(3), steps = [0, 0.25, 0.5, 0.75], perms = [];
+    for (const m of [1, -1]) for (const s0 of steps) for (const s1 of steps) for (const s2 of steps) {
+        if (m === 1 && !s0 && !s1 && !s2) continue;
+        const s = [s0, s1, s2];
+        // x -> m x + s conjugates (R, w) to (R, m w + s - R s)
+        const normalizes = (symOps || []).every(op => {
+            const r = op.r, w = op.t || [0, 0, 0];
+            const Rs = [r[0] * s0 + r[1] * s1 + r[2] * s2, r[3] * s0 + r[4] * s1 + r[5] * s2, r[6] * s0 + r[7] * s1 + r[8] * s2];
+            return member(r, [m * w[0] + s0 - Rs[0], m * w[1] + s1 - Rs[1], m * w[2] + s2 - Rs[2]]);
+        });
+        if (!normalizes) continue;
+        const perm = [];
+        for (let i = 0; i < wyckoff.length; i++) {
+            const p = generic[i], q = [m * p[0] + s[0], m * p[1] + s[1], m * p[2] + s[2]];
+            let found = -1;
+            for (let j = 0; j < wyckoff.length && found < 0; j++) {
+                if (wyckoff[j].multiplicity !== wyckoff[i].multiplicity) continue;
+                for (const op of symOps) {
+                    const g = apply(op, q);
+                    projectOnto(wyckoff[j], g[0], g[1], g[2], tmp);
+                    if (close(tmp[0], g[0]) && close(tmp[1], g[1]) && close(tmp[2], g[2])) { found = j; break; }
+                }
+            }
+            if (found < 0) break;
+            perm.push(found);
+        }
+        if (perm.length === wyckoff.length && perm.some((j, i) => j !== i)) perms.push(perm);
+    }
+    wyckoff._normPerms = perms; wyckoff._normOps = symOps;
+    return perms;
+}
+
+/**
+ * Keeps one assignment of each set related by normalizerPermutations(): the
+ * first met, so the enumeration order (largest multiplicities first) is kept.
+ * Returns { assignments, dropped }.
+ */
+function dedupeEquivalentAssignments(assignments, wyckoff, symOps) {
+    const perms = normalizerPermutations(wyckoff, symOps);
+    if (!perms.length) return { assignments, dropped: 0 };
+    const keyOf = (A, perm) => A.sites.map(s => s.elementIdx + ':' + (perm ? perm[s.wIdx] : s.wIdx)).sort().join('|');
+    const seen = new Set(), kept = [];
+    for (const A of assignments) {
+        let key = keyOf(A, null);
+        for (const perm of perms) { const k = keyOf(A, perm); if (k < key) key = k; }
+        if (seen.has(key)) continue;
+        seen.add(key); kept.push(A);
+    }
+    return { assignments: kept, dropped: assignments.length - kept.length };
 }
 
 /* ------------------------------------------------------------------ */
@@ -964,7 +1048,7 @@ function buildRestraintTables(demand, windows = [], options = {}) {
     for (let i = 0; i < rMin.length; i++) maxDistance = Math.max(maxDistance, rMin[i]);
     for (const r of rules) if (Number.isFinite(r[3])) maxDistance = Math.max(maxDistance, r[3]);
 
-    return { tables, rMinOff, ruleOff, nRules: rules.length, nElem,
+    return { tables, rMinOff, ruleOff, nRules: rules.length, nElem, slotsNeeded,
              ruleStride: RULE_STRIDE, maxDistance, problems,
              // The rule RECORDS, not just their count. A restraint is a
              // statement about the structure that did not come from the
@@ -1099,12 +1183,18 @@ function weightedAssign(ids, numParticles, minPer, weights) {
  * at the cost of more waves.
  */
 function allocateParticles(nAssign, numParticles, minPer = 24, weights = null) {
-    const headroom = weights ? 2 : 1;
-    const perWave = Math.max(1, Math.floor(numParticles / (minPer * headroom)));
+    return allocateWaves(Array.from({ length: nAssign }, (_, k) => k), numParticles, minPer, weights);
+}
+/** Assignments per wave for this budget. */
+function assignmentsPerWave(numParticles, minPer = 24, weighted = true) {
+    return Math.max(1, Math.floor(numParticles / (minPer * (weighted ? 2 : 1))));
+}
+/** allocateParticles over the given assignment ids, in their order. */
+function allocateWaves(list, numParticles, minPer = 24, weights = null) {
+    const perWave = assignmentsPerWave(numParticles, minPer, !!weights);
     const waves = [];
-    for (let i = 0; i < nAssign; i += perWave) {
-        const ids = [];
-        for (let k = i; k < Math.min(i + perWave, nAssign); k++) ids.push(k);
+    for (let i = 0; i < list.length; i += perWave) {
+        const ids = list.slice(i, i + perWave);
         waves.push({ ids, assignOf: weights
             ? weightedAssign(ids, numParticles, minPer, weights)
             : Uint32Array.from({ length: numParticles }, (_, p) => ids[p % ids.length]) });
@@ -1210,7 +1300,8 @@ if (typeof module !== 'undefined' && module.exports) {
         wyckoffFreedom, wyckoffProjector, projectOnto, wyckoffShift,
         siteStabilizer, siteHasInversion, coordinationCompatible,
         enumerateAssignments, rankAssignments, buildAssignmentTables,
-        projectSites, allocateParticles, weightedAssign, pruneAssignments,
+        normalizerPermutations, dedupeEquivalentAssignments,
+        projectSites, allocateParticles, allocateWaves, assignmentsPerWave, weightedAssign, pruneAssignments,
         buildRestraintTables, packSymOps,
         parseFormula, suggestZ
     };

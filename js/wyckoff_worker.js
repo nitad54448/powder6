@@ -27,7 +27,7 @@
 // has been removed, and it now uses crystal.js's. Loading it first only costs
 // a console warning, but the order below is the supported one.
 if (typeof importScripts === 'function') {
-    importScripts('constants.js', 'profile.js', 'crystal.js',
+    importScripts('wyckoff_limits.js', 'constants.js', 'profile.js', 'crystal.js',
                   'symmetry_utils.js', 'observations.js', 'wyckoff_assign.js',
                   'scatterers.js', 'contacts.js', 'swarm_wyckoff.js', 'coord_refine.js');
 }
@@ -341,26 +341,27 @@ function wyObservationsFromHkl(job, symops) {
 //     structure is kept and reported. The ranking that used to pick the
 //     answer now only picks the ORDER, so if the run is stopped early the
 //     most plausible candidates have already been done.
-const WY_RHO_MIN_LIMIT = 1;    // g/cm^3, the floor a slider may ask for
-const WY_RHO_MAX_LIMIT = 22;   // g/cm^3, osmium and iridium, and nothing above
-const WY_RHO_MIN_DEFAULT = 2;
-const WY_RHO_MAX_DEFAULT = 10;
+// Every limit below comes from js/wyckoff_limits.js, which the page reads too.
+const WY_RHO_MIN_LIMIT = WY_LIMITS.rhoWindow[0];   // g/cm^3, the floor a slider may ask for
+const WY_RHO_MAX_LIMIT = WY_LIMITS.rhoWindow[1];   // g/cm^3, osmium and iridium, and nothing above
+const WY_RHO_MIN_DEFAULT = WY_LIMITS.defaults.rhoMin;
+const WY_RHO_MAX_DEFAULT = WY_LIMITS.defaults.rhoMax;
 const WY_VPA_TYPICAL = 16.0;  // A^3 per atom, the centre of the plausible band
-const WY_Z_HARD_MAX = 192;    // no Z above the largest general multiplicity
-const WY_MAX_ATOMS_PER_CELL = 512;  // beyond this no GPU in this program will run
+const WY_Z_HARD_MAX = WY_LIMITS.zMax;    // no Z above the largest general multiplicity
+const WY_MAX_ATOMS_PER_CELL = WY_LIMITS.maxAtomsPerCell;  // beyond this no GPU in this program will run
 // HOW MANY Z ARE ACTUALLY SEARCHED. Each one costs a full swarm run, so a
 // window left wide open on a light formula could otherwise queue up twenty of
 // them and read as a hang. The ranked order means the ones dropped are the
 // least plausible, and the log says which they were.
-const WY_MAX_Z_SEARCHES = 6;
+const WY_MAX_Z_SEARCHES = WY_LIMITS.defaults.maxZ;
 // ABSOLUTE LIMITS ON A CRYSTALLOGRAPHIC DENSITY, used to refuse a run rather
 // than to choose one. Lithium metal is 0.53 g/cm^3 and osmium is 22.59, so a
 // structure outside 0.5 to 22.5 is not a structure -- it is a Z, a formula or
 // a cell that do not belong to each other, and searching on it burns minutes
 // of GPU time to arrive at a fit nobody can use. The Auto window sits inside
 // these; they exist for the Z a user types.
-const WY_RHO_ABS_MIN = 0.5;
-const WY_RHO_ABS_MAX = 22.5;
+const WY_RHO_ABS_MIN = WY_LIMITS.rhoAbsolute[0];
+const WY_RHO_ABS_MAX = WY_LIMITS.rhoAbsolute[1];
 
 /**
  * The density window, as integers, in the order the caller meant them.
@@ -463,7 +464,7 @@ function wyZFeasible(Z, job, symops) {
             // which is exactly what runWyckoffSearch does with them.
             maxSites: job.wyckoffMaxSites || undefined,
             maxRepeat: job.wyckoffMaxRepeat || undefined,
-            ceiling: 24,
+            ceiling: WY_LIMITS.maxSitesPerElement,
             coordination: wyCoordinationFromWindows(job.distanceConstraints),
             symOps: symops,
             // ONE ASSIGNMENT IS THE WHOLE QUESTION. This is a feasibility
@@ -793,7 +794,7 @@ async function wyRunWithDevice(device, cell, symops, job, formula) {
     // deterministically -- the group rule below cuts candidates hard in a
     // centred setting and not at all in P1, where every Z really is possible.
     const zCap = (Number.isFinite(Number(job.maxZSearches)) && Number(job.maxZSearches) >= 1)
-        ? Math.min(24, Math.round(Number(job.maxZSearches)))
+        ? Math.min(WY_LIMITS.maxZSearches, Math.round(Number(job.maxZSearches)))
         : WY_MAX_Z_SEARCHES;
     let zPlan;                       // [{Z, rho, vpa, nAtoms}], best-first
     let zScan = null;                // the whole scan, for the report
@@ -1541,15 +1542,15 @@ if (constraintBreak) {
             Z: Z,
             maxSitesPerElement: job.wyckoffMaxSites || undefined,
             maxRepeat: job.wyckoffMaxRepeat || undefined,
-            wyckoffCapCeiling: 24,
+            wyckoffCapCeiling: WY_LIMITS.maxSitesPerElement,
             atomData: WY_ATOM_DATA, 
             scatterTables: scatterTables,
             // Accept the pre-parsed array directly from the UI
             windows: job.distanceConstraints || [],
             harkerSites: [],
-            numParticles: job.swarmParticles || 512,
-            generations: job.swarmIterations || 1000,
-            restarts: job.swarmRestarts || 4,
+            numParticles: job.swarmParticles || WY_LIMITS.defaults.particles,
+            generations: job.swarmIterations || WY_LIMITS.defaults.iterations,
+            restarts: job.swarmRestarts || WY_LIMITS.defaults.restarts,
             minContact: Number.isFinite(job.minContact)
     ? job.minContact
     : 1.0,
@@ -1559,8 +1560,9 @@ if (constraintBreak) {
                     type: 'wy-progress', 
                     wave: p.wave, waves: p.waves, 
                     generation: p.generation, generations: p.generations, 
-                    restart: p.restart, restarts: p.restarts, 
-                    best: p.best,
+                    restart: p.restart, restarts: p.restarts,
+                    best: p.best, cc: p.cc, assignment: p.assignment, bestSites: p.bestSites,
+                    stage: p.stage, fraction: p.fraction,
                     // So the progress readout can say WHICH Z is running.
                     // Without it a four-candidate run shows the bar sweep to
                     // the right four times with no explanation.

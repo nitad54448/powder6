@@ -4,7 +4,7 @@
  */
 RV.absorption = (function () {
   'use strict';
-  var St=RV.state, S=St.S, ui=RV.ui, table=null, label='', error='', loading=false, revision=0;
+  var St=RV.state, S=St.S, ui=RV.ui, table=null, label='', error='', loading=false, revision=0, builtin=false;
   var HC_EV_ANGSTROM=12398.419843320025, AMU_DENSITY=1.66053906660;
   function unitFactor(unit) {
     var u=String(unit || 'eV').toLowerCase().replace(/\s/g,'');
@@ -32,10 +32,21 @@ RV.absorption = (function () {
     if(!Object.keys(out).length)throw new Error('No elemental absorption tables found.');
     return out;
   }
-  function loadDocument(doc,name,defaultUnit) {
+  // isBuiltin: the absorption.json beside index.html, which every session reads itself and a project does not carry
+  function loadDocument(doc,name,defaultUnit,isBuiltin) {
     var next=normalize(doc,defaultUnit); // validate completely before replacing a usable table
-    table=next;label=String(name || 'absorption.json');error='';loading=false;revision++;
+    table=next;label=String(name || 'absorption.json');error='';loading=false;revision++;builtin=!!isBuiltin;
     RV.bus.emit('absorption');return Object.keys(table).length;
+  }
+  // a table the user loaded, as a document loadDocument reads back (energies in eV), for the project; null otherwise
+  function exportUser() {
+    if(!table || builtin)return null;
+    var elements={};Object.keys(table).forEach(function(el){elements[el]={mu:table[el].rows.map(function(r){return [r[0],r[1]];}),unit:'cm2/g',source:table[el].source};});
+    return {label:label,energyUnit:'eV',elements:elements};
+  }
+  function restoreUser(doc) {
+    if(!doc)return;
+    try{loadDocument(doc,doc.label || 'project absorption table','eV');}catch(e){ui.toast('The absorption table saved with the project could not be read: '+e.message,'warn');}
   }
   function coefficient(el,E) {
     if(!table || !table[el])return {error:'No mass attenuation table for '+el+'.'};
@@ -118,7 +129,7 @@ RV.absorption = (function () {
     var files=await ui.pickFiles({accept:'.json,application/json'});if(!files.length)return;
     try{
       var raw=JSON.parse(new TextDecoder().decode(await ui.readBuffer(files[0])));
-      var opts=await ui.prompt('Absorption table',[{key:'unit',label:'Energy unit for entries without energyUnit',type:'select',value:raw.energyUnit || 'eV',options:[['eV','eV'],['keV','keV'],['MeV','MeV']]}],'Load','Mass coefficients must be cm²/g. The expected transparency assumes 90% of the crystallographic solid density. Loaded coefficients remain in this session; place absorption.json beside index.html for automatic loading.');
+      var opts=await ui.prompt('Absorption table',[{key:'unit',label:'Energy unit for entries without energyUnit',type:'select',value:raw.energyUnit || 'eV',options:[['eV','eV'],['keV','keV'],['MeV','MeV']]}],'Load','Mass coefficients must be cm²/g. The expected transparency assumes 90% of the crystallographic solid density. Loaded coefficients remain in this session and are saved with the project; place absorption.json beside index.html for automatic loading.');
       if(!opts || S.busy)return;
       var n=loadDocument(raw,files[0].name,opts.unit);ui.toast('Loaded '+n+' elemental absorption tables from '+files[0].name+'.','ok');
     }catch(e){ui.toast('Absorption table: '+e.message,'err');}
@@ -126,8 +137,8 @@ RV.absorption = (function () {
   async function init() {
     if(typeof fetch!=='function')return;
     var token=revision;loading=true;
-    try{var r=await fetch('absorption.json');if(!r.ok)throw new Error('absorption.json is unavailable. Place it beside index.html and reload.');var doc=await r.json();if(token===revision)loadDocument(doc,'absorption.json','eV');}
+    try{var r=await fetch('absorption.json');if(!r.ok)throw new Error('absorption.json is unavailable. Place it beside index.html and reload.');var doc=await r.json();if(token===revision)loadDocument(doc,'absorption.json','eV',true);}
     catch(e){if(token===revision){loading=false;error=e.message;RV.bus.emit('absorption');}}
   }
-  return {init:init,loadFile:loadFile,loadDocument:loadDocument,normalize:normalize,coefficient:coefficient,sample:sample,predict:predict,tip:tip,status:status};
+  return {init:init,loadFile:loadFile,loadDocument:loadDocument,exportUser:exportUser,restoreUser:restoreUser,normalize:normalize,coefficient:coefficient,sample:sample,predict:predict,tip:tip,status:status};
 })();

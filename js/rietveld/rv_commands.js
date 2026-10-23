@@ -1270,9 +1270,12 @@ RV.cmd = (function () {
     var doc;
     try { doc = typeof text==='object'?text:JSON.parse(text); } catch (e) { throw new Error('the project file is not valid JSON'); }
     var pj = St.prepareProject(doc);
-    if ((S.datasets.length || S.phases.length) && !(await ui.confirm('Opening a project replaces the ' + plural(S.phases.length, 'phase') + ' and the ' + plural(S.datasets.length, 'dataset') + ' in memory. Undo brings them back.', 'Open project', false, 'Open project'))) return;
-    snapshot('opening a project');
+    if ((S.datasets.length || S.phases.length) && !(await ui.confirm('Opening a project replaces the ' + plural(S.phases.length, 'phase') + ' and the ' + plural(S.datasets.length, 'dataset') + ' in memory and clears their restore points: it cannot be undone. Save the current project first if you need it.', 'Open project', false, 'Open project'))) return;
+    // a project is read as it was saved: nothing of the session before it can be restored into it
+    if (RV.history && RV.history.clear) RV.history.clear();
+    if(RV.solve && RV.solve.restoreArchive)RV.solve.restoreArchive(null,{silent:true});
     St.commitProject(pj);
+    if(RV.absorption && RV.absorption.restoreUser)RV.absorption.restoreUser(doc.absorption || null);
     if(RV.solve && RV.solve.restoreArchive)RV.solve.restoreArchive(doc.solutionState);
     ui.logLoad(pj.log, 'Log saved with the project, ' + plural(pj.log.length, 'line') + ' (newest first):');
     ui.toast('Opened a project with ' + plural(S.phases.length, 'phase') + ' and ' + plural(S.datasets.length, 'dataset') + '.', 'ok');

@@ -114,7 +114,9 @@ const MIN_IMAGE_SHELL: i32 = 0;  //__MIN_IMAGE_SHELL__
 // Bump the version whenever the meaning of the value written to
 // mcmcState[].cc changes, so an old kernel is refused instead of believed.
 const GROUP_STRIDE: u32 = 3u; //__GROUP_STRIDE__
-const MAX_BOND_RULES: u32 = 8u;
+// Injected by the host per run (swInject, sized from js/wyckoff_limits.js), at
+// most 32: the rules of one atom are kept as a bitmask in a u32 (myRules).
+const MAX_BOND_RULES: u32 = 8u; //__MAX_BOND_RULES__
 const RULE_STRIDE: u32 = 6u;
 // `slot` is a FUNCTION-SCOPE array, not workgroup storage, so this constant
 // costs nothing against the 16 kB budget that MAX_GEN_ATOMS is competing for.
@@ -123,11 +125,11 @@ const RULE_STRIDE: u32 = 6u;
 // out of registers at 16 -- raising it resizes an existing spill rather than
 // creating one.
 //
-// 64 = MAX_BOND_RULES * 8, so the sum-of-coordination-numbers check on the
-// host stops binding for any chemistry that fits in eight rules at all. The
-// per-atom initialisation below runs to slotTotal, the slots the rules
-// actually claimed, so a run needing 20 does not pay for the other 44.
-const MAX_COORD_SLOTS: u32 = 64u;
+// Injected by the host per run, like MAX_BOND_RULES: 64 unless the
+// coordination numbers of the run need more. The per-atom initialisation below
+// runs to slotTotal, the slots the rules actually claimed, so a run needing 20
+// does not pay for the other 44.
+const MAX_COORD_SLOTS: u32 = 64u; //__MAX_COORD_SLOTS__
 const NO_PARTNER_CHARGE: f32 = 5.0;
 const COORD_SOFT_A: f32 = 0.25;
 

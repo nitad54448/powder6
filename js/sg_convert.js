@@ -209,7 +209,23 @@
   function apply(o, x) { var y = mulv(o.r, x); return [y[0] + o.t[0], y[1] + o.t[1], y[2] + o.t[2]]; }
   // the lattice image of a nearest to b
   function near(a, b) { return [0, 1, 2].map(function (i) { return a[i] - Math.round(a[i] - b[i]); }); }
-  function species(a) { return String(a.type) + '|' + (+(Number.isFinite(a.occ) ? a.occ : 1).toFixed(3)); }
+  function occOf(a) { return Number.isFinite(a.occ) ? a.occ : 1; }
+  // Occupancies of one type closer than this are one kind of atom: refined values of equivalent sites differ slightly.
+  var OCC_TOL = 0.02;
+  /** The kind of each atom: its type, and the group of its occupancy among atoms of that type (chained within occTol). */
+  function speciesKeys(atoms, occTol) {
+    var tol = Number.isFinite(occTol) && occTol >= 0 ? occTol : OCC_TOL, keys = new Array(atoms.length), byType = {};
+    atoms.forEach(function (a, i) { var t = String(a.type); (byType[t] = byType[t] || []).push(i); });
+    Object.keys(byType).forEach(function (t) {
+      var group = 0, last = null;
+      byType[t].slice().sort(function (i, j) { return occOf(atoms[i]) - occOf(atoms[j]); }).forEach(function (i) {
+        var o = occOf(atoms[i]);
+        if (last !== null && o - last > tol + 1e-12) group++;
+        last = o; keys[i] = t + '|' + group;
+      });
+    });
+    return keys;
+  }
   /**
    * atoms [{label, type, x, y, z, occ, B}] in fromOps, cell -> the same structure in toOps after (P, p).
    * opts: { tol (Å, 0.1): how far an image the new group demands may be from an atom of the same kind;
@@ -219,7 +235,7 @@
    */
   function convertStructure(atoms, fromOps, toOps, cell, P, p, opts) {
     opts = opts || {};
-    var tol = opts.tol > 0 ? opts.tol : 0.1, Pi = inv3(P), Gold = metric(cell), newCell = opts.cell || transformCell(cell, P), Gnew = metric(newCell);
+    var tol = opts.tol > 0 ? opts.tol : 0.1, Pi = inv3(P), Gold = metric(cell), newCell = opts.cell || transformCell(cell, P), Gnew = metric(newCell), keys = speciesKeys(atoms, opts.occTol);
     // 1. the full cell in the old group
     var full = [], contentOld = 0;
     atoms.forEach(function (a, ai) {
@@ -253,13 +269,13 @@
     var invOps = toOps.map(inverseOp);
     pts.forEach(function (q) {
       if (q.used) return;
-      var a = atoms[q.ai], kind = species(a), images = [], members = [], sources = new Set([a.label]);
+      var a = atoms[q.ai], kind = keys[q.ai], images = [], members = [], sources = new Set([a.label]);
       toOps.forEach(function (o, gi) {
         var im = apply(o, q.x).map(wrap);
         if (images.some(function (s) { return dist(Gnew, s, im) < 0.01; })) return;
         images.push(im);
         var best = null, bd = Infinity;
-        pts.forEach(function (s) { if (species(atoms[s.ai]) !== kind) return; var d = dist(Gnew, s.x, im); if (d < bd) { bd = d; best = s; } });
+        pts.forEach(function (s) { if (keys[s.ai] !== kind) return; var d = dist(Gnew, s.x, im); if (d < bd) { bd = d; best = s; } });
         // two atoms each up to tol from their symmetric average can be up to 2 tol apart; how far each moves is checked below
         if (!best || bd > 2 * tol) {
           if (violations.length < 50) violations.push(a.label + ' (' + a.type + '): the new symmetry needs an equivalent atom at ' + im.map(function (v) { return v.toFixed(4); }).join(', ') +
@@ -270,8 +286,8 @@
         members.push({ g: gi, s: best, d: bd });
       });
       // the representative: the mean of the images brought back by the inverse operators (exact for a symmetric structure)
-      var sum = [0, 0, 0], Bs = 0;
-      members.forEach(function (m) { var back = near(apply(invOps[m.g], m.s.x), q.x); sum[0] += back[0]; sum[1] += back[1]; sum[2] += back[2]; Bs += Number.isFinite(atoms[m.s.ai].B) ? atoms[m.s.ai].B : 0; });
+      var sum = [0, 0, 0], Bs = 0, occs = 0;
+      members.forEach(function (m) { var back = near(apply(invOps[m.g], m.s.x), q.x); sum[0] += back[0]; sum[1] += back[1]; sum[2] += back[2]; Bs += Number.isFinite(atoms[m.s.ai].B) ? atoms[m.s.ai].B : 0; occs += occOf(atoms[m.s.ai]); });
       var n = Math.max(1, members.length), rep = members.length ? sum.map(function (v) { return v / n; }) : q.x.slice();
       // how far the atoms of this orbit move to take the new symmetry exactly
       var moved = 0;
@@ -293,7 +309,7 @@
       perLabel[name] = (perLabel[name] || 0) + 1;
       if (sources.size > 1) merged.push(Array.from(sources));
       // from.label stays the source atom's own label: other values (each dataset's) are read under it
-      out.push({ label: name, base: name, type: a.type, x: pick.x[0], y: pick.x[1], z: pick.x[2], occ: Number.isFinite(a.occ) ? a.occ : 1, B: members.length ? Bs / members.length : a.B, mult: images.length, moved: moved,
+      out.push({ label: name, base: name, type: a.type, x: pick.x[0], y: pick.x[1], z: pick.x[2], occ: members.length ? occs / members.length : occOf(a), B: members.length ? Bs / members.length : a.B, mult: images.length, moved: moved,
                  from: { index: q.ai, label: a.label, op: q.gi, shift: q.shift, newOp: pick.op, newShift: pick.shift } });
     });
     // 4. names: an atom split over several orbits becomes Fe1a, Fe1b, ...
@@ -315,11 +331,8 @@
   function hklToNew(h, P) { return [0, 1, 2].map(function (j) { return clean(h[0] * P[j] + h[1] * P[3 + j] + h[2] * P[6 + j]); }); }
 
   // ---------------------------------------------------------------- missed symmetry (as PLATON's ADDSYM, after Le Page's MISSYM)
-  /* 1. the full cell; 2. the lattice translations that map every atom onto one of the same kind (the true primitive cell);
-     3. the rotations of that lattice, Delaunay-reduced, that keep its metric within the cell tolerance; 4. for each, a
-     translation that maps the whole structure onto itself within the distance tolerance; 5. the group those operators form,
-     named in a standard setting (groups: [{number, symbol, hall, system, uniqueAxis, ops}]), with the change of basis (P, p)
-     that convertStructure applies. */
+  /* The public Moyo engine finds the symmetry of the full cell; this file prepares that cell and reads its answer back into
+     a group of the database with the change of basis (P, p) that convertStructure applies. */
   function opXyz(op) {
     return [0, 1, 2].map(function (i) {
       var s = '';
@@ -331,10 +344,11 @@
   }
   // the nearest-image distance, cheaply: for the reduced, nearly orthogonal cells used here one rounding is enough
   function quickDist(G, a, b) { var d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]].map(function (v) { return v - Math.round(v); }), q = mulv(G, d); return Math.sqrt(Math.max(0, d[0] * q[0] + d[1] * q[1] + d[2] * q[2])); }
-  function expandFull(atoms, ops, G) {
+  // keys: the species of each atom (speciesKeys)
+  function expandFull(atoms, ops, G, keys) {
     var pts = [];
-    atoms.forEach(function (a) {
-      var s = species(a), mine = [];
+    atoms.forEach(function (a, ai) {
+      var s = keys[ai], mine = [];
       ops.forEach(function (o) { var y = apply(o, [a.x, a.y, a.z]).map(wrap); if (!mine.some(function (q) { return quickDist(G, q, y) < 0.01; })) mine.push(y); });
       mine.forEach(function (x) { pts.push({ x: x, s: s, label: a.label }); });
     });
@@ -351,196 +365,6 @@
     }
     return worst;
   }
-  // a fraction close (within tolFrac) to a multiple of 1/24 becomes it: what a centring or a screw axis really is
-  function snap24(v, tolFrac) { var r = Math.round(v * 24) / 24; return Math.abs(v - r) <= tolFrac ? r : v; }
-  var signedUnimodular = null;
-  function matrices() {
-    if (signedUnimodular) return;
-    signedUnimodular = [];
-    var v = [-1, 0, 1], m = new Array(9);
-    (function rec(i) {
-      if (i === 9) { if (Math.abs(Math.round(det3(m))) === 1) signedUnimodular.push(m.slice()); return; }
-      for (var k = 0; k < 3; k++) { m[i] = v[k]; rec(i + 1); }
-    })(0);
-  }
-  function dotG(G, u, w) { var q = mulv(G, w); return u[0] * q[0] + u[1] * q[1] + u[2] * q[2]; }
-  function add(u, w) { return [u[0] + w[0], u[1] + w[1], u[2] + w[2]]; }
-  function neg(u) { return [-u[0], -u[1], -u[2]]; }
-  function columns(B) { return [[B[0], B[3], B[6]], [B[1], B[4], B[7]], [B[2], B[5], B[8]]]; }
-  function fromColumns(c) { return [c[0][0], c[1][0], c[2][0], c[0][1], c[1][1], c[2][1], c[0][2], c[1][2], c[2][2]]; }
-  // Delaunay (Selling) reduction of a basis (columns, in the old fractional coordinates): the three shortest independent
-  // vectors of the reduced superbase, right-handed
-  function delaunay(B, G) {
-    var c = columns(B), b = [c[0], c[1], c[2], neg(add(add(c[0], c[1]), c[2]))], scale = Math.max(dotG(G, c[0], c[0]), dotG(G, c[1], c[1]), dotG(G, c[2], c[2]));
-    for (var iter = 0; iter < 200; iter++) {
-      var done = true;
-      for (var i = 0; i < 4 && done; i++) for (var j = i + 1; j < 4 && done; j++) {
-        if (dotG(G, b[i], b[j]) > 1e-9 * scale) {
-          for (var k = 0; k < 4; k++) if (k !== i && k !== j) b[k] = add(b[k], b[i]);
-          b[i] = neg(b[i]); done = false;
-        }
-      }
-      if (done) break;
-    }
-    var cand = [b[0], b[1], b[2], b[3], add(b[0], b[1]), add(b[0], b[2]), add(b[1], b[2])].sort(function (u, w) { return dotG(G, u, u) - dotG(G, w, w); });
-    var vol = Math.abs(det3(B));
-    for (var x = 0; x < cand.length; x++) for (var y = x + 1; y < cand.length; y++) for (var z = y + 1; z < cand.length; z++) {
-      var M = fromColumns([cand[x], cand[y], cand[z]]), d = det3(M);
-      if (Math.abs(Math.abs(d) - vol) < 1e-6) return d > 0 ? M : fromColumns([cand[x], cand[y], neg(cand[z])]);
-    }
-    return B;
-  }
-  function memberTol(op, idx, ttol) {
-    if (!intRot(op.r)) return false;
-    var ts = idx.get(rotKey(op.r));
-    if (!ts) return false;
-    return ts.some(function (t) { return [0, 1, 2].every(function (i) { var d = op.t[i] - t[i]; return Math.abs(d - Math.round(d)) <= ttol; }); });
-  }
-  // the intrinsic (screw or glide) translation of (W, w): (1/n) sum of W^i w over the order n of W
-  function intrinsic(W, w) {
-    var sum = [0, 0, 0], v = w.slice(), M = I3.slice(), n = 0;
-    do { var y = mulv(M, w); sum[0] += y[0]; sum[1] += y[1]; sum[2] += y[2]; M = mul3(W, M).map(clean); n++; } while (!isIdentityRot(M) && n < 12);
-    return sum.map(function (s) { return s / n; });
-  }
-  function intrinsicSet(g, r) {
-    var key = rotKey(r), cache = g._intr || (g._intr = {});
-    if (!cache[key]) cache[key] = (g._idx.get(key) || []).map(function (t) { return intrinsic(r, t); });
-    return cache[key];
-  }
-  var LATTICE = { 2: 'triclinic', 4: 'monoclinic', 8: 'orthorhombic', 12: 'rhombohedral', 16: 'tetragonal', 24: 'hexagonal', 48: 'cubic' };
-  /**
-   * atoms [{label, type, x, y, z, occ}], ops (the current group), cell, groups (one standard setting per number);
-   * opts: { tol (Å, 0.2), lenTol (relative, 0.01), angTol (degrees, 1), normalise(cell, group) -> the cell the group demands }.
-   * Returns { points, latticePoints, primitive (P to the reduced primitive cell), latticeOps, latticeSystem, ops: [{r, t, xyz, dev}],
-   *           group, P, p, misfit, cell } — group null when the operators found could not be named.
-   */
-  function findSymmetry(atoms, ops, cell, groups, opts) {
-    opts = opts || {};
-    matrices();
-    var tol = opts.tol > 0 ? opts.tol : 0.2, lenTol = opts.lenTol > 0 ? opts.lenTol : 0.01, angTol = opts.angTol > 0 ? opts.angTol : 1;
-    var G = metric(cell), pts = expandFull(atoms, ops, G), bySpecies = {};
-    pts.forEach(function (p) { (bySpecies[p.s] = bySpecies[p.s] || []).push(p); });
-    var ref = Object.keys(bySpecies).sort(function (a, b) { return bySpecies[a].length - bySpecies[b].length; })[0], refPts = ref ? bySpecies[ref] : [];
-    var out = { points: pts.length, latticePoints: 1, ops: [], group: null };
-    if (!refPts.length) return out;
-    var x0 = refPts[0].x, minLen = Math.min(cell.a, cell.b, cell.c), tolFrac = tol / minLen;
-    // 2. the lattice translations
-    var T = [];
-    refPts.forEach(function (q) {
-      var t = [0, 1, 2].map(function (k) { return snap24(wrap(q.x[k] - x0[k]), tolFrac); }).map(wrap);
-      if (t.every(function (v) { return v < 1e-9; }) || T.some(function (u) { return quickDist(G, u, t) < 1e-6; })) return;
-      if (covers(bySpecies, pts, G, function (x) { return [x[0] + t[0], x[1] + t[1], x[2] + t[2]]; }, tol) >= 0) T.push(t);
-    });
-    var n = T.length + 1;
-    out.latticePoints = n;
-    // the primitive cell: three short lattice vectors spanning 1/n of the cell, reduced
-    var vecs = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-    T.forEach(function (t) { for (var s = 0; s < 8; s++) vecs.push([t[0] - (s & 1), t[1] - ((s >> 1) & 1), t[2] - ((s >> 2) & 1)]); });
-    vecs.sort(function (u, w) { return dotG(G, u, u) - dotG(G, w, w); });
-    vecs = vecs.slice(0, 60);
-    var B = null;
-    for (var i = 0; i < vecs.length && !B; i++) for (var j = i + 1; j < vecs.length && !B; j++) for (var k = j + 1; k < vecs.length && !B; k++) {
-      var M = fromColumns([vecs[i], vecs[j], vecs[k]]), d = det3(M);
-      if (Math.abs(Math.abs(d) - 1 / n) < 1e-6) B = d > 0 ? M : fromColumns([vecs[i], vecs[j], neg(vecs[k])]);
-    }
-    if (!B) return out;
-    B = delaunay(B, G).map(clean);
-    out.primitive = B;
-    var Bi = inv3(B), Gp = mul3(mul3(transpose(B), G), B), len = [0, 4, 8].map(function (q) { return Math.sqrt(Gp[q]); });
-    function angle(g, i, j, li, lj) { return Math.acos(Math.max(-1, Math.min(1, g[i * 3 + j] / (li * lj)))) * 180 / Math.PI; }
-    // 3. the rotations of the lattice
-    var lattice = signedUnimodular.filter(function (W) {
-      var g = mul3(mul3(transpose(W), Gp), W), l = [0, 4, 8].map(function (q) { return Math.sqrt(g[q]); });
-      if (!l.every(function (v, q) { return Math.abs(v - len[q]) <= lenTol * len[q]; })) return false;
-      return [[0, 1], [0, 2], [1, 2]].every(function (ij) { return Math.abs(angle(g, ij[0], ij[1], l[ij[0]], l[ij[1]]) - angle(Gp, ij[0], ij[1], len[ij[0]], len[ij[1]])) <= angTol; });
-    });
-    out.latticeOps = lattice.length; out.latticeSystem = LATTICE[lattice.length] || '';
-    // 4. the operators of the structure
-    lattice.forEach(function (W) {
-      var R = mul3(mul3(B, W), Bi).map(clean), y0 = mulv(R, x0);
-      for (var q = 0; q < refPts.length; q++) {
-        var t = [0, 1, 2].map(function (c) { return snap24(wrap(refPts[q].x[c] - y0[c]), tolFrac); });
-        var dev = covers(bySpecies, pts, G, function (x) { var y = mulv(R, x); return [y[0] + t[0], y[1] + t[1], y[2] + t[2]]; }, tol);
-        if (dev >= 0) { out.ops.push({ r: R, t: t.map(wrap), dev: dev }); break; }
-      }
-    });
-    out.ops.forEach(function (o) { o.xyz = opXyz(o); });
-    // 5. the group they form, in a standard setting: the highest order first, the conventional cell that fits it best
-    var nRot = out.ops.length, best = null;
-    (groups || []).forEach(function (g) {
-      if (!g._rot) { g._rot = new Set(g.ops.map(function (o) { return rotKey(o.r); })); g._idx = index(g.ops); g._cent = g.ops.length / g._rot.size; }
-    });
-    var cands = (groups || []).filter(function (g) { return g._rot.size === nRot && Math.abs(g._cent - Math.round(g._cent)) < 1e-9; }).sort(function (a, b) { return b.ops.length - a.ops.length || a.number - b.number; });
-    // conventional cells: three of the shortest lattice vectors (coefficients -2..2 on the reduced primitive cell) spanning
-    // 1 to 4 lattice points; the axes of a conventional cell are among them
-    var lv = [];
-    for (var c0 = -2; c0 <= 2; c0++) for (var c1 = -2; c1 <= 2; c1++) for (var c2 = -2; c2 <= 2; c2++) {
-      if (!c0 && !c1 && !c2) continue;
-      var v = mulv(B, [c0, c1, c2]); lv.push({ c: [c0, c1, c2], len: Math.sqrt(dotG(G, v, v)) });
-    }
-    lv.sort(function (u, w) { return u.len - w.len; });
-    lv = lv.slice(0, 36);
-    // and the shortest lattice vector along each rotation axis: conventional axes lie along symmetry axes (c of R3 in hexagonal axes)
-    out.ops.forEach(function (o) {
-      var W = mul3(mul3(Bi, o.r), B).map(clean);
-      if (det3(W) < 0) W = W.map(function (v) { return -v; });
-      var A = [W[0] - 1, W[1], W[2], W[3], W[4] - 1, W[5], W[6], W[7], W[8] - 1], rows = [[A[0], A[1], A[2]], [A[3], A[4], A[5]], [A[6], A[7], A[8]]], axis = null;
-      for (var r1 = 0; r1 < 3 && !axis; r1++) for (var r2 = r1 + 1; r2 < 3 && !axis; r2++) {
-        var u = rows[r1], w = rows[r2], x = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]].map(Math.round);
-        if (x.some(function (v) { return v !== 0; })) axis = x;
-      }
-      if (!axis) return;
-      var gcd = function (p, q) { p = Math.abs(p); q = Math.abs(q); while (q) { var t = p % q; p = q; q = t; } return p; }, gg = axis.reduce(gcd);
-      axis = axis.map(function (v) { return v / gg; });
-      [axis, neg(axis)].forEach(function (c) { if (!lv.some(function (l) { return l.c[0] === c[0] && l.c[1] === c[1] && l.c[2] === c[2]; })) { var v = mulv(B, c); lv.push({ c: c, len: Math.sqrt(dotG(G, v, v)) }); } });
-    });
-    var bases = [];
-    for (var ia = 0; ia < lv.length; ia++) for (var ib = 0; ib < lv.length; ib++) for (var ic = 0; ic < lv.length; ic++) {
-      if (ia === ib || ib === ic || ia === ic) continue;
-      var Mc = fromColumns([lv[ia].c, lv[ib].c, lv[ic].c]), dm = Math.round(det3(Mc));
-      if (dm < 1 || dm > 4) continue;
-      var Pc = mul3(B, Mc).map(clean);
-      var bc = transformCell(cell, Pc);
-      bases.push({ M: Mc, det: dm, P: Pc, cell: bc, changed: offDiagonal(Pc), compact: compactness(bc), acute: acute(bc) });
-    }
-    // best first: the axes unchanged, then the most compact, obtuse cells; the search per group stops at a perfect match
-    bases.sort(function (u, w) { return ((u.changed > 0) - (w.changed > 0)) || (Math.round(u.compact * 1e3) - Math.round(w.compact * 1e3)) || (u.acute - w.acute) || (u.changed - w.changed); });
-    for (var gi = 0; gi < cands.length && !best; gi++) {
-      var g = cands[gi], found = [];
-      // the centring vectors of the group must be lattice translations of the structure: M c integral
-      var centring = g.ops.filter(function (o) { return isIdentityRot(o.r); }).map(function (o) { return o.t; });
-      for (var mi = 0; mi < bases.length; mi++) {
-        if (bases[mi].det !== g._cent) continue;
-        var Mb = bases[mi].M;
-        if (!centring.every(function (t) { return mulv(Mb, t).every(isInt); })) continue;
-        var P = bases[mi].P, cc = bases[mi].cell, sys = g.system + '|' + (g.uniqueAxis || ''), cache = bases[mi].misfit || (bases[mi].misfit = {});
-        if (!(sys in cache)) cache[sys] = metricMisfit(cc, function (c) { return opts.normalise ? opts.normalise(c, g) : c; });
-        var misfit = cache[sys];
-        if (!(misfit <= Math.max(lenTol, angTol / 90) * 1.5)) continue;
-        var Pi = bases[mi].Pi || (bases[mi].Pi = inv3(P));
-        if (!out.ops.every(function (o) { var r = mul3(mul3(Pi, o.r), P).map(clean); return intRot(r) && g._rot.has(rotKey(r)); })) continue;
-        // the origin: w' = Pi w + Pi (W - I) P p'  for a shift p' in the new cell, on a 1/24 grid
-        var lin = out.ops.map(function (o) { var A = mul3(Pi, [o.r[0] - 1, o.r[1], o.r[2], o.r[3], o.r[4] - 1, o.r[5], o.r[6], o.r[7], o.r[8] - 1]); return { r: mul3(mul3(Pi, o.r), P).map(clean), a: mulv(Pi, o.t), C: mul3(A, P) }; });
-        var ttol = Math.max(0.02, tolFrac * 2), hit = null;
-        // the screw and glide parts do not depend on the origin: a group whose operators have other ones is ruled out
-        // here, before the search for the origin
-        if (!lin.every(function (l) { var wi = intrinsic(l.r, l.a); return intrinsicSet(g, l.r).some(function (v) { return centring.some(function (c) { return [0, 1, 2].every(function (k) { var d = wi[k] - v[k] - c[k]; return Math.abs(d - Math.round(d)) <= ttol; }); }); }); })) continue;
-        for (var s0 = 0; s0 < 24 && !hit; s0++) for (var s1 = 0; s1 < 24 && !hit; s1++) for (var s2 = 0; s2 < 24 && !hit; s2++) {
-          var pc = [s0 / 24, s1 / 24, s2 / 24];
-          if (lin.every(function (l) { var c = mulv(l.C, pc); return memberTol({ r: l.r, t: [l.a[0] + c[0], l.a[1] + c[1], l.a[2] + c[2]] }, g._idx, ttol); })) hit = pc;
-        }
-        if (!hit) continue;
-        found.push({ P: P, p: mulv(P, hit).map(function (v) { return v - Math.round(v); }).map(clean), misfit: misfit, cell: cc, compact: bases[mi].compact, acute: bases[mi].acute, changed: bases[mi].changed });
-        if (found.length >= 4 || (misfit < 1e-4 && !bases[mi].acute && !bases[mi].changed)) break;
-      }
-      if (found.length) {
-        found.sort(function (a, b) { return (Math.round(a.misfit * 1e4) - Math.round(b.misfit * 1e4)) || (Math.round(a.compact * 1e3) - Math.round(b.compact * 1e3)) || (a.acute - b.acute) || (a.changed - b.changed); });
-        best = Object.assign({ group: g }, found[0]);
-      }
-    }
-    if (best) { out.group = best.group; out.P = best.P; out.p = best.p; out.misfit = best.misfit; out.cell = best.cell; }
-    return out;
-  }
 
   // Pinned, locally hosted Moyo 0.21.0 (MIT). No structure data leaves the browser.
   var wasmModule=null,wasmLoading=null;
@@ -548,14 +372,26 @@
     if(!wasmLoading)wasmLoading=import('../lib/moyo/moyo_wasm.js').then(async function(m){await m.default();wasmModule=m;return m;}).catch(function(e){wasmLoading=null;throw e;});
     return wasmLoading;
   }
-  function symmetryInput(atoms,ops,cell){
-    var G=metric(cell),pts=expandFull(atoms,ops,G),speciesIds=Object.create(null),bySpecies=Object.create(null),next=1;
-    if(!pts.length)throw new Error('Symmetry analysis needs atomic positions.');
+  // an initialised Moyo module from elsewhere (Node, where the page's import path does not apply)
+  function useWasm(m){wasmModule=m;wasmLoading=Promise.resolve(m);}
+  /* The cell handed to the engine. Atoms of one type whose occupancies agree within opts.occTol are one species. Atoms of
+     different species on one point (a mixed site) become one point of their combined species: the engine accepts one
+     atom per point. Two atoms of the same species on one point stay two, and the engine refuses them. */
+  function symmetryInput(atoms,ops,cell,opts){
+    opts=opts || {};
+    var G=metric(cell),keys=speciesKeys(atoms,opts.occTol),raw=expandFull(atoms,ops,G,keys),pts=[],speciesIds=Object.create(null),bySpecies=Object.create(null),next=1;
+    if(!raw.length)throw new Error('Symmetry analysis needs atomic positions.');
+    raw.forEach(function(p){
+      var hit=null;
+      for(var i=0;i<pts.length && !hit;i++)if(pts[i].parts.indexOf(p.s)<0 && quickDist(G,pts[i].x,p.x)<0.01)hit=pts[i];
+      if(hit){hit.parts.push(p.s);hit.labels.push(p.label);}else pts.push({x:p.x,parts:[p.s],labels:[p.label]});
+    });
+    pts=pts.map(function(p){var order=p.parts.map(function(s,i){return i;}).sort(function(i,j){return p.parts[i]<p.parts[j]?-1:1;});return {x:p.x,s:order.map(function(i){return p.parts[i];}).join('+'),label:order.map(function(i){return p.labels[i];}).join('+'),mixed:p.parts.length>1};});
     pts.forEach(function(p){(bySpecies[p.s] || (bySpecies[p.s]=[])).push(p);});
     var r=Math.PI/180,cg=Math.cos(cell.gamma*r),sg=Math.sin(cell.gamma*r),cb=Math.cos(cell.beta*r),ca=Math.cos(cell.alpha*r);
     var cy=cell.c*(ca-cb*cg)/sg;
     var basis=[cell.a,0,0,cell.b*cg,cell.b*sg,0,cell.c*cb,cy,Math.sqrt(Math.max(0,cell.c*cell.c*(1-cb*cb)-cy*cy))];
-    return {G:G,pts:pts,bySpecies:bySpecies,cell:{lattice:{basis:basis},positions:pts.map(function(p){return p.x;}),numbers:pts.map(function(p){return speciesIds[p.s] || (speciesIds[p.s]=next++);})}};
+    return {G:G,pts:pts,bySpecies:bySpecies,mixedSites:pts.filter(function(p){return p.mixed;}).length,cell:{lattice:{basis:basis},positions:pts.map(function(p){return p.x;}),numbers:pts.map(function(p){return speciesIds[p.s] || (speciesIds[p.s]=next++);})}};
   }
   function symmetryFromWasm(input,cell,groups,opts,result,hall){
     opts=opts || {};var G=input.G,pts=input.pts,bySpecies=input.bySpecies;
@@ -577,37 +413,62 @@
       op.dev=covers(bySpecies,pts,G,function(x){return apply(op,x);},Infinity);
       return op;
     });
-    return {points:pts.length,latticePoints:found.filter(function(o){return isIdentityRot(o.r);}).length,ops:found,group:g,P:P,p:p,misfit:misfit,cell:cc,standardCell:normalized,cellWithinTolerance:cellWithinTolerance,latticeSystem:g.system,engine:'Moyo 0.21.0',dataset:result};
+    return {points:pts.length,mixedSites:input.mixedSites,latticePoints:found.filter(function(o){return isIdentityRot(o.r);}).length,ops:found,group:g,P:P,p:p,misfit:misfit,cell:cc,standardCell:normalized,cellWithinTolerance:cellWithinTolerance,latticeSystem:g.system,engine:'Moyo 0.21.0',dataset:result};
   }
   function findSymmetryWasm(atoms,ops,cell,groups,opts){
     if(!wasmModule)throw new Error('The Moyo symmetry engine is not loaded.');
-    opts=opts || {};var input=symmetryInput(atoms,ops,cell);
+    opts=opts || {};var input=symmetryInput(atoms,ops,cell,opts);
     var result=wasmModule.analyze_cell(JSON.stringify(input.cell),opts.tol || .2,'Standard');
     return symmetryFromWasm(input,cell,groups,opts,result,wasmModule.hall_symbol_entry(result.hall_number).hall_symbol);
   }
+  /* One worker, kept between searches so the engine is compiled once. A search started while another runs ends that one:
+     the engine cannot be interrupted, so its worker is terminated and the next search starts a new one.
+     opts.onRow(row) receives each tolerance as it is done, the first given (opts.tol) first. */
+  var symWorker=null,activeJob=null,jobSerial=0;
+  function symmetryWorker(){
+    if(!symWorker)symWorker=new Worker(new URL('js/symmetry_worker.js',document.baseURI),{type:'module'});
+    return symWorker;
+  }
+  function dropWorker(){if(symWorker){try{symWorker.terminate();}catch(e){}symWorker=null;}}
   function symmetryJob(atoms,ops,cell,groups,opts){
-    opts=opts || {};var input=symmetryInput(atoms,ops,cell),worker,timeout,settled=false,resolve,reject,rows=[];
+    opts=opts || {};
+    if(activeJob)activeJob.cancel();
+    var input=symmetryInput(atoms,ops,cell,opts),id=++jobSerial,worker=null,timeout,settled=false,resolve,reject,rows=[];
+    var tolerances=opts.tolerances || [opts.tol || .2];
     var promise=new Promise(function(ok,bad){resolve=ok;reject=bad;});
-    function finish(error){if(settled)return;settled=true;clearTimeout(timeout);if(worker)worker.terminate();if(error)reject(error);else resolve(rows);}
+    function detach(){if(worker){worker.removeEventListener('message',onMessage);worker.removeEventListener('error',onError);}}
+    function finish(error,kill){
+      if(settled)return;settled=true;clearTimeout(timeout);detach();
+      if(job===activeJob)activeJob=null;
+      if(kill)dropWorker();
+      if(error)reject(error);else resolve(rows);
+    }
+    function onMessage(event){
+      var message=event.data || {};
+      if(message.id!==id)return;
+      if(message.type==='error'){finish(new Error(message.error),true);return;}
+      if(message.type==='complete'){finish();return;}
+      if(message.type!=='result')return;
+      var row={tol:message.tol,error:message.error || null,dataset:message.dataset};
+      if(!row.error)try{row.r=symmetryFromWasm(input,cell,groups,Object.assign({},opts,{reportAll:true}),message.dataset,message.hall);}catch(e){row.error=e.message;}
+      rows.push(row);
+      if(opts.onRow)try{opts.onRow(row);}catch(e){}
+    }
+    function onError(event){finish(new Error(event.message || 'The public WASM symmetry worker could not load.'),true);}
+    var job={promise:promise,cancel:function(){var error=new Error('Symmetry search cancelled.');error.name='AbortError';finish(error,true);}};
+    activeJob=job;
     try{
-      worker=new Worker(new URL('js/symmetry_worker.js',document.baseURI),{type:'module'});
-      worker.onmessage=function(event){
-        var message=event.data || {};
-        if(message.type==='error'){finish(new Error(message.error));return;}
-        if(message.type==='complete'){finish();return;}
-        if(message.type!=='result')return;
-        var row={tol:message.tol,error:message.error || null,dataset:message.dataset};
-        if(!row.error)try{row.r=symmetryFromWasm(input,cell,groups,Object.assign({},opts,{reportAll:true}),message.dataset,message.hall);}catch(e){row.error=e.message;}
-        rows.push(row);
-      };
-      worker.onerror=function(event){finish(new Error(event.message || 'The public WASM symmetry worker could not load.'));};
-      timeout=setTimeout(function(){finish(new Error('The symmetry search timed out. Reduce the atom count or the tolerance.'));},60000);
-      worker.postMessage({cell:input.cell,tolerances:opts.tolerances || [opts.tol || .2]});
-    }catch(e){finish(e);}
-    return {promise:promise,cancel:function(){var error=new Error('Symmetry search cancelled.');error.name='AbortError';finish(error);}};
+      worker=symmetryWorker();
+      worker.addEventListener('message',onMessage);
+      worker.addEventListener('error',onError);
+      // the engine is fast; this guards a stalled worker, scaled with the work asked of it
+      timeout=setTimeout(function(){finish(new Error('The symmetry search timed out. Reduce the atom count or the tolerance.'),true);},Math.max(60000,input.pts.length*tolerances.length*30));
+      worker.postMessage({id:id,cell:input.cell,tolerances:tolerances});
+    }catch(e){finish(e,true);}
+    return job;
   }
 
-  var api = { loadWasm:loadWasm, findSymmetryWasm:findSymmetryWasm, symmetryJob:symmetryJob, det3: det3, findSymmetry: findSymmetry, opXyz: opXyz, inv3: inv3, metric: metric, cellFromMetric: cellFromMetric, transformCell: transformCell, parseBasis: parseBasis, parseShift: parseShift,
+  var api = { loadWasm:loadWasm, useWasm:useWasm, findSymmetryWasm:findSymmetryWasm, symmetryJob:symmetryJob, speciesKeys:speciesKeys, OCC_TOL:OCC_TOL, det3: det3, opXyz: opXyz, inv3: inv3, metric: metric, cellFromMetric: cellFromMetric, transformCell: transformCell, parseBasis: parseBasis, parseShift: parseShift,
               formatBasis: formatBasis, formatShift: formatShift, isIdentity: isIdentity, opToNew: opToNew, opToOld: opToOld, relation: relation,
               findTransforms: findTransforms, metricMisfit: metricMisfit, convertStructure: convertStructure, derive: derive, hklToNew: hklToNew, IDENTITY: I3.slice() };
   root.SGConvert = api;

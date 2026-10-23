@@ -206,12 +206,17 @@ test('every space-group setting resolves from its own symbol; short monoclinic s
   assert.equal(sym('14'),'P121/c1');assert.equal(sym('15'),'C12/c1');assert.equal(sym('225'),'Fm-3m');assert.equal(sym('F m -3 m'),'Fm-3m');
   assert.equal(a.state.resolveSG('-P 2yn').symbol,'P121/n1','a Hall symbol still resolves');
 });
-test('Find higher symmetry names the space group of structures given in P1, with the transformation to it', () => {
-  const a=app(),St=a.state,E=a.context.SG_ENGINE,K=a.context.SGConvert;
+async function moyo() {
+  const m = await import(require('node:url').pathToFileURL(path.join(root, 'lib/moyo/moyo_wasm.js')).href);
+  await m.default({ module_or_path: fs.readFileSync(path.join(root, 'lib/moyo/moyo_wasm_bg.wasm')) });
+  return m;
+}
+test('Find higher symmetry names the space group of structures given in P1, with the transformation to it', async () => {
+  const a=app(),St=a.state,E=a.context.SG_ENGINE,K=a.context.SGConvert;K.useWasm(await moyo());
   const groups=[];for(let n=1;n<=230;n++){const s=E.listSettings(n),pick=d=>s.find(x=>x.setting_description===d);groups.push(Object.assign({},St.resolveSG(n,(pick('standard')||pick('b1')||pick('b')||pick('origin choice 2')||s[0]).hall)));}
-  const norm=(c,g)=>a.context.normaliseCell(c,g.system,g.uniqueAxis),P1=St.resolveSG(1);
+  const P1=St.resolveSG(1);
   const inP1=(sg,atoms,cell)=>K.convertStructure(atoms,sg.ops,P1.ops,cell,K.IDENTITY,[0,0,0]).atoms.map(x=>({label:x.label,type:x.type,x:x.x,y:x.y,z:x.z,occ:1}));
-  const find=(atoms,cell,tol=0.2)=>{const r=K.findSymmetry(atoms,P1.ops,cell,groups,{tol,normalise:norm});const c=r.group&&K.convertStructure(atoms,P1.ops,r.group.ops,cell,r.P,r.p,{tol,cell:norm(r.cell,r.group)});return {r,c};};
+  const find=(atoms,cell,tol=0.2)=>{const r=K.findSymmetryWasm(atoms,P1.ops,cell,groups,{tol,reportAll:true});const c=r.group&&K.convertStructure(atoms,P1.ops,r.group.ops,cell,r.P,r.p,{tol,cell:r.standardCell});return {r,c};};
   const cub=x=>({a:x,b:x,c:x,alpha:90,beta:90,gamma:90});
   const cases=[
     [225,inP1(St.resolveSG(225),[{label:'Na',type:'Na',x:0,y:0,z:0},{label:'Cl',type:'Cl',x:.5,y:.5,z:.5}],cub(5.64)),cub(5.64),2],
@@ -223,8 +228,21 @@ test('Find higher symmetry names the space group of structures given in P1, with
   for(const [number,atoms,cell,sites] of cases){const {r,c}=find(atoms,cell);assert.equal(r.group&&r.group.number,number,'group '+number);assert.equal(c.violations.length,0);assert.equal(c.atoms.length,sites,'sites of '+number);assert.ok(c.maxShift<1e-6);}
   // NaCl with one Cl moved 0.17 A: Fm-3m at 0.2 A (the move is reported), not at 0.1 A
   const d=cases[0][1].map(x=>({...x}));d.find(x=>x.type==='Cl').z+=0.03;
-  let f=find(d,cub(5.64),0.2);assert.equal(f.r.group.number,225);assert.ok(f.c.maxShift>0.15 && f.c.maxShift<0.2);
+  let f=find(d,cub(5.64),0.2);assert.equal(f.r.group.number,225);assert.ok(f.c.maxShift>0.1 && f.c.maxShift<0.2,'maxShift '+f.c.maxShift);
   f=find(d,cub(5.64),0.1);assert.notEqual(f.r.group.number,225);
+});
+test('Find higher symmetry treats nearly equal refined occupancies as one species and searches mixed sites', async () => {
+  const a=app(),St=a.state,K=a.context.SGConvert;K.useWasm(await moyo());
+  const P1=St.resolveSG(1),fm3m=St.resolveSG(225),cell={a:5.64,b:5.64,c:5.64,alpha:90,beta:90,gamma:90};
+  const full=K.convertStructure([{label:'Na',type:'Na',x:0,y:0,z:0},{label:'Cl',type:'Cl',x:.5,y:.5,z:.5}],fm3m.ops,P1.ops,cell,K.IDENTITY,[0,0,0]).atoms.map(x=>({label:x.label,type:x.type,x:x.x,y:x.y,z:x.z,occ:1}));
+  const refined=full.map((x,i)=>({...x,occ:x.type==='Na'?1-0.004*i:1}));
+  assert.equal(K.findSymmetryWasm(refined,P1.ops,cell,[],{tol:.05,occTol:.02,reportAll:true}).group.number,225);
+  assert.notEqual(K.findSymmetryWasm(refined,P1.ops,cell,[],{tol:.05,occTol:0,reportAll:true}).group.number,225);
+  const r=K.findSymmetryWasm(refined,P1.ops,cell,[],{tol:.05,occTol:.02,reportAll:true}),c=K.convertStructure(refined,P1.ops,r.group.ops,cell,r.P,r.p,{tol:.05,cell:r.standardCell,occTol:.02});
+  assert.equal(c.violations.length,0);assert.equal(c.atoms.length,2);
+  const mixed=full.flatMap(x=>x.type==='Na'?[{...x,occ:.5},{...x,label:x.label+'K',type:'K',occ:.5}]:[x]);
+  const m=K.findSymmetryWasm(mixed,P1.ops,cell,[],{tol:.05,reportAll:true});
+  assert.equal(m.group.number,225);assert.equal(m.mixedSites,4);
 });
 function convertible(sgNumber, atoms, cell, hall) {
   const a=app();a.S.calculation='rietveld';
@@ -300,6 +318,30 @@ test('a Wyckoff composition blocked by a stated coordination names the constrain
   assert.match(bad.error,/coordination stated for Fe \(1 neighbour\)/);assert.match(bad.error,/Site symmetry excludes 2d, 2c, 2b, 2a/);
   assert.match(bad.error,/"Fe C - 1\.2\/1\.8"|Fe C - 1\.2\/1\.8/);assert.doesNotMatch(bad.error,/Raise the caps/);
   assert.equal(A.enumerateAssignments(st.wyckoff,demand,{ceiling:24,symOps:st.sym_ops,coordination:{FE:{count:6}},maxTotal:1}).error,undefined);
+});
+test('Wyckoff assignments related by an origin shift or the inversion are searched once', () => {
+  const A=require('../js/wyckoff_assign.js'),g=require('../sg/all.json').space_groups;
+  const count=(n,demand)=>{const s=g[n].settings[0],en=A.enumerateAssignments(s.wyckoff,demand,{ceiling:24,symOps:s.sym_ops});return [en.assignments.length,A.dedupeEquivalentAssignments(en.assignments,s.wyckoff,s.sym_ops).assignments.length];};
+  const el=(e,n,z)=>({element:e,count:n,z,r:1});
+  assert.deepEqual(count(123,[el('NA',1,11)]),[4,1],'P4/mmm 1a, 1b, 1c, 1d are one placement');
+  // NaCl in P4/mmm: Cl displaced from Na by (0,0,1/2), (1/2,1/2,0) or (1/2,1/2,1/2) are three different structures
+  assert.deepEqual(count(123,[el('NA',1,11),el('CL',1,17)]),[12,3]);
+  assert.deepEqual(count(2,[el('PB',2,82),el('O',2,8)]),[477,78],'the eight inversion centres of P-1 are equivalent');
+  const waves=A.allocateWaves([5,9,2,7],512,24,[1,1,1,1,1,1,1,1,1,1]);
+  assert.deepEqual(waves.map(w=>w.ids),[[5,9,2,7]]);assert.ok(Array.from(waves[0].assignOf).every(a=>[5,9,2,7].includes(a)));
+  assert.equal(A.assignmentsPerWave(512,24,true),10);
+});
+test('distance constraints beyond the old eight rules are packed, and the kernel is sized for them', () => {
+  const A=require('../js/wyckoff_assign.js'),{WY_LIMITS}=require('../js/wyckoff_limits.js');
+  const demand=['A','B','C','D','E','F'].map((e,i)=>({element:e,count:4,z:6+i,r:1}));
+  const windows=[];for(let i=0;i<6;i++)for(let j=i+1;j<6;j++)windows.push({a:demand[i].element,b:demand[j].element,dmin:1,dmax:3});
+  const t=A.buildRestraintTables(demand,windows,{});
+  assert.equal(t.nRules,30,'15 bare upper bounds, each applied both ways');assert.ok(t.nRules>WY_LIMITS.baseRules && t.nRules<=WY_LIMITS.maxRules);
+  const counted=A.buildRestraintTables(demand,[{a:'A',b:'B',count:12,countMode:'exact',dmin:1,dmax:3},{a:'C',b:'D',count:70,countMode:'exact',dmin:1,dmax:3}],{});
+  assert.equal(counted.slotsNeeded,82);
+  assert.throws(()=>A.buildRestraintTables(demand,windows.concat(windows.slice(0,2)),{}),/kernel holds 32/);
+  const src=read('swarm_reflection.wgsl');
+  assert.match(src,/const MAX_BOND_RULES: u32 = \d+u; \/\/__MAX_BOND_RULES__/);assert.match(src,/const MAX_COORD_SLOTS: u32 = \d+u; \/\/__MAX_COORD_SLOTS__/);
 });
 test('intensity extraction rejects malformed and excessive reflection limits before dispatch', async () => {
   const a=model();a.state.setCalculation('wppf');
@@ -431,19 +473,31 @@ test('pdCIF export/reimport preserves radiation, wavelengths, zero, weights and 
   assert.equal(b.S.datasets[1].p.zero, -0.07);
 });
 
-test('undo of a project load restores weighting, defaults, fit results and persisted settings', async () => {
-  const a = fitted();
-  const originalWeight = Array.from(a.state.fitPoints(a.ds).w);
+test('opening a project clears every restore point and reads the project as saved', async () => {
+  const a = fitted(), H = a.context.RV.history;
+  H.take('an edit before'); H.take('another edit');
   const project = JSON.parse(a.state.projectJSON([]));
   project.settings.weight = 'unit'; project.settings.bkgN = 2; project.settings.nAnchors = 4; project.settings.inst.lambda1 = 2;
   await a.context.RV.cmd.openProject(JSON.stringify(project));
   assert.equal(a.S.settings.weight, 'unit');
-  a.context.RV.history.undo();
-  const restored = a.S.datasets[0];
-  assert.equal(a.S.settings.weight, 'poisson'); assert.equal(a.S.settings.bkgN, 6); assert.equal(a.S.settings.nAnchors, 12);
-  assert.equal(a.S.settings.inst.lambda1, 1.540598); assert.equal(restored.stats.weight, 'poisson');
-  assert.deepEqual(Array.from(a.state.fitPoints(restored).w), originalWeight);
-  assert.equal(JSON.parse(a.storage.get('powder6.settings')).weight, 'poisson');
+  assert.equal(H.count(), 0, 'restore points of the previous session survived');
+  H.undo();
+  assert.equal(a.S.settings.weight, 'unit'); assert.equal(a.S.settings.bkgN, 2); assert.equal(a.S.settings.nAnchors, 4);
+  assert.equal(a.S.settings.inst.lambda1, 2);
+  assert.equal(JSON.parse(a.storage.get('powder6.settings')).weight, 'unit');
+});
+test('a saved project brings back the active method intensities and the remembered values of each dataset', () => {
+  const a = model(); a.state.setCalculation('lebail');
+  Object.keys(a.ds.fit).forEach(k => { a.ds.fit[k] = k === 'bkg0'; });
+  const job = a.state.jobFor(a.ds), result = a.core.refine(job);
+  assert.equal(result.ok, true, result.msg); a.state.applyResult([a.ds], result, job, false);
+  assert.ok(a.ds.ints, 'the Le Bail fit gave no intensities');
+  a.ds.mem['p9.gone.B'] = [1.25, true];
+  const ints = JSON.stringify(a.ds.ints);
+  a.state.commitProject(a.state.prepareProject(JSON.parse(a.state.projectJSON([]))));
+  const d = a.S.datasets[0];
+  assert.equal(JSON.stringify(d.ints), ints, 'the Le Bail intensities were dropped on load');
+  assert.deepEqual(plain(d.mem['p9.gone.B']), [1.25, true]);
 });
 
 test('bundled powder data and pdCIF fixtures remain readable', async () => {

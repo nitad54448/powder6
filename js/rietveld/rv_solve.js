@@ -16,7 +16,7 @@ RV.solve = (function () {
   'use strict';
   var S = RV.state.S, St = RV.state, ui = RV.ui, esc = ui.esc, C = RVCore;
   var CFD = typeof CF_DEFAULTS !== 'undefined' ? CF_DEFAULTS : { thresholdSigma: 1.1, maxIterations: 1000, randomStarts: 3, peakMerge: 0.9, symLambda: 0.5, overlapTolTth: 0.05, weakFraction: 0.15, weakGrouping: 'cluster' };
-  var RHO_MIN = 0.5, RHO_MAX = 22.5, AMU_A3 = 1.66053906660;   // g/cm3 of 1 u per A^3
+  var WL = WY_LIMITS, WD = WL.defaults, RHO_MIN = WL.rhoAbsolute[0], RHO_MAX = WL.rhoAbsolute[1], AMU_A3 = 1.66053906660;   // g/cm3 of 1 u per A^3
   function $(s) { return document.querySelector(s); }
   function plural(n, w) { return n + ' ' + (n === 1 ? w : /y$/.test(w) ? w.slice(0, -1) + 'ies' : w + 's'); }
   function f(v, d) { return Number.isFinite(v) ? v.toFixed(d) : '—'; }
@@ -30,19 +30,26 @@ RV.solve = (function () {
     return { formula: '', z: '', tab: 'sgt', sgtN: 0, sgtAuto:true,
              cf: { adaptive:false, grid: 'auto', threshold: CFD.thresholdSigma, iterations: CFD.maxIterations, trials: CFD.randomStarts, symLambda: CFD.symLambda,
                    densityLevel: 3, densityStride: 1, densityCell: true, densitySites: true, weakFraction: CFD.weakFraction, weakGrouping: CFD.weakGrouping, overlapTol: CFD.overlapTolTth, peakMerge: CFD.peakMerge },
-             wy: { maxSites: '', maxRepeat: '', rhoMin: 2, rhoMax: 10, maxZ: 3, particles: 512, particlesAuto:true, iterations: 2000, restarts: 4, minContact: 1.0, constraints: '' } };
+             wy: { maxSites: '', maxRepeat: '', rhoMin: WD.rhoMin, rhoMax: WD.rhoMax, maxZ: WD.maxZ, particles: WD.particles, particlesAuto:true, iterations: WD.iterations, restarts: WD.restarts, minContact: WD.minContact, constraints: '' } };
   }
-  function loadOpts() {
-    var o = defaults(), s = St.load('solve');
+  // the options of a stored or saved copy, kept only where they have the type of the defaults
+  function cleanOpts(s) {
+    var o = defaults();
     if (s && typeof s === 'object') {
       ['formula', 'z', 'tab'].forEach(function (k) { if (typeof s[k] === 'string') o[k] = s[k]; });
       if (s.sgtAuto===false && Number.isSafeInteger(s.sgtN) && s.sgtN>=4 && s.sgtN<=C.MAX_PRECISION_REFLECTIONS){o.sgtN=s.sgtN;o.sgtAuto=false;}
-      ['cf', 'wy'].forEach(function (g) { if (s[g] && typeof s[g] === 'object') Object.keys(o[g]).forEach(function (k) { if (typeof s[g][k] === typeof o[g][k]) o[g][k] = s[g][k]; }); });
+      // the form keeps numbers as the text typed: a numeric option takes a number or text that reads as one
+      var fits = function (v, d) { return typeof d === 'number' ? (typeof v === 'number' && isFinite(v)) || (typeof v === 'string' && Number.isFinite(ui.parseNum(v))) : typeof v === typeof d; };
+      ['cf', 'wy'].forEach(function (g) { if (s[g] && typeof s[g] === 'object') Object.keys(o[g]).forEach(function (k) { if (fits(s[g][k], o[g][k])) o[g][k] = s[g][k]; }); });
     }
-    if(s && s.wy && s.wy.particlesAuto==null && s.wy.particles!=null && s.wy.particles!==512)o.wy.particlesAuto=false;
+    if(s && s.wy && s.wy.particlesAuto==null && s.wy.particles!=null && Number(s.wy.particles)!==WD.particles)o.wy.particlesAuto=false;
     if (['sgt', 'cf', 'wy', 'st'].indexOf(o.tab) < 0) o.tab = 'sgt';
     return o;
   }
+  // The formula unit, Z and the distance constraints describe the phase of a project: the project carries them, the
+  // browser does not keep them for the next session.
+  function withoutComposition(o) { o.formula = ''; o.z = ''; o.wy.constraints = ''; return o; }
+  function loadOpts() { return withoutComposition(cleanOpts(St.load('solve'))); }
   var SV = { opts: null, phaseKey: null, dsId: null, ints: null, sgt: null, cf: null, wy: null, shown: null, cfRun: null, wyRun: null, extractions:{} };
   function sgtRange(){
     var I=SV.ints,valid=I && I.phaseKey===SV.phaseKey && I.dsId===SV.dsId;
@@ -87,7 +94,7 @@ RV.solve = (function () {
     if(k==='sgt'){renderSgtOut();return;}solutionSelection[k]=id || null;
     withSolution(k,function(){if(k==='cf')renderCfOut();else renderWyOut();renderStruct(k);});
   }
-  function saveOpts() { St.store('solve', SV.opts); }
+  function saveOpts() { St.store('solve', withoutComposition(JSON.parse(JSON.stringify(SV.opts)))); }
   function clearEmptyComposition() {
     if (!SV.opts || (S.phases.length && S.datasets.length)) return;
     if (!SV.opts.formula && !SV.opts.z) return;
@@ -174,7 +181,7 @@ RV.solve = (function () {
     if (sc.xray && Array.isArray(sc.xray.a)) return sc.xray.a.reduce(function (s, a) { return s + a; }, 0) + (sc.xray.c || 0);
     return St.atomicWeight(el) / 2 || 0;
   }
-  function typedZ(value) { var z = parseInt(String(value==null?SV.opts.z:value).trim(), 10); return Number.isFinite(z) && z >= 1 ? Math.min(192, z) : null; }
+  function typedZ(value) { var z = parseInt(String(value==null?SV.opts.z:value).trim(), 10); return Number.isFinite(z) && z >= 1 ? Math.min(WL.zMax, z) : null; }
 
   // ---------------------------------------------------------------- distance constraints (powder5.html, unchanged rules)
   function parseConstraints(text) {
@@ -230,7 +237,7 @@ RV.solve = (function () {
     if (hasMin) return A + '–' + B + ' no closer than ' + d(w.dmin) + ' Å';
     return A + '–' + B + ': no constraint';
   }
-  // the parse, the elements against the formula and the bounds of the kernel (swarm_reflection.wgsl: 8 rules, 64 slots)
+  // the parse, the elements against the formula and the bounds of the kernel (WY_LIMITS: rules and neighbour slots)
   function validateConstraints(text, formula) {
     var r = parseConstraints(text), errors = r.bad.slice(), warnings = r.warn.slice();
     var m = String(formula || '').match(/[A-Z][a-z]?/g), known = m && m.length ? new Set(m.map(function (s) { return s.toUpperCase(); })) : null;
@@ -244,14 +251,14 @@ RV.solve = (function () {
       if (!hasCount && !Number.isFinite(w.dmax)) return n;
       return n + (!hasCount && w.a !== w.b ? 2 : 1);
     }, 0);
-    if (rules > 8) errors.push('These ' + r.windows.length + ' constraints make ' + rules + ' rules; the kernel holds 8. A bare upper bound counts twice, being applied both ways.');
+    if (rules > WL.maxRules) errors.push('These ' + r.windows.length + ' constraints make ' + rules + ' rules; the kernel holds ' + WL.maxRules + '. A bare upper bound counts twice, being applied both ways.');
     r.windows.forEach(function (w) {
       if (!Number.isFinite(w.count) || w.count <= 0 || w.count % 2 === 0) return;
       warnings.push('"' + capEl(w.a) + ' ' + capEl(w.b) + ' ' + w.count + '": ' + w.count + ' is the coordination number of ' + capEl(w.a) + ' (its number of ' + capEl(w.b) + ' neighbours). An odd number keeps ' + capEl(w.a) +
         ' off every inversion centre, which can leave it no position at all. For a distance window alone write "' + capEl(w.a) + ' ' + capEl(w.b) + ' - ' + (w.dmin == null ? '' : w.dmin) + '/' + (w.dmax == null ? '' : w.dmax) + '".');
     });
     var slots = r.windows.reduce(function (n, w) { return n + (Number.isFinite(w.count) && w.count > 0 ? w.count : 0); }, 0);
-    if (slots > 64) errors.push('The coordination numbers total ' + slots + ', above the 64 neighbour slots of the kernel.');
+    if (slots > WL.maxCoordSlots) errors.push('The coordination numbers total ' + slots + ', above the ' + WL.maxCoordSlots + ' neighbour slots of the kernel.');
     for (var i = 0; i < r.windows.length; i++) {
       var w = r.windows[i];
       if (w.a !== w.b && Number.isFinite(w.count) && w.count > 0 && r.windows.some(function (v) { return v.a === w.b && v.b === w.a && Number.isFinite(v.count); })) {
@@ -323,8 +330,8 @@ RV.solve = (function () {
       return { text: 'Z = ' + Z + ': ρ = ' + rho.toFixed(3) + ' g/cm³ (M = ' + M.toFixed(2) + ' g/mol, V = ' + V.toFixed(1) + ' Å³).' + (bad ? ' No solid has that density: Z counts formula units, not atoms.' : ''), warn: bad };
     }
     if (k === 'cf') return { text: 'Z = Auto: from the highest peak, its site multiplicity over the count of the heaviest element. M = ' + M.toFixed(2) + ' g/mol, V = ' + V.toFixed(1) + ' Å³.', warn: false };
-    var w = wyOptions(), lo = Math.max(1, Math.ceil(V * w.rhoMin / (AMU_A3 * M) - 1e-9)), hi = Math.min(192, Math.floor(V * w.rhoMax / (AMU_A3 * M) + 1e-9)), st = zStep(comp), list = [];
-    for (var z = Math.max(st, Math.ceil(lo / st) * st); z <= hi && list.length < 12; z += st) list.push(z);
+    var w = wyOptions(), lo = Math.max(1, Math.ceil(V * w.rhoMin / (AMU_A3 * M) - 1e-9)), hi = Math.min(WL.zMax, Math.floor(V * w.rhoMax / (AMU_A3 * M) + 1e-9)), st = zStep(comp), list = [];
+    for (var z = Math.max(st, Math.ceil(lo / st) * st); z <= hi && list.length < WL.maxZSearches; z += st) list.push(z);
     return { text: 'Z = Auto: ' + (list.length ? 'the Wyckoff search tries Z = ' + list.join(', ') + (st > 1 ? ' (multiples of ' + st + ' the positions allow)' : '') + ', ρ ' + density(list[0], comp).toFixed(2) + '–' + density(list[list.length - 1], comp).toFixed(2) + ' g/cm³'
                                                    : 'no Z gives a density between ' + w.rhoMin + ' and ' + w.rhoMax + ' g/cm³ here; widen the window (Wyckoff search)') + '. M = ' + M.toFixed(2) + ' g/mol, V = ' + V.toFixed(1) + ' Å³.', warn: !list.length };
   }
@@ -708,17 +715,17 @@ RV.solve = (function () {
 
   // ---------------------------------------------------------------- 3b. the Wyckoff search
   function wyOptions() {
-    var o = SV.opts.wy, pos = function (v) { var x = parseInt(String(v).trim(), 10); return Number.isFinite(x) && x >= 1 ? Math.min(24, x) : null; };
-    var lo = readNum(o.rhoMin, 1, 22, true), hi = readNum(o.rhoMax, 1, 22, true);
-    if (!Number.isFinite(lo)) lo = 2;
-    if (!Number.isFinite(hi)) hi = 10;
+    var o = SV.opts.wy, pos = function (v) { var x = parseInt(String(v).trim(), 10); return Number.isFinite(x) && x >= 1 ? Math.min(WL.maxSitesPerElement, x) : null; };
+    var R = WL.rhoWindow, lo = readNum(o.rhoMin, R[0], R[1], true), hi = readNum(o.rhoMax, R[0], R[1], true);
+    if (!Number.isFinite(lo)) lo = WD.rhoMin;
+    if (!Number.isFinite(hi)) hi = WD.rhoMax;
     if (lo > hi) { var t = lo; lo = hi; hi = t; }
-    if (lo === hi) { if (hi < 22) hi++; else lo--; }
+    if (lo === hi) { if (hi < R[1]) hi++; else lo--; }
     var mc = ui.parseNum(o.minContact);
-    return { maxSites: pos(o.maxSites), maxRepeat: pos(o.maxRepeat), rhoMin: lo, rhoMax: hi, maxZ: readNum(o.maxZ, 1, 12, true) || 3,
-             particles: readNum(o.particles,64,gpuBudget.maxParticles,true) || Math.max(64,Math.floor(gpuBudget.maxParticles/3)),
-             iterations: readNum(o.iterations, 10, 10000, true) || 2000, restarts: readNum(o.restarts, 1, 10, true) || 4,
-             minContact: Number.isFinite(mc) ? Math.min(4, Math.max(0, mc)) : undefined };
+    return { maxSites: pos(o.maxSites), maxRepeat: pos(o.maxRepeat), rhoMin: lo, rhoMax: hi, maxZ: readNum(o.maxZ, 1, WL.maxZSearches, true) || WD.maxZ,
+             particles: readNum(o.particles,WL.particles[0],gpuBudget.maxParticles,true) || Math.max(WL.particles[0],Math.floor(gpuBudget.maxParticles/3)),
+             iterations: readNum(o.iterations, WL.iterations[0], WL.iterations[1], true) || WD.iterations, restarts: readNum(o.restarts, WL.restarts[0], WL.restarts[1], true) || WD.restarts,
+             minContact: Number.isFinite(mc) ? Math.min(WL.minContact[1], Math.max(WL.minContact[0], mc)) : undefined };
   }
   function runWy() {
     if (S.busy || SV.wyRun || SV.cfRun) return;
@@ -752,9 +759,11 @@ RV.solve = (function () {
       else if (m.type === 'wy-progress') {
         if (Array.isArray(m.bestSites) && m.bestSites.length && Number.isFinite(m.best))
           run.live = { z: m.z, assignment: m.assignment, best: m.best, cc: m.cc, sites: m.bestSites };
-        var frac = (m.wave - 1 + (m.restart - 1 + m.generation / m.generations) / m.restarts) / m.waves;
-        progress('wy', Number.isFinite(frac) ? frac : -1, zTag(m) + (m.waves > 1 ? 'wave ' + m.wave + '/' + m.waves + ', ' : '') + 'restart ' + m.restart + '/' + m.restarts + ', gen ' + m.generation + '/' + m.generations +
-                 (Number.isFinite(m.best) ? ', wR2 ' + ((1 - m.best) * 100).toFixed(1) + ' %' : ''));
+        var inZ = Number.isFinite(m.fraction) ? m.fraction : (m.wave - 1 + (m.restart - 1 + m.generation / m.generations) / m.restarts) / m.waves;
+        var zc = Number.isFinite(m.zCount) && m.zCount > 0 ? m.zCount : 1, zi = Number.isFinite(m.zIndex) ? m.zIndex : 1, frac = (zi - 1 + inZ) / zc;
+        var screen = m.stage === 'screen', fom = Number.isFinite(m.cc) ? m.cc : m.best;
+        progress('wy', Number.isFinite(frac) ? frac : -1, zTag(m) + (screen ? 'screening ' + m.wave + '/' + m.waves + ', ' : m.waves > 1 ? 'wave ' + m.wave + '/' + m.waves + ', ' : '') + (screen ? '' : 'restart ' + m.restart + '/' + m.restarts + ', ') + 'gen ' + m.generation + '/' + m.generations +
+                 (Number.isFinite(fom) ? ', wR2 ' + ((1 - fom) * 100).toFixed(1) + ' %' : ''));
       } else if (m.type === 'wy-structure') { run.results = m.results; finishWy(null); }
     };
     W.onerror = function (ev) { if (run === SV.wyRun) finishWy('The Wyckoff worker crashed: ' + ((ev && ev.message) || 'unknown error')); };
@@ -820,7 +829,8 @@ RV.solve = (function () {
     }
     var sols = Array.isArray(r.solutions) && r.solutions.length ? r.solutions : [{ z: r.z, sites: r.sites, refinement: r.refinement, assignment: (r.wyckoffResult || {}).assignment, searchCC: (r.wyckoffResult || {}).searchCC, ranked: (r.wyckoffResult || {}).ranked }];
     SV.wy = { results: r, sols: sols, pick: 0, formula: run.formula, vc: run.vc, o: run.o, I: run.I, stamp: run.I.stamp, stopped: !!r.stopped, salvaged: r.salvaged || null, seconds: dt, note: run.inp.note, n: run.inp.hklList.length, log: run.log };
-    if(RV.fitHistory)RV.fitHistory.solution('wy',SV.wy);
+    var record=RV.fitHistory && RV.fitHistory.solution('wy',SV.wy);
+    if(record)SV.wy.historyId=record.id;
     solutionSelection.wy = null; if (RV.layout && RV.layout.latestStructure) RV.layout.latestStructure('wy');
     var s0 = sols[0], R = s0.refinement && Number.isFinite(s0.refinement.R) ? s0.refinement.R : NaN;
     ui.toast('Wyckoff search of ' + run.I.phaseName + (r.stopped ? ' (stopped)' : '') + ': ' + (prettyAssign(s0.assignment) || '?') + (Number.isFinite(s0.z) ? ', Z = ' + s0.z : '') + (Number.isFinite(R) ? ', wR(F²) = ' + pct(R) : '') +
@@ -1057,7 +1067,7 @@ RV.solve = (function () {
           '<label class="sv-inline" for="sv-sgtn">Number of reflections</label><input id="sv-sgtn" type="number" min="4" step="1" class="num sv-short" data-opt="sgtN" inputmode="numeric" aria-describedby="sv-sgtn-note" title="Whole number of lowest-angle determined intensities to test"></p><p class="hint" id="sv-sgtn-note"></p>' +
         '<div id="sv-sgt-out"></div>', true, null, 'sub') +
         block('sgt-addsym', 'ADDSYM · atomic model',
-          '<p class="hint">Find symmetry present in the atomic positions, then preview conversion to the detected space group. This uses the starting model or a dataset’s Rietveld positions and does not require WPPF intensities.</p>' +
+          '<p class="hint">Find symmetry present in the atomic positions, then preview conversion to the detected space group. This uses the starting model, a dataset’s Rietveld model, or after a Le Bail or WPPF fit the dataset’s refined cell with its atoms; it does not need extracted intensities.</p>' +
           '<div class="form-grid sv-form">'+select('sv-sym-phase','Phase',St.currentPhase() && St.currentPhase().key,S.phases.map(function(p){return [p.key,p.name+' · '+St.sgText(p.sg)];}),'Choose a phase with atoms.','')+'</div>' +
           '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-addsym" data-sv="find-symmetry" title="Find higher symmetry of the selected atomic model">Find higher symmetry…</button></p>',true,null,'sub'), true) +
       block('wppf-cf', 'Charge flipping',
@@ -1095,17 +1105,17 @@ RV.solve = (function () {
           formulaRow('wy') +
           '<p class="hint">Atoms of the formula unit on the Wyckoff positions of the space group, fitted to the extracted intensities directly (|F<sub>calc</sub>|² against them, weighted by 1/σ²): the search of powder5, in its worker. It needs WebGPU.</p>' +
           '<div class="form-grid sv-form">' +
-            field('sv-wy-maxSites', 'Sites per element, at most', o.wy.maxSites, 'Blank: Auto.', 'class="num" data-wy="maxSites" placeholder="Auto" inputmode="numeric"') +
+            field('sv-wy-maxSites', 'Sites per element, at most', o.wy.maxSites, 'Blank: Auto; up to ' + WL.maxSitesPerElement + '.', 'class="num" data-wy="maxSites" placeholder="Auto" inputmode="numeric"') +
             field('sv-wy-maxRepeat', 'Atoms per position, at most', o.wy.maxRepeat, 'Independent atoms on one Wyckoff position at different coordinates; blank: Auto.', 'class="num" data-wy="maxRepeat" placeholder="Auto" inputmode="numeric"') +
             '<label for="sv-wy-rhoMin">Density (g/cm³)</label><div><span class="sv-range"><input id="sv-wy-rhoMin" class="num" data-wy="rhoMin" value="' + esc(o.wy.rhoMin) + '" inputmode="numeric" aria-label="Lowest density"> to ' +
               '<input id="sv-wy-rhoMax" class="num" data-wy="rhoMax" value="' + esc(o.wy.rhoMax) + '" inputmode="numeric" aria-label="Highest density"></span><small>With Z on Auto, every Z with a density in this window is searched.</small></div>' +
-            field('sv-wy-maxZ', 'Values of Z, at most', o.wy.maxZ, 'The least plausible are left out first.', 'class="num" data-wy="maxZ" inputmode="numeric"') +
-            field('sv-wy-particles', 'Particles', o.wy.particles, 'Trial structures held at once (64–'+gpuBudget.maxParticles+'). Default is 33% of the conservative hardware budget.', 'class="num" data-wy="particles" inputmode="numeric"') +
-            field('sv-wy-iterations', 'Iterations', o.wy.iterations, '10–10000.', 'class="num" data-wy="iterations" inputmode="numeric"') +
-            field('sv-wy-restarts', 'Restarts', o.wy.restarts, '', 'class="num" data-wy="restarts" inputmode="numeric"') +
+            field('sv-wy-maxZ', 'Values of Z, at most', o.wy.maxZ, '1–' + WL.maxZSearches + '. The least plausible are left out first.', 'class="num" data-wy="maxZ" inputmode="numeric"') +
+            field('sv-wy-particles', 'Particles', o.wy.particles, 'Trial structures held at once ('+WL.particles[0]+'–'+gpuBudget.maxParticles+'). Default is 33% of the conservative hardware budget.', 'class="num" data-wy="particles" inputmode="numeric"') +
+            field('sv-wy-iterations', 'Iterations', o.wy.iterations, WL.iterations[0] + '–' + WL.iterations[1] + '. When the assignments need more than ' + WL.fullWaves + ' waves, each is first screened for ' + Math.round(100 * WL.screenFraction) + ' % of them.', 'class="num" data-wy="iterations" inputmode="numeric"') +
+            field('sv-wy-restarts', 'Restarts', o.wy.restarts, WL.restarts[0] + '–' + WL.restarts[1] + '.', 'class="num" data-wy="restarts" inputmode="numeric"') +
             field('sv-wy-minContact', 'Shortest contact (Å)', o.wy.minContact, 'A structure with two unlike atoms closer than this is rejected.', 'class="num" data-wy="minContact" inputmode="decimal"') +
             '<label for="sv-wy-constraints">Distance constraints</label><div><textarea id="sv-wy-constraints" data-wy="constraints" rows="3" spellcheck="false" placeholder="S O 4 1.35/1.65">' + esc(o.wy.constraints) + '</textarea>' +
-              '<small>One per line: <code>A B N dmin/dmax</code> (N neighbours of B around each A), <code>A B - dmin/</code> for a floor.</small><div class="sv-cstat" id="sv-wy-cstat"></div></div>' +
+              '<small>One per line: <code>A B N dmin/dmax</code> (N neighbours of B around each A), <code>A B - dmin/</code> for a floor. Up to ' + WL.maxRules + ' rules and ' + WL.maxCoordSlots + ' neighbours in all.</small><div class="sv-cstat" id="sv-wy-cstat"></div></div>' +
           '</div>' +
           '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-wy-run" data-sv="wy-run">Run the Wyckoff search</button></p>' +
           '<div class="progress sv-prog" id="sv-wy-prog" hidden><div class="track"><i></i></div><span></span></div>' +
@@ -1496,17 +1506,26 @@ RV.solve = (function () {
     return { lines: L, image: image, densityImage:densityImage };
   }
   function labelled(list) { var n = {}; return list.map(function (s) { n[s.element] = (n[s.element] || 0) + 1; return Object.assign({ label: s.element + n[s.element] }, s); }); }
-  function archive(includeDensity){return JSON.parse(JSON.stringify({cf:SV.cf,wy:SV.wy,ints:SV.ints,sgt:SV.sgt,shown:SV.shown,opts:SV.opts,dsId:SV.dsId,phaseKey:SV.phaseKey},function(k,v){if(!includeDensity && k==='map' && (Array.isArray(v)||ArrayBuffer.isView(v)))return undefined;return ArrayBuffer.isView(v)?Array.from(v):v;}));}
+  /* historyIds: the fit-history records saved with the project. A Wyckoff result that is one of them is saved as a
+     reference to it rather than a second copy. */
+  function archive(includeDensity,historyIds){
+    var wy=SV.wy && SV.wy.historyId && historyIds && historyIds.has(SV.wy.historyId)?{historyRef:SV.wy.historyId}:SV.wy;
+    return JSON.parse(JSON.stringify({cf:SV.cf,wy:wy,ints:SV.ints,sgt:SV.sgt,shown:SV.shown,opts:SV.opts,dsId:SV.dsId,phaseKey:SV.phaseKey},function(k,v){if(!includeDensity && k==='map' && (Array.isArray(v)||ArrayBuffer.isView(v)))return undefined;return ArrayBuffer.isView(v)?Array.from(v):v;}));
+  }
   function restoreArchive(value,options){
     // Project boundaries must also clear caches keyed by IDs reused by the new project.
     SV.extractions={};SV.sgt=null;SV.cf=null;SV.wy=null;SV.ints=null;
-    SV.dsId=null;SV.phaseKey=null;SV.shown=null;SV.opts=defaults();
+    SV.dsId=null;SV.phaseKey=null;SV.shown=null;
     solutionSelection={};solutionViews={};inspectingSolution=false;
     value=value || {};
     ['cf','wy','ints','dsId','phaseKey','shown','sgt'].forEach(function(k){if(value[k]!==undefined)SV[k]=value[k];});
-    var o=value.opts || {};
-    Object.keys(SV.opts).forEach(function(k){if(o[k]!==undefined)SV.opts[k]=k==='cf'||k==='wy'?Object.assign({},SV.opts[k],o[k]):o[k];});
-    if(SV.opts.sgtAuto!==false || !Number.isSafeInteger(SV.opts.sgtN) || SV.opts.sgtN<4 || SV.opts.sgtN>C.MAX_PRECISION_REFLECTIONS){SV.opts.sgtN=0;SV.opts.sgtAuto=true;}
+    if(SV.wy && SV.wy.historyRef){
+      var rec=RV.fitHistory && RV.fitHistory.find(SV.wy.historyRef),ref=SV.wy.historyRef;
+      SV.wy=rec && rec.solution?JSON.parse(JSON.stringify(rec.solution)):null;
+      if(SV.wy)SV.wy.historyId=ref;
+    }
+    // A saved copy keeps only what has the type of the defaults: a hand-edited or older file cannot put an object in a number.
+    SV.opts=cleanOpts(value.opts);
     var d=SV.ints && St.byId(SV.ints.dsId);
     if(d && d.inst.lambda1===SV.ints.lambda)SV.extractions[d.id]={I:SV.ints,stats:d.stats};else SV.ints=null;
     if(SV.cf){if(SV.cf.best && SV.cf.best.map)SV.cf.best.map=Float32Array.from(SV.cf.best.map);if(SV.cf.structure && SV.cf.structure.map)SV.cf.structure.map=Float32Array.from(SV.cf.structure.map);}

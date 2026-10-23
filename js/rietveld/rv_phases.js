@@ -329,12 +329,12 @@ RV.phasesTab = (function () {
     }
     var newCell = norm(t.cell);
     if (!newCell) return { sg: sg, error: 'The transformed cell cannot be given the ' + sg.system + ' metric.' };
-    var conv = K.convertStructure(model.atoms, ph.ops, sg.ops, cell, t.P, t.p, { tol: f.tol, cell: newCell });
+    var conv = K.convertStructure(model.atoms, ph.ops, sg.ops, cell, t.P, t.p, { tol: f.tol, cell: newCell, occTol: f.occTol });
     // every dataset's own (refined) positions must have the new symmetry too
     var dsBad = [];
     if (!conv.violations.length && t.relation !== 'same' && t.relation !== 'subgroup') St.holdersOf(ph).forEach(function (d) {
       var ownModel=symmetryModel(ph,{source:String(d.id)}),c=ownModel.cell;
-      var r = K.convertStructure(ownModel.atoms, ph.ops, sg.ops, c, t.P, t.p, { tol: f.tol, cell: norm(K.transformCell(c, t.P)) });
+      var r = K.convertStructure(ownModel.atoms, ph.ops, sg.ops, c, t.P, t.p, { tol: f.tol, cell: norm(K.transformCell(c, t.P)), occTol: f.occTol });
       if (r.violations.length) dsBad.push(d.name + ': ' + r.violations[0]);
     });
     return { sg: sg, t: t, others: others, conv: conv, cell: cell, newCell: newCell, dsBad: dsBad, det: K.det3(t.P), model:model };
@@ -381,12 +381,12 @@ RV.phasesTab = (function () {
       { key: 'target', label: 'New space group', type: 'select', value: preset ? preset.hall : ph.sg.hall, options: St.allSettings().map(function (s) { return [s.hall, s.number + ' · ' + s.symbol + ' · ' + s.system + (s.setting && s.setting !== 'standard' ? ' · ' + s.setting : '')]; }),
         hint: 'Every setting of the 230 groups. A subgroup splits sites, a supergroup merges atoms the new symmetry relates, another setting changes only the axes.' },
       { key: 'mode', label: 'Transformation', type: 'select', value: preset ? 'manual' : 'auto', options: [['auto', 'Find it'], ['manual', 'Enter it']] },
-      { key:'source',label:'Atomic model',type:'select',value:preset && preset.source || 'start',options:[['start','The starting model (Phases)']].concat(St.holdersOf(ph).map(function(d){return [String(d.id),'Dataset '+d.name+' (Rietveld model)'];})),hint:'The chosen model defines the converted phase starting atoms and cell.' },
+      { key:'source',label:'Atomic model',type:'select',value:preset && preset.source || 'start',options:modelOptions(ph),hint:'The chosen model defines the converted phase starting atoms and cell.' },
       { key: 'basis', label: 'New axes a′, b′, c′', type: 'text', value: preset ? preset.basis : 'a,b,c', when: 'mode:manual', hint: 'In the old axes, e.g. a+b,-a+b,c or 2a,b,c.' },
       { key: 'shift', label: 'New origin', type: 'text', value: preset ? preset.shift : '0,0,0', when: 'mode:manual', hint: 'In the old axes, e.g. 1/8,1/8,1/8.' },
       { key: 'tol', label: 'Tolerance /Å', type: 'number', value: preset && preset.tol ? preset.tol : 0.1, hint: 'How far an atom may move to take the new symmetry (supergroups only).' }
     ];
-    function read(body) { var o = {}; fields.forEach(function (f) { var e = body.querySelector('[data-key="' + f.key + '"]'); o[f.key] = f.type === 'number' ? ui.parseNum(e.value) : e.value; }); return o; }
+    function read(body) { var o = {}; fields.forEach(function (f) { var e = body.querySelector('[data-key="' + f.key + '"]'); o[f.key] = f.type === 'number' ? ui.parseNum(e.value) : e.value; }); o.occTol = preset && Number.isFinite(preset.occTol) ? preset.occTol : undefined; return o; }
     var res = await ui.prompt('Convert ' + ph.name + ' to another space group', fields, 'Convert',
       'Now ' + esc(St.sgText(ph.sg)) + (ph.sg.setting ? ', ' + esc(ph.sg.setting) : '') + ', ' + ph.atoms.length + ' site' + (ph.atoms.length === 1 ? '' : 's') + '. The structure is expanded to the full cell, carried to the new axes and origin, and reduced again with the new symmetry.',
       { wide: true, after: '<div class="convert-preview" data-convert-preview aria-live="polite"></div>',
@@ -429,7 +429,7 @@ RV.phasesTab = (function () {
           if (!(v.tol > 0 && v.tol <= 2)) return 'The tolerance is a distance between 0 and 2 Å.';
           var chosen = body.querySelector('[data-key="target"]').selectedOptions[0];
           if (!chosen || chosen.disabled) return 'No space group matches the text in Find.';
-          last = convertPlan(p, v);
+          last = convertPlan(p, Object.assign({}, v, { occTol: preset && Number.isFinite(preset.occTol) ? preset.occTol : undefined }));
           body.querySelector('[data-convert-preview]').innerHTML = previewHTML(p, last);
           if (last.error) return last.error;
           if (last.conv.violations.length) return 'The structure does not have the symmetry of ' + St.sgText(last.sg) + ' within ' + v.tol + ' Å (see the preview).';
@@ -466,21 +466,35 @@ RV.phasesTab = (function () {
     }).filter(Boolean);
     return standardGroups;
   }
-  // f: { source ('start' or a dataset id), tol (Å), cellTol (% and degrees) } -> the search, its conversion and what it adds
+  /* The atomic models ADDSYM and Convert… start from: the starting model, and for each dataset holding the phase its
+     Rietveld model (active, or saved while another method is) under the dataset id. Fitted by Le Bail or WPPF, a dataset
+     also offers its current cell with the atoms it holds ('c:' + id; the plain id when it has no Rietveld model). */
+  function hasRietveld(d){return S.calculation==='rietveld' || !!(d.calculations && d.calculations.rietveld);}
+  function currentModelName(d){return 'Dataset '+d.name+' ('+(C.METHOD_LABELS[S.calculation] || S.calculation)+' cell, '+(hasRietveld(d)?'Rietveld atoms':'atoms of the phase')+')';}
+  function modelOptions(ph){
+    var out=[['start','The starting model (Phases)']];
+    St.holdersOf(ph).forEach(function(d){
+      if(hasRietveld(d))out.push([String(d.id),'Dataset '+d.name+' (Rietveld model)']);
+      if(S.calculation!=='rietveld')out.push([(hasRietveld(d)?'c:':'')+d.id,currentModelName(d)]);
+    });
+    return out;
+  }
+  // f: { source ('start', a dataset id, or 'c:' + id), tol (Å), cellTol (% and degrees) } -> the search, its conversion and what it adds
   function symmetryModel(ph,f){
-    var ds=f.source==='start'?null:St.byId(+f.source);
-    if(f.source!=='start' && !ds)throw new Error('The selected atomic dataset is no longer available.');
-    var bank=ds && S.calculation!=='rietveld' && ds.calculations && ds.calculations.rietveld;
-    var values=ds?Object.assign({},ph.v,ds.p,bank && bank.p,St.atomicValues(ds)):ph.v;
+    var src=String(f.source || 'start'),current=/^c:/.test(src),ds=src==='start'?null:St.byId(+src.replace(/^c:/,''));
+    if(src!=='start' && !ds)throw new Error('The selected atomic dataset is no longer available.');
+    if(!ds)return {dataset:null,values:ph.v,cell:St.cellOf(ph,ph.v),atoms:atomList(ph,ph.v),name:'The starting model (Phases)'};
+    var rietveld=!current && hasRietveld(ds),bank=rietveld && S.calculation!=='rietveld' && ds.calculations.rietveld;
+    var values=Object.assign({},ph.v,ds.p,bank && bank.p,St.atomicValues(ds));
     var cell=St.cellOf(ph,values) || St.cellOf(ph,ph.v);
-    return {dataset:ds,values:values,cell:cell,atoms:atomList(ph,values),name:ds?'Dataset '+ds.name+' (Rietveld model)':'The starting model (Phases)'};
+    return {dataset:ds,values:values,cell:cell,atoms:atomList(ph,values),name:rietveld?'Dataset '+ds.name+' (Rietveld model)':currentModelName(ds)};
   }
   function symmetrySearch(ph, f, model, r, tolOverride) {
     var K = SGConvert, tol = tolOverride || f.tol,cell=model.cell,atoms=model.atoms;
     var out = { r: r, cell: cell, atoms: atoms, tol: tol,sourceName:model.name,source:f.source };
     if (!r.group) return out;
     out.newCell = r.standardCell;
-    out.conv = K.convertStructure(atoms, ph.ops, r.group.ops, cell, r.P, r.p, { tol: tol, cell: out.newCell });
+    out.conv = K.convertStructure(atoms, ph.ops, r.group.ops, cell, r.P, r.p, { tol: tol, cell: out.newCell, occTol: f.occTol });
     // symmetry per volume: operators per cell over the cell's volume, so a larger or smaller new cell compares fairly
     out.perOld = r.group.ops.length / Math.abs(K.det3(r.P));
     out.added = out.perOld > ph.ops.length + 1e-9;
@@ -498,7 +512,8 @@ RV.phasesTab = (function () {
     var K = SGConvert, r = s.r, h = '<div class="convert-preview-body">';
     h += '<p>Now <b>' + esc(St.sgText(ph.sg)) + '</b>' + (ph.sg.setting && ph.sg.setting !== 'standard' ? ', ' + esc(ph.sg.setting) : '') + ': ' + ph.atoms.length + ' site' + (ph.atoms.length === 1 ? '' : 's') + ', ' + r.points + ' atom' + (r.points === 1 ? '' : 's') + ' in the cell, ' + ph.ops.length + ' operator' + (ph.ops.length === 1 ? '' : 's') + '.</p>';
     h += '<dl class="sv-dl"><dt>Atomic model</dt><dd>' + esc(s.sourceName) + '</dd><dt>Engine</dt><dd>' + esc(r.engine) + ' · public WebAssembly</dd><dt>Cell metric</dt><dd>' + esc(r.latticeSystem || 'not determined') + (r.cellWithinTolerance ? ' within ' : ' exceeds ') + f.cellTol + ' % and ' + f.cellTol + '°</dd>' +
-      '<dt>Lattice</dt><dd>' + r.latticePoints + ' lattice point' + (r.latticePoints === 1 ? '' : 's') + ' per cell' + (r.latticePoints > s.centring ? ' <b>(' + (r.latticePoints - s.centring) + ' more than ' + esc(ph.sg.symbol) + ' has: extra centring, or a smaller true cell)</b>' : '') + '</dd>';
+      '<dt>Lattice</dt><dd>' + r.latticePoints + ' lattice point' + (r.latticePoints === 1 ? '' : 's') + ' per cell' + (r.latticePoints > s.centring ? ' <b>(' + (r.latticePoints - s.centring) + ' more than ' + esc(ph.sg.symbol) + ' has: extra centring, or a smaller true cell)</b>' : '') + '</dd>' +
+      '<dt>Species</dt><dd>Occupancies of one type within ' + f.occTol + ' count as one kind of atom' + (r.mixedSites ? '; ' + r.mixedSites + ' point' + (r.mixedSites === 1 ? '' : 's') + ' of the cell hold a mixed site, searched as one atom of the combined kind' : '') + '</dd>';
     if (!r.group) {
       h += '<dt>Symmetry found</dt><dd class="warn">' + r.ops.length + ' operations, which could not be named as a space group; lower the tolerances.</dd></dl>';
     } else {
@@ -522,31 +537,45 @@ RV.phasesTab = (function () {
   async function findSymmetryDialog(ph) {
     if (typeof SGConvert === 'undefined' || !S.sgReady) { ui.toast('The space-group database is not loaded.', 'warn'); return; }
     if (!ph.atoms.length) { ui.toast('Find higher symmetry looks at the atoms; ' + ph.name + ' has none.', 'warn'); return; }
-    var key = ph.key, last = null, holders = St.holdersOf(ph), timer = 0, job=null, serial=0, closed=false, lastInput=null, submitWhenReady=false;
+    var key = ph.key, last = null, holders = St.holdersOf(ph), timer = 0, job=null, serial=0, closed=false, lastInput=null, runningInput=null, submitWhenReady=false;
     var active=RV.workspace && RV.workspace.dataset?RV.workspace.dataset():St.first();
     var preferred=holders.filter(function(d){return d===active;})[0] || holders.filter(function(d){return S.sel.has(d.id);})[0] || holders[0];
+    var options=modelOptions(ph),first=preferred && options.filter(function(o){return o[0]===String(preferred.id) || o[0]==='c:'+preferred.id;})[0];
     var fields = [
-      { key: 'source', label: 'Positions of', type: 'select', value: preferred?String(preferred.id):'start', options: [['start', 'The starting model (Phases)']].concat(holders.map(function (d) { return [String(d.id), 'Dataset ' + d.name + ' (Rietveld model)']; })),hint:'Defaults to the active dataset. Its atomic coordinates and cell are taken together from the Rietveld model.' },
+      { key: 'source', label: 'Positions of', type: 'select', value: first?first[0]:'start', options: options,hint:'Defaults to the active dataset: its Rietveld model (coordinates and cell together), or after a Le Bail or WPPF fit without one, its refined cell with the atoms of the phase.' },
       { key: 'tol', label: 'Atoms within /Å', type: 'number', value: 0.2, hint: 'How far an atom may move to take a symmetry; ADDSYM-like searches commonly use 0.1–0.5 Å.' },
-      { key: 'cellTol', label: 'Cell within /% and °', type: 'number', value: 1, hint: 'How far the cell may be from the metric of the higher symmetry, in % for lengths and degrees for angles.' }
+      { key: 'cellTol', label: 'Cell within /% and °', type: 'number', value: 1, hint: 'How far the cell may be from the metric of the higher symmetry, in % for lengths and degrees for angles.' },
+      { key: 'occTol', label: 'Occupancies within', type: 'number', value: SGConvert.OCC_TOL, hint: 'Atoms of one type whose occupancies differ by less are one kind of atom: refined occupancies of equivalent sites differ slightly. 0 asks for equal occupancies.' }
     ];
-    function read(body) { return { source: body.querySelector('[data-key="source"]').value, tol: ui.parseNum(body.querySelector('[data-key="tol"]').value), cellTol: ui.parseNum(body.querySelector('[data-key="cellTol"]').value) }; }
-    function valid(f) { return f.tol > 0 && f.tol <= 2 && f.cellTol > 0 && f.cellTol <= 10; }
-    function cancelJob(){serial++;if(job){job.cancel();job=null;}}
+    function read(body) { var n=function(k){return ui.parseNum(body.querySelector('[data-key="'+k+'"]').value);}; return { source: body.querySelector('[data-key="source"]').value, tol: n('tol'), cellTol: n('cellTol'), occTol: n('occTol') }; }
+    function valid(f) { return f.tol > 0 && f.tol <= 2 && f.cellTol > 0 && f.cellTol <= 10 && f.occTol >= 0 && f.occTol <= 0.5; }
+    var INVALID='The atom tolerance is between 0 and 2 Å, the cell tolerance between 0 and 10 (% and °), the occupancy tolerance between 0 and 0.5.';
+    function cancelJob(){serial++;runningInput=null;if(job){job.cancel();job=null;}}
     function update(body,f,submit){
-      clearTimeout(timer);cancelJob();submitWhenReady=!!submit;last=null;lastInput=null;
+      clearTimeout(timer);
+      // the same input as the search running or just shown: an input and a change event of one edit search once
+      var input=JSON.stringify(f);
+      if(job && runningInput===input){if(submit)submitWhenReady=true;return;}
+      if(!job && last && lastInput===input && !submit)return;
+      cancelJob();submitWhenReady=!!submit;last=null;lastInput=null;
       var id=serial,out=body.querySelector('[data-symmetry-report]'),p=St.phaseByKey(key);
       if(!p)return;
-      if(!valid(f)){out.innerHTML='<p class="warn">The atom tolerance is between 0 and 2 Å, the cell tolerance between 0 and 10 (% and °).</p>';return;}
+      if(!valid(f)){out.innerHTML='<p class="warn">'+INVALID+'</p>';return;}
       var model;
       try{
         model=symmetryModel(p,f);
         out.innerHTML='<p class="hint">Running public Moyo WebAssembly on '+esc(model.name)+'…</p>';
         var tolerances=[f.tol].concat([.05,.1,.2,.3,.5]).filter(function(t,i,a){return a.indexOf(t)===i;});
-        job=SGConvert.symmetryJob(model.atoms,p.ops,model.cell,groupsForSearch(),{tol:f.tol,tolerances:tolerances,lenTol:f.cellTol/100,angTol:f.cellTol});
-      }catch(e){out.innerHTML='<p class="warn">The search failed: '+esc(e.message)+'</p>';return;}
+        // the chosen tolerance comes first and is shown at once; the sweep follows
+        var onRow=function(row){
+          if(closed || id!==serial || row.tol!==f.tol || row.error)return;
+          try{out.innerHTML=symmetryHTML(p,f,symmetrySearch(p,f,model,row.r,row.tol),null)+'<p class="hint">Checking the other tolerances…</p>';}catch(e){}
+        };
+        runningInput=input;
+        job=SGConvert.symmetryJob(model.atoms,p.ops,model.cell,groupsForSearch(),{tol:f.tol,tolerances:tolerances,lenTol:f.cellTol/100,angTol:f.cellTol,occTol:f.occTol,onRow:onRow});
+      }catch(e){runningInput=null;out.innerHTML='<p class="warn">The search failed: '+esc(e.message)+'</p>';return;}
       job.promise.then(function(rows){
-        if(closed || id!==serial)return;job=null;
+        if(closed || id!==serial)return;job=null;runningInput=null;
         var sweep=rows.map(function(row){
           if(row.error)return {tol:row.tol,r:{group:null},conv:null,error:row.error};
           try{return symmetrySearch(p,f,model,row.r,row.tol);}catch(e){return {tol:row.tol,r:{group:row.r.group},conv:null,error:e.message};}
@@ -556,19 +585,23 @@ RV.phasesTab = (function () {
         out.innerHTML=symmetryHTML(p,f,last,sweep);
         var submit=submitWhenReady;submitWhenReady=false;
         if(submit && last.higher)body.parentElement.querySelector('.btns .primary').click();
-      }).catch(function(e){if(closed || id!==serial || e.name==='AbortError')return;job=null;last=null;submitWhenReady=false;out.innerHTML='<p class="warn">The search failed: '+esc(e.message)+'</p>';});
+      }).catch(function(e){if(closed || id!==serial || e.name==='AbortError')return;job=null;runningInput=null;last=null;submitWhenReady=false;out.innerHTML='<p class="warn">The search failed: '+esc(e.message)+'</p>';});
     }
     var res = await ui.prompt('Find higher symmetry of ' + ph.name, fields, 'Convert…',
-      'Search the selected model’s atomic coordinates and cell. The active dataset’s Rietveld model is selected initially; choose the starting model to search the original atoms instead. Any symmetry change is previewed before applying it.',
+      'Search the selected model’s atomic coordinates and cell: the starting model, a dataset’s Rietveld model, or after a Le Bail or WPPF fit the dataset’s refined cell with its atoms. Any symmetry change is previewed before applying it.',
       { wide: true, after: '<div class="convert-preview" data-symmetry-report aria-live="polite"></div>',
         onOpen: function (body) {
-          body.addEventListener('input',function(){clearTimeout(timer);cancelJob();submitWhenReady=false;timer=setTimeout(function(){update(body,read(body),false);},300);});
+          body.addEventListener('input',function(){
+            clearTimeout(timer);
+            if(job && runningInput!==JSON.stringify(read(body))){cancelJob();submitWhenReady=false;}
+            timer=setTimeout(function(){update(body,read(body),false);},300);
+          });
           body.addEventListener('change',function(){update(body,read(body),false);});
           update(body,read(body),false);
         },
         check: function (v, body) {
           clearTimeout(timer);
-          if (!valid(v)) return 'The atom tolerance is between 0 and 2 Å, the cell tolerance between 0 and 10 (% and °).';
+          if (!valid(v)) return INVALID;
           var p = St.phaseByKey(key);
           if (!p) return 'The phase is gone.';
           if(job || lastInput!==JSON.stringify(v)){update(body,v,true);return 'Checking the current atomic model with public WebAssembly…';}
@@ -582,7 +615,7 @@ RV.phasesTab = (function () {
     if (!res || !last || !last.higher) return;
     ph = St.phaseByKey(key);
     if (!ph || busy()) return;
-    convertDialog(ph, { hall: last.r.group.hall, basis: SGConvert.formatBasis(last.r.P), shift: SGConvert.formatShift(last.r.p), tol: last.tol,source:last.source });
+    convertDialog(ph, { hall: last.r.group.hall, basis: SGConvert.formatBasis(last.r.P), shift: SGConvert.formatShift(last.r.p), tol: last.tol,source:last.source,occTol:res.occTol });
   }
 
   // the space-group browser (spacegroup_ui.js); Apply sets the space group of the phase it was opened for

@@ -78,9 +78,9 @@ const SW_DEFAULTS = Object.freeze({
     maxSitesPerElement: 4,  // raised automatically when the composition demands more
     maxRepeatPerPosition: 4,
 
-    // --- Swarm size ---
-    numParticles: 512,
-    generations: 400,
+    // --- Swarm size (js/wyckoff_limits.js) ---
+    numParticles: WY_LIMITS.defaults.particles,
+    generations: WY_LIMITS.defaults.iterations,
     minParticlesPerAssignment: 24,
 
     // --- Resolution ramp ---
@@ -180,7 +180,22 @@ function swMaxGenAtoms(device, floor = 128) {
     }
 }
 
-function swInject(src, maxGen, minImageShell = 0, groupStride = 3, countShell = 1) {
+/**
+ * The rule and neighbour-slot capacities the kernel is compiled with for one
+ * run: the base sizes of js/wyckoff_limits.js, or what the run's restraints
+ * need when that is more. Refused above the maxima, which buildRestraintTables
+ * enforces first.
+ */
+function swRestraintCapacity(restraints) {
+    const L = WY_LIMITS, rules = (restraints && restraints.nRules) || 0, slots = (restraints && restraints.slotsNeeded) || 0;
+    if (rules > L.maxRules || slots > L.maxCoordSlots) {
+        throw new Error(`${rules} rules and ${slots} neighbour slots exceed the kernel maxima ` +
+                        `(${L.maxRules} rules, ${L.maxCoordSlots} slots).`);
+    }
+    return { rules: Math.max(L.baseRules, rules), slots: Math.max(L.baseCoordSlots, slots) };
+}
+
+function swInject(src, maxGen, minImageShell = 0, groupStride = 3, countShell = 1, capacity = null) {
     let out = src.replace(
         /const\s+MAX_GEN_ATOMS\s*:\s*u32\s*=\s*\d+u\s*;\s*\/\/__MAX_GEN_ATOMS__/,
         `const MAX_GEN_ATOMS: u32 = ${maxGen}u; //__injected__`);
@@ -224,6 +239,20 @@ function swInject(src, maxGen, minImageShell = 0, groupStride = 3, countShell = 
         /const\s+GROUP_STRIDE\s*:\s*u32\s*=\s*\d+u\s*;\s*\/\/__GROUP_STRIDE__/,
         `const GROUP_STRIDE: u32 = ${groupStride}u; //__injected__`);
     if (out === beforeStride) throw new Error('GROUP_STRIDE marker not found in the kernel source.');
+
+    // Missing markers mean a kernel older than the host: it would clamp the
+    // rules to its own fixed count and drop the rest without a word.
+    const cap = capacity || swRestraintCapacity(null);
+    const beforeRules = out;
+    out = out.replace(
+        /const\s+MAX_BOND_RULES\s*:\s*u32\s*=\s*\d+u\s*;\s*\/\/__MAX_BOND_RULES__/,
+        `const MAX_BOND_RULES: u32 = ${cap.rules}u; //__injected__`);
+    if (out === beforeRules) throw new Error('MAX_BOND_RULES marker not found in the kernel source: swarm_reflection.wgsl is older than this page. Reload without the cache.');
+    const beforeSlots = out;
+    out = out.replace(
+        /const\s+MAX_COORD_SLOTS\s*:\s*u32\s*=\s*\d+u\s*;\s*\/\/__MAX_COORD_SLOTS__/,
+        `const MAX_COORD_SLOTS: u32 = ${cap.slots}u; //__injected__`);
+    if (out === beforeSlots) throw new Error('MAX_COORD_SLOTS marker not found in the kernel source: swarm_reflection.wgsl is older than this page. Reload without the cache.');
     return out;
 }
 
@@ -1043,6 +1072,12 @@ async function runWyckoffSearch(o) {
         say(`The enumeration hit its ${en.assignments.length}-assignment ceiling; ` +
             `plausible assignments beyond it were not searched.`);
     }
+    const dd = dedupeEquivalentAssignments(assignments, o.setting.wyckoff, o.setting.sym_ops);
+    if (dd.dropped) {
+        assignments = dd.assignments;
+        say(`${dd.dropped} assignment(s) left out as equivalent to another under an origin shift or ` +
+            `the inversion of the group: they give the same intensities and distances.`);
+    }
 
     // Reduced basis, so every distance in this run - the pre-search ranking
     // here, and the kernel's contact tests below - uses the same, correct,
@@ -1133,7 +1168,7 @@ async function runWyckoffSearch(o) {
 
     const module = device.createShaderModule({
         code: swInject(o.ccShaderSource, maxGen, minImageShell,
-                       o.groupStride || refl.groupStride || 3)
+                       o.groupStride || refl.groupStride || 3, 1, swRestraintCapacity(restraints))
     });
     const pipeline = device.createComputePipeline({ layout: 'auto', compute: { module, entryPoint: 'main' } });
 
@@ -1159,10 +1194,36 @@ async function runWyckoffSearch(o) {
     // grows faster than linearly with dimension - so a close ranking between
     // assignments of very different size still deserves a longer run.
     const dims = assignments.map(A => Math.max(1, A.sites.reduce((n, s) => n + wyckoffFreedom(s.w), 0)));
-    const waves = allocateParticles(assignments.length, numParticles, minPer, dims);
     const dimRange = `${Math.min(...dims)}-${Math.max(...dims)}`;
-    say(`${numParticles} particles over ${waves.length} wave(s); assignments carry ` +
-        `${dimRange} free parameters and receive particles in proportion.`);
+
+    // TWO STAGES WHEN THE ASSIGNMENTS DO NOT FIT IN A FEW WAVES. Every wave
+    // costs restarts x generations, and pruning only acts inside a wave, so a
+    // long enumeration (hundreds of waves) gave every hopeless assignment a
+    // full search. Screening runs each one briefly, re-scores it at full
+    // resolution, and only the best fullWaves waves' worth are searched in
+    // full, starting from what the screening found.
+    const fullGenerations = o.generations || SW_DEFAULTS.generations;
+    const fullRestarts = Math.max(1, o.restarts || 1);
+    const perWave = assignmentsPerWave(numParticles, minPer, true);
+    const screening = Math.ceil(assignments.length / perWave) > WY_LIMITS.fullWaves;
+    const screenGenerations = Math.min(fullGenerations,
+        Math.max(WY_LIMITS.screenMinIterations, Math.round(fullGenerations * WY_LIMITS.screenFraction)));
+    const keepCount = screening ? Math.min(assignments.length, perWave * WY_LIMITS.fullWaves) : assignments.length;
+    const stageWaves = (list, stage) => allocateWaves(list, numParticles, minPer, dims).map(w => Object.assign(w, {
+        stage, generations: stage === 'screen' ? screenGenerations : fullGenerations,
+        restarts: stage === 'screen' ? 1 : fullRestarts }));
+    const waves = stageWaves(assignments.map((_, k) => k), screening ? 'screen' : 'search');
+    const nScreenWaves = screening ? waves.length : 0;
+    const nFullWaves = Math.ceil(keepCount / perWave);
+    const totalCost = nScreenWaves * screenGenerations + nFullWaves * fullGenerations * fullRestarts;
+    let doneCost = 0;
+    say(screening
+        ? `${numParticles} particles. Screening ${assignments.length} assignments in ${nScreenWaves} wave(s) of ` +
+          `${screenGenerations} generations each; the best ${keepCount} then get the full search ` +
+          `(${nFullWaves} wave(s), ${fullRestarts} restart(s) of ${fullGenerations} generations). Assignments carry ` +
+          `${dimRange} free parameters and receive particles in proportion.`
+        : `${numParticles} particles over ${waves.length} wave(s); assignments carry ` +
+          `${dimRange} free parameters and receive particles in proportion.`);
 
 /* ---- 7. Static buffers ---- */
     const symPacked = packSymOps(o.setting.sym_ops);
@@ -1587,10 +1648,18 @@ async function runWyckoffSearch(o) {
     // before the search; that use is unaffected.
 
 
-    const generations = o.generations || SW_DEFAULTS.generations;
-    const restarts = Math.max(1, o.restarts || 1);
     const results = [];
     let stopped = false;
+
+    // Per-assignment global bests, kept for the whole run: a screened
+    // assignment enters the full search with what the screening found.
+    // Particles on different assignments are solving different problems, so a
+    // single shared best would pull each sub-swarm toward a structure it
+    // cannot express.
+    const gBestFit = new Float32Array(assignments.length).fill(-Infinity);
+    const gBestCC  = new Float32Array(assignments.length).fill(NaN);
+    const gBestPen = new Float32Array(assignments.length);   // raw, at weight 1
+    const gBestPos = new Float32Array(assignments.length * coordsPerParticle);
 
     // Best over the WHOLE run, not the current wave. Reporting the wave's own
     // best made the fitness trace saw-tooth downwards: wave 1 holds the
@@ -1600,16 +1669,11 @@ async function runWyckoffSearch(o) {
     let runBestFit = -Infinity, runBestCC = NaN, runBestAssign = -1;
 
     for (let wi = 0; wi < waves.length && !stopped; wi++) {
-        let ids = waves[wi].ids.slice();
-        const assignOf = waves[wi].assignOf;
-
-        // Per-assignment global bests. Particles on different assignments are
-        // solving different problems, so a single shared best would pull each
-        // sub-swarm toward a structure it cannot express.
-        const gBestFit = new Float32Array(assignments.length).fill(-Infinity);
-        const gBestCC  = new Float32Array(assignments.length).fill(NaN);
-        const gBestPen = new Float32Array(assignments.length);   // raw, at weight 1
-        const gBestPos = new Float32Array(assignments.length * coordsPerParticle);
+        const wave = waves[wi], generations = wave.generations, restarts = wave.restarts;
+        const stageIndex = wave.stage === 'screen' ? wi + 1 : wi + 1 - nScreenWaves;
+        const stageCount = wave.stage === 'screen' ? nScreenWaves : nFullWaves;
+        let ids = wave.ids.slice();
+        const assignOf = wave.assignOf;
 
         for (let i = 0; i < numParticles; i++) {
             const base = i * coordsPerParticle;
@@ -1841,15 +1905,27 @@ async function runWyckoffSearch(o) {
             const scale = SW_DEFAULTS.penRampEnd;
             params[PARAM.penScale] = scale;
 
+            // EVERY CANDIDATE, NOT ONLY THOSE STILL HOLDING CHAINS. An
+            // assignment retired by the prune has no particle left, and
+            // reading assignOf alone left its best at the score of the easier
+            // partial reflection set -- ranked above full-resolution scores.
+            const saved = assignOf.slice();
             const archived = new Float32Array(numParticles * coordsPerParticle);
-            for (let i = 0; i < numParticles; i++) {
-                const A = assignOf[i];
-                archived.set(
-                    gBestPos.subarray(A * coordsPerParticle, (A + 1) * coordsPerParticle),
-                    i * coordsPerParticle);
+            for (let start = 0; start < live.length; start += numParticles) {
+                const chunk = live.slice(start, start + numParticles);
+                for (let i = 0; i < numParticles; i++) {
+                    const A = chunk[i % chunk.length];
+                    assignOf[i] = A;
+                    archived.set(
+                        gBestPos.subarray(A * coordsPerParticle, (A + 1) * coordsPerParticle),
+                        i * coordsPerParticle);
+                }
+                device.queue.writeBuffer(bufAssign, 0, assignOf);
+                const fArch = await evaluateCoordsSync(archived);
+                recordBest(fArch, archived, scale, true);   // forced, not compared
             }
-            const fArch = await evaluateCoordsSync(archived);
-            recordBest(fArch, archived, scale, true);   // forced, not compared
+            assignOf.set(saved);
+            device.queue.writeBuffer(bufAssign, 0, assignOf);
         }
 
         async function quench(candidateIds) {
@@ -1982,7 +2058,7 @@ async function runWyckoffSearch(o) {
                 curFit[i] = -Infinity; curCC[i] = NaN; curPen[i] = 0;
                 stepSize[i] = SW_DEFAULTS.stepInit;
             }
-            say(`wave ${wi + 1}, restart ${restart + 1} of ${restarts}` +
+            say(`${wave.stage === 'screen' ? 'screening wave' : 'wave'} ${stageIndex}, restart ${restart + 1} of ${restarts}` +
                 (Number.isFinite(acceptRate) ? `; acceptance ${(acceptRate * 100).toFixed(0)}%` : '') +
                 (Number.isFinite(swapRate) ? `, exchange ${(swapRate * 100).toFixed(0)}%.` : '.'));
         }
@@ -2212,8 +2288,10 @@ let needCurrentEval = true, firstEval = (wi === 0);
                         z: gBestPos[gb + si * 3 + 2]
                     }));
                 }
-                o.onProgress({ wave: wi + 1, waves: waves.length, generation: gen,
+                o.onProgress({ wave: stageIndex, waves: stageCount, stage: wave.stage, generation: gen,
                                generations, restart: restart + 1, restarts,
+                               // Of this Z's whole plan, screening and full search together.
+                               fraction: Math.min(1, (doneCost + restart * generations + gen) / Math.max(1, totalCost)),
                                // Whether the chains are moving at all. Without
                                // it a stuck run and a working one look the same
                                // from outside: both report a fitness that is not
@@ -2233,7 +2311,9 @@ let needCurrentEval = true, firstEval = (wi === 0);
 
       }
 
-        if (!stopped) {
+        if (!stopped && wave.stage === 'screen') {
+            await rescoreAtFullResolution(wave.ids);
+        } else if (!stopped) {
             await quench(waves[wi].ids);
         } else {
             // ABANDONED, BUT STILL MEASURED. Skipping the quench is right --
@@ -2249,7 +2329,28 @@ let needCurrentEval = true, firstEval = (wi === 0);
                 'coordinates are not polished.');
         }
 
-        for (const A of waves[wi].ids) {
+        doneCost += generations * restarts;
+        if (wave.stage === 'search') pushResults(wave.ids);
+
+        // The screening is over: the best go on, in the order of their scores.
+        if (!stopped && wave.stage === 'screen' && wi === nScreenWaves - 1) {
+            const ranked = assignments.map((_, A) => A)
+                .filter(A => Number.isFinite(gBestCC[A]))
+                .sort((a, b) => (gBestCC[b] - gBestPen[b]) - (gBestCC[a] - gBestPen[a]));
+            const kept = ranked.slice(0, keepCount);
+            if (!kept.length) throw new Error('The screening produced no finite score for any assignment.');
+            say(`Screening done:${ranked.length} assignment(s) scored at full resolution; the best ${kept.length} ` +
+                `(wR2 ${((1 - gBestCC[kept[0]]) * 100).toFixed(1)}% to ${((1 - gBestCC[kept[kept.length - 1]]) * 100).toFixed(1)}%) ` +
+                `go on to the full search.`);
+            waves.push(...stageWaves(kept, 'search'));
+        }
+    }
+    // Stopped during the screening: its scores are all there is, re-scored at
+    // full resolution like any stopped run.
+    if (!results.length && nScreenWaves) pushResults(assignments.map((_, A) => A));
+
+    function pushResults(list) {
+        for (const A of list) {
             if (!Number.isFinite(gBestFit[A]) || gBestFit[A] <= -Infinity) continue;
             // The reported penalty is the RAW one, at weight 1. Reporting it at
             // whatever the ramp happened to reach makes two candidates recorded

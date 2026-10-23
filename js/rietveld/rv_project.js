@@ -19,7 +19,7 @@ RV.project = (function(){
     var needed=new Set(doc.datasets.map(function(d){return d.dataKey;}));if(doc.fitHistory)doc.fitHistory.records.forEach(function(r){r.datasets.concat(r.dependencies || []).forEach(function(d){needed.add(d.dataKey);});});
     var ordinal=0;for(var key of needed){var raw=pool[key];if(!raw)throw new Error('Missing observations '+key);var row={key:key,columns:{}};for(var c of columns){if(!raw[c])continue;var path='observations/'+ordinal+'/'+c+'.f64';row.columns[c]={path:path,length:raw[c].length};zip.file(path,binary(raw[c]));}index.push(row);ordinal++;}
     doc.observations=index;if(doc.fitHistory)doc.fitHistory.observations=[];
-    doc.solutionState=RV.solve && RV.solve.archive?RV.solve.archive(!!opts.density):null;
+    doc.solutionState=RV.solve && RV.solve.archive?RV.solve.archive(!!opts.density,new Set(doc.fitHistory?doc.fitHistory.records.map(function(r){return r.id;}):[])):null;
     zip.file('project.json',JSON.stringify(doc));
     return zip.generateAsync({type:'uint8array',compression:'DEFLATE',compressionOptions:{level:3}},function(p){if(opts.progress)opts.progress(p.percent);});
   }

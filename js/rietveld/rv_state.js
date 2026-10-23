@@ -537,7 +537,7 @@ RV.state = (function () {
     if (!(inst.tthMin < inst.tthMax)) { inst.tthMin = tth[0]; inst.tthMax = tth[n - 1]; }
     var ds = { id: S.nextId++, dataKey:raw.dataKey || 'data-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2), name: raw.name || 'data', tth: tth, y: y, sig: raw.sig ? (ArrayBuffer.isView(raw.sig)?raw.sig:Float64Array.from(raw.sig)) : null, weights: raw.weights ? (ArrayBuffer.isView(raw.weights)?raw.weights:Float64Array.from(raw.weights)) : null, inst: inst,
                p: raw.p ? Object.assign({}, raw.p) : {}, fit: raw.fit ? Object.assign({}, raw.fit) : {}, esd: raw.esd ? Object.assign({}, raw.esd) : {},
-               calculations: cleanCalculations(raw.calculations), stats: raw.stats || null, mem: null, calc: null, ints: null, sim: raw.sim || null, step: medianStep(tth), apart: apartOf(raw.apart),
+               calculations: cleanCalculations(raw.calculations), stats: raw.stats || null, mem: raw.mem ? Object.assign({}, raw.mem) : null, calc: null, ints: null, sim: raw.sim || null, step: medianStep(tth), apart: apartOf(raw.apart),
                phases: Array.isArray(raw.phases) ? raw.phases.filter(function (k) { return !!phaseByKey(k); }) : S.phases.map(function (ph) { return ph.key; }) };
     if (inst.bkgType === 'spline' && inst.bkgX.length < 2) inst.bkgX = autoAnchors(ds, S.settings.nAnchors);
     remap(ds);
@@ -1316,13 +1316,16 @@ RV.state = (function () {
       datasetGroups:S.datasetGroups, disabledPhases:S.disabledPhases, parameterLinks:S.parameterLinks, selection:Array.from(S.sel), focus:S.focus,
       fitHistory:!opts.noHistory && RV.fitHistory ? RV.fitHistory.exportData(!!opts.metadataOnly) : null,
       calculation: S.calculation, calculationOptions: S.calculationOptions, fitmode:load('fitmode') || 'single', phaseSelection:S.phaseSel, presetDefaults:S.presetDefaults, settings: S.settings, shared: S.shared, limits: lim,
+      absorption: RV.absorption && RV.absorption.exportUser ? RV.absorption.exportUser() : null,
       phases: S.phases.map(function (ph) {
         return { key: ph.key, color: ph.color || null, name: ph.name, method: ph.method, number: ph.sg.number, symbol: ph.sg.symbol, hall: ph.sg.hall, profileType: ph.profileType, separatedProfile: ph.separatedProfile === true, broadening: RVCore.broadeningConfig(ph.broadening), poDir: ph.poDir,
                  constraints:JSON.parse(JSON.stringify(ph.constraints || [])), provenance:ph.provenance || null, atoms: ph.atoms.map(function (a) { return { label: a.label, type: a.type }; }), v: mapOut(ph.v), fit: ph.fit };
       }),
       datasets: S.datasets.map(function (d) {
         return { id: d.id, dataKey:d.dataKey, name: d.name, tth:opts.metadataOnly?undefined:Array.from(d.tth), y:opts.metadataOnly?undefined:Array.from(d.y), sig:!opts.metadataOnly && d.sig ? Array.from(d.sig) : null, weights:!opts.metadataOnly && d.weights ? Array.from(d.weights) : null, inst: instCopy(d.inst),
-                 calculations: d.calculations, phases: d.phases.slice(), apart: Object.keys(d.apart), p: mapOut(d.p), fit: d.fit, esd: mapOut(d.esd), stats: d.stats, sim: d.sim || null };
+                 calculations: d.calculations, phases: d.phases.slice(), apart: Object.keys(d.apart), p: mapOut(d.p), fit: d.fit, esd: mapOut(d.esd), stats: d.stats, sim: d.sim || null,
+                 // values of names the dataset does not hold now (an atom removed, a phase unassigned), for when they return
+                 mem: Object.keys(d.mem || {}).reduce(function (o, n) { if (!own(d.p, n) && Array.isArray(d.mem[n]) && Number.isFinite(d.mem[n][0])) o[n] = [d.mem[n][0], !!d.mem[n][1]]; return o; }, {}) };
       }),
       log: log || []
     });
@@ -1383,7 +1386,8 @@ RV.state = (function () {
                phases: Array.isArray(r.phases) ? r.phases.filter(function (k) { return phases.some(function (ph) { return ph.key === k; }); }) : null,
                apart: Array.isArray(r.apart) ? r.apart.filter(function (n) { return typeof n === 'string'; }) : null,
                p: numMap(r.p, what + ': values'), fit: isObj(r.fit) ? r.fit : {}, esd: numMap(r.esd, what + ': uncertainties'), stats: isObj(r.stats) ? r.stats : null,
-               sim: isObj(r.sim) ? r.sim : null, calculations: cleanCalculations(r.calculations) };
+               sim: isObj(r.sim) ? r.sim : null, calculations: cleanCalculations(r.calculations),
+               mem: isObj(r.mem) ? Object.keys(r.mem).reduce(function (o, n) { var e = r.mem[n]; if (Array.isArray(e) && typeof e[0] === 'number' && isFinite(e[0])) o[n] = [e[0], !!e[1]]; return o; }, {}) : null };
     });
     var limits = {};
     if (isObj(doc.limits)) Object.keys(doc.limits).forEach(function (n) {
@@ -1401,7 +1405,6 @@ RV.state = (function () {
     return { fitmode:doc.fitmode, phaseSelection:doc.phaseSelection, presetDefaults:isObj(doc.presetDefaults)?doc.presetDefaults:{}, calculation: C.METHODS.indexOf(doc.calculation) >= 0 ? doc.calculation : (phases[0] ? phases[0].method : 'lebail'), calculationOptions: isObj(doc.calculationOptions) ? doc.calculationOptions : {}, settings: cleanSettings(doc.settings), shared: isObj(doc.shared) ? doc.shared : {}, limits: limits, phases: phases, raws: raws, log: log, datasetGroups:doc.datasetGroups || [], disabledPhases:doc.disabledPhases || [],  parameterLinks:doc.parameterLinks || [],selection:doc.selection,focus:doc.focus,fitHistory:RV.fitHistory?RV.fitHistory.validate(doc.fitHistory,raws.map(function(r){return r.dataKey;}).filter(Boolean)):null };
   }
   function commitProject(pj) {
-    if(RV.solve && RV.solve.restoreArchive)RV.solve.restoreArchive(null,{silent:true});
     S.nextId=1; S.anchor=null; S.presetDefaults=cloneCalculation(pj.presetDefaults || {});
     store('fitmode',pj.fitmode==='global'?'global':'single');
     S.calculation = pj.calculation; S.calculationOptions = pj.calculationOptions;
@@ -1426,6 +1429,11 @@ RV.state = (function () {
       st.globalSummary = Object.assign({},st.globalSummary,{datasetIds:st.globalSummary.datasetIds.map(function(id){return ids[id] == null ? null : ids[id];})});
     }
     S.datasets.forEach(function(d){reconnect(d.stats);Object.keys(d.calculations || {}).forEach(function(m){reconnect(d.calculations[m].stats);});});
+    // The intensities of the active method live in its saved calculation; brought back as switching to it would.
+    S.datasets.forEach(function(d){
+      var b=d.calculations && d.calculations[S.calculation];
+      if(b && b.ints && b.signature===calculationSignature(d))d.ints=cloneCalculation(b.ints);
+    });
     RV.bus.emit('settings', '*'); RV.bus.emit('calculation',S.calculation); RV.bus.emit('fitmode'); RV.bus.emit('phases'); RV.bus.emit('phaseSel'); RV.bus.emit('datasets');
     RV.bus.emit('selection');
   }
@@ -1544,6 +1552,12 @@ RV.history = (function () {
     info();
     RV.ui.toast('Undone: ' + pt.label + ' (back to ' + pt.time.toLocaleTimeString() + ').', 'ok');
   }
+  // every restore point forgotten: an opened project starts its own history
+  function clear() {
+    points = []; pending = null;
+    if (typeof document !== 'undefined' && document.querySelectorAll) Array.prototype.forEach.call(document.querySelectorAll('#log-list [data-restore]'), function (b) { b.remove(); });
+    info();
+  }
   function init() {
     document.getElementById('log-list').addEventListener('click', function (e) {
       var b = e.target.closest('[data-restore]');
@@ -1551,5 +1565,5 @@ RV.history = (function () {
     });
     info();
   }
-  return { init: init, take: take, takePending: takePending, undo: undo, restore: restore, count: function () { return points.length; } };
+  return { init: init, take: take, takePending: takePending, undo: undo, restore: restore, clear: clear, count: function () { return points.length; } };
 })();
