@@ -2,6 +2,10 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.14.1 — 23 October 2026
+
+1. Read structures (CIF)… is now **Read CIF…**, in the Phases toolbar and the File menu, to save space; messages asking for a phase say the same. Atomic constraints… keeps its name: "Constraints" alone would be confused with the parameter links between datasets and the Wyckoff distance constraints.
+
 ## 2.14.0 — 23 October 2026
 
 1. Wyckoff search: **Shape weight** (default 1, 0–10) sets how strongly the angles of shaped shells count, as a multiple of the bond penalty; 0 switches the angle term off and keeps the shape's site-symmetry filter. It travels in the kernel's spare parameter slot; the Log states it when a shape is used. Its range and default are in `js/wyckoff_limits.js`.

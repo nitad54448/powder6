@@ -59,7 +59,7 @@ Supporting files loaded locally. Without them the program still starts, but lose
 ## Typical workflow
 
 1. Read patterns (**Datasets → Read patterns…**, the File menu, or drop them on the window) and check **Datasets → Instrument**.
-2. Add phases: **Phases → Read structures (CIF)…**, or **New phase…** from a space group and cell.
+2. Add phases: **Phases → Read CIF…**, or **New phase…** from a space group and cell.
 3. In **Commands → Method**, choose Le Bail or WPPF. In **Datasets**, choose a coloured dataset tab and set its values, refinement flags, bounds, sharing and links. Phase definitions and starting models are in **Phases**; numerical conditions are in **Settings**.
 4. With atoms in the phase, switch it to Rietveld and refine positions, B and occupancies.
 5. For an unknown structure: WPPF fit → **Commands → Structure** to extract intensities, test the space group and run charge flipping or a Wyckoff search → inspect **Results → Structure** → transfer atoms to the phase and fit by Rietveld.
@@ -91,7 +91,7 @@ Switching methods restores that method’s saved setup and results. Unchanged ca
 
 Method places a short instruction and any missing-prerequisite warning beside **Fit selected datasets**, with setup controls directly below. Charge flipping and Wyckoff settings sit directly inside their respective Structure blocks. The space-group test's **Number of reflections** defaults to the available determined intensities, capped at 600 for the matrix calculation. It accepts only whole numbers from 4 to the smaller of the available count and 600, and stays disabled until enough intensities are extracted. A changed count rebuilds the precision block for those lowest-angle reflections before testing; it does not discard the other extracted intensities.
 
-Empty views show the next useful step: Datasets shows Read patterns… and Simulate… with its loading hint and demo link, as Phases shows New phase… and Read structures (CIF)…, Phases hides its chooser until a phase exists, and Method hides its setup until both phases and datasets exist. Repeated fits continue from the dataset's current values: if Le Bail refines a lattice from 3.5 to 3.49 Å, the next Le Bail fit starts at 3.49 Å. The shared phase starting model remains at 3.5 Å. Edit the dataset value, undo the fit or restore a saved run to return to an earlier starting point.
+Empty views show the next useful step: Datasets shows Read patterns… and Simulate… with its loading hint and demo link, as Phases shows New phase… and Read CIF…, Phases hides its chooser until a phase exists, and Method hides its setup until both phases and datasets exist. Repeated fits continue from the dataset's current values: if Le Bail refines a lattice from 3.5 to 3.49 Å, the next Le Bail fit starts at 3.49 Å. The shared phase starting model remains at 3.5 Å. Edit the dataset value, undo the fit or restore a saved run to return to an earlier starting point.
 
 After CF, **Name them from the formula** is a checkbox for atom transfer. Checked: assign element types to the selected sites using the current Formula unit and Z in Commands → Structure when copying atoms. Unchecked: retain the edited types. Editing a site's element unchecks it automatically. Toggling it leaves the sites and phase unchanged; the phase changes only after confirming **Atoms to the phase**. Excluded peaks remain excluded, and the archived CF result is preserved.
 

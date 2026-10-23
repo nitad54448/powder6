@@ -33,7 +33,7 @@ RV.panels = (function () {
   function renderInfo() {
     var host = $('#ds-info'), d = editorDataset(), why = S.busy ? 'Not while a fit is running.' : !d ? 'No data loaded yet.' : '';
     ['#ds-inst', '#ds-bkg', '#ds-excl', '#ds-resolution'].forEach(function (b) { ui.able($(b), why); });
-    ui.able($('#ds-phases'), S.busy ? 'Not while a fit is running.' : !S.phases.length ? 'No phase yet. Read structures (CIF) or make a new phase in Phases.' : !S.datasets.length ? 'No data loaded yet.' : '');
+    ui.able($('#ds-phases'), S.busy ? 'Not while a fit is running.' : !S.phases.length ? 'No phase yet. Read CIF or make a new phase in Phases.' : !S.datasets.length ? 'No data loaded yet.' : '');
     if (!d) { host.innerHTML = ''; return; }
     var i = d.inst, pol = i.radiation === 'neutron' ? 'neutrons' : { tube: 'X-rays, no monochromator', mono: 'X-rays, monochromator at 2θ = ' + i.monoTth + '°', sync: 'synchrotron, polarised fraction ' + i.polFrac, none: 'X-rays, no polarisation correction' }[i.pol];
     var pts = St.fitPoints(d), nFit = pts.tth.length - pts.nExcluded;

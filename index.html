@@ -163,7 +163,7 @@
         <h2>Working with it</h2><p>Dataset setup is in Commands → Datasets. The expandable <b>Datasets for fitting and plotting</b> list selects patterns; coloured tabs choose the dataset to inspect and edit. Hundreds of independent fits are queued with only the active worker jobs prepared in memory. Busy calculations lock editing; Stop or Escape cancels a fit or structure search.</p>
         <ol>
           <li>File, read powder patterns from the Datasets tab, or drop them on the window (Bruker, PANalytical, Rigaku, Philips, GSAS, CIF, two-column ASCII). New datasets appear at the top of the list. Set the wavelength, the polarisation and the fitted range in Instrument (Datasets tab), the background in Background, the regions to leave out in Exclude.</li>
-          <li>Read structures (CIF) for the phases, or make a new phase from its space group and cell: without atoms it is fitted by Le Bail or WPPF.</li>
+          <li>Read a CIF for each phase, or make a new phase from its space group and cell: without atoms it is fitted by Le Bail or WPPF.</li>
           <li>In Datasets, use <b>Phases…</b> (or <b>Refine → Phases of the datasets…</b>) to define which phases each dataset contains.</li>
           <li>In each dataset tab, set values and tick individual parameters or use the group checkboxes: background/scales, zero/lattice, Sample and Resolution; Rietveld also offers positions, B and occupancies. Sample selects phase broadening; Resolution selects instrument broadening independently. Press Fit (F9). Le Bail or WPPF first, to settle the cell and the peak shape, is the usual start. Global fits the selected patterns together: select A and C to refine what they share with those two only.</li>
           <li>With a WPPF fit done, open Commands → Structure to extract intensities, test the space group and solve the structure. Inspect output in Results → Structure, export the atoms to the phase, switch Method to Rietveld and fit again.</li>
@@ -304,7 +304,7 @@
       <div class="pane phase-pane" id="pane-phases" role="tabpanel" aria-labelledby="tab-phases">
         <div class="phase-bar">
           <button type="button" data-act="new">New phase…</button>
-          <button type="button" data-act="cif">Read structures (CIF)…</button>
+          <button type="button" data-act="cif">Read CIF…</button>
           <button type="button" data-act="simulate">Simulate…</button>
           <button type="button" data-atomic-constraints>Atomic constraints…</button>
           <button type="button" id="ph-tab-atom" data-act="atom">Add atom…</button>
