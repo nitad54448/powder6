@@ -402,13 +402,14 @@ function enumerateAssignments(wyckoff, demand, options = {}) {
     const coordination = options.coordination || null;
     const symOps = options.symOps || null;
     const excluded = [];
-    const allowedFor = demand.map(d => {
+    const excludedFor = demand.map(() => []);
+    const allowedFor = demand.map((d, e) => {
         const req = coordination ? coordination[String(d.element).toUpperCase()] : null;
         if (!req || !symOps) return null;                 // nothing to test against
         const ok = new Set();
         for (let i = 0; i < wyckoff.length; i++) {
             const why = coordinationCompatible(wyckoff[i], d.element, req, symOps);
-            if (why) excluded.push(why); else ok.add(i);
+            if (why) { excluded.push(why); excludedFor[e].push({ label: `${wyckoff[i].multiplicity}${wyckoff[i].letter}`, mult: wyckoff[i].multiplicity, why }); } else ok.add(i);
         }
         return ok;
     });
@@ -424,6 +425,26 @@ function enumerateAssignments(wyckoff, demand, options = {}) {
     });
 
     for (let e = 0; e < demand.length; e++) {
+        // THE COORDINATION RULE, NOT THE CAPS. Every combination the caps allow
+        // was there and the stated coordination removed the positions it needs.
+        // Saying "raise the caps" here sends the user after the wrong setting;
+        // the cause is one line of their distance constraints.
+        if (perElement[e].length === 0 && allowedFor[e] &&
+            multisetsSummingTo(sorted, demand[e].count, { ...opts, maxPerElement: 1 }).length) {
+            const el = demand[e].element;
+            const req = coordination[String(el).toUpperCase()];
+            const elName = String(el).charAt(0).toUpperCase() + String(el).slice(1).toLowerCase();
+            const lost = excludedFor[e].filter(x => x.mult <= demand[e].count);
+            const why = (lost[0] || excludedFor[e][0]).why.replace(/^\S+/, elName).replace(/ but \S+ has /, ' but these positions have ');
+            return { assignments: [], siteSymmetryExcluded: excluded, coordinationConflict: el, error:
+                `No Wyckoff assignment gives ${demand[e].count} ${elName} atoms per cell with the ` +
+                `coordination stated for ${elName} (${req.count} neighbour${req.count === 1 ? '' : 's'}` +
+                `${req.geometry ? ', ' + req.geometry : ''}). Site symmetry excludes ` +
+                `${lost.map(x => x.label).join(', ')}: ${why} ` +
+                `Check the distance constraint for ${elName}: the number after the two elements is ` +
+                `${elName}'s coordination number (e.g. "${elName} C 6 1.8/2.1" for an octahedron), ` +
+                `not a count of atoms; write "${elName} C - 1.2/1.8" for a distance window alone.` };
+        }
         if (perElement[e].length === 0) {
             // Say WHICH constraint failed. "Check Z" was the old advice and it
             // was usually wrong: the multiplicities available almost always can
@@ -436,13 +457,20 @@ function enumerateAssignments(wyckoff, demand, options = {}) {
             return { assignments: [], error:
                 `No Wyckoff assignment gives ${demand[e].count} ${demand[e].element} atoms ` +
                 `per cell. ` +
-                (reachable
+                (reachable && minSites > opts.maxSites
                     ? `The multiplicities available (${avail.join(', ')}) can reach that total, ` +
                       `but only with at least ${minSites} sites, and the search is capped at ` +
                       `${opts.maxSites} distinct site(s) per element and ${opts.maxRepeat} reuse(s) ` +
                       `of any one position. Raise the caps, or check Z - the formula is multiplied ` +
                       `by Z, so writing the cell contents as the formula AND setting Z above 1 ` +
                       `counts every atom twice.`
+                    : reachable
+                    ? `The multiplicities available (${avail.join(', ')}) could sum to it, but not with ` +
+                      `these positions: one without free coordinates holds a single atom, and any ` +
+                      `position is reused at most ${opts.maxRepeat} time(s) with at most ` +
+                      `${opts.maxSites} distinct site(s) per element. Check Z - the formula is ` +
+                      `multiplied by Z, so writing the cell contents as the formula AND setting Z ` +
+                      `above 1 counts every atom twice.`
                     : `The multiplicities available (${avail.join(', ')}) share a common factor of ` +
                       `${g}, so no combination of them can sum to ${demand[e].count}. Check Z.`) };
         }

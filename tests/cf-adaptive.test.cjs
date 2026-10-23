@@ -51,8 +51,8 @@ test('a weak high-resolution shell changes the plan even when the overall signal
 });
 test('search plans repeat seeds across settings within a strict, bounded start budget',()=>{
   const a=adaptive.assess(data());
-  for(const n of [6,9,12]){const p=adaptive.plan(a,n,true);assert.equal(p.settings.reduce((s,c)=>s+c.starts,0),n);assert.ok(p.settings.every(c=>c.starts>=2));assert.deepEqual(p.trials.slice(0,3).map(c=>c.seedSlot),[0,0,0]);assert.deepEqual(p.trials.slice(3,6).map(c=>c.seedSlot),[1,1,1]);}
-  for(const n of [0,3,5,6.5,13,1e6,NaN])assert.throws(()=>adaptive.plan(a,n,true),/6–12/);
+  for(const n of [6,9,12,13,64,128]){const p=adaptive.plan(a,n,true);assert.equal(p.settings.reduce((s,c)=>s+c.starts,0),n);assert.ok(p.settings.every(c=>c.starts>=2));assert.deepEqual(p.trials.slice(0,3).map(c=>c.seedSlot),[0,0,0]);assert.deepEqual(p.trials.slice(3,6).map(c=>c.seedSlot),[1,1,1]);}
+  for(const n of [0,3,5,6.5,129,1e6,NaN])assert.throws(()=>adaptive.plan(a,n,true),/6–128/);
   assert.ok(adaptive.plan(a,6,false).trials.every(c=>c.symLambda===0));
 });
 function pattern(seed,N=8){let s=seed;return Float64Array.from({length:N**3},()=>{s=(Math.imul(s,1664525)+1013904223)>>>0;return s/4294967296;});}

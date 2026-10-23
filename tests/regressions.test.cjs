@@ -196,6 +196,26 @@ test('space-group precision limits the tested reflections and reports the availa
   assert.deepEqual(Array.from(limited.precision.index),Array.from(all.precision.index).slice(0,4));
 });
 
+test('a WPPF fit with nothing ticked refines the intensities; Rietveld still asks for a ticked parameter', () => {
+  const a=model();a.state.setCalculation('wppf');
+  Object.keys(a.ds.fit).forEach(k=>{a.ds.fit[k]=false;});
+  const job=a.state.jobFor(a.ds);assert.equal(job.vars.length,0);
+  const r=a.core.refine(job);assert.equal(r.ok,true,r.msg);
+  assert.match(r.msg,/WPPF intensities refined/);assert.ok(r.nInt>0,'no intensity was refined');assert.ok(Number.isFinite(r.stats[0].Rwp));
+  assert.equal(a.context.RV.cmd.why('fit'),'');
+  a.state.setCalculation('rietveld');Object.keys(a.ds.fit).forEach(k=>{a.ds.fit[k]=false;});
+  assert.match(a.context.RV.cmd.why('fit'),/Tick at least one parameter/);
+  assert.throws(()=>{const r2=a.core.refine(a.state.jobFor(a.ds),{rethrow:true});if(!r2.ok)throw new Error(r2.msg);},/nothing is ticked/);
+});
+test('a Wyckoff composition blocked by a stated coordination names the constraint, not the site caps', () => {
+  const A=require('../js/wyckoff_assign.js'),db=require('../sg/all.json'),g=db.space_groups || db;
+  const st=Object.values(g).flatMap(x=>x.settings).find(s=>s.symbol==='A112/m');
+  const demand=[['Na',4,11],['Cu',2,29],['Fe',2,26],['C',12,6],['N',12,7]].map(([e,n,z])=>({element:e.toUpperCase(),count:n,z,r:1}));
+  const bad=A.enumerateAssignments(st.wyckoff,demand,{ceiling:24,symOps:st.sym_ops,coordination:{FE:{count:1}},maxTotal:1});
+  assert.match(bad.error,/coordination stated for Fe \(1 neighbour\)/);assert.match(bad.error,/Site symmetry excludes 2d, 2c, 2b, 2a/);
+  assert.match(bad.error,/"Fe C - 1\.2\/1\.8"|Fe C - 1\.2\/1\.8/);assert.doesNotMatch(bad.error,/Raise the caps/);
+  assert.equal(A.enumerateAssignments(st.wyckoff,demand,{ceiling:24,symOps:st.sym_ops,coordination:{FE:{count:6}},maxTotal:1}).error,undefined);
+});
 test('intensity extraction rejects malformed and excessive reflection limits before dispatch', async () => {
   const a=model();a.state.setCalculation('wppf');
   for(const maxRefl of ['10k','1000k',1e6,0,-1,4.5,NaN,Infinity]){
@@ -592,6 +612,33 @@ test('Le Bail and WPPF exports retain their cell and use the Rietveld atomic mod
   }
 });
 
+test('a History run report lists settings, phases, statistics and every parameter with its e.s.d.', () => {
+  const a=fitted(),h=a.context.RV.fitHistory;
+  a.ds.stats=Object.assign({},a.ds.stats || {},{ok:true,msg:'converged',Rp:.0512,Rwp:.0734,n:1200,nVar:7});
+  a.ds.esd=Object.assign({},a.ds.esd,{bkg0:.25});
+  const r=h.complete(h.begin([a.ds],false),[a.ds]),text=h.runReport(r);
+  assert.match(text,new RegExp('# Powder 6 .* '+r.id));
+  assert.match(text,/## Run\nRecord\trun-\d+/);
+  assert.match(text,/## Phases \(\d+\)/);
+  assert.match(text,/Rp\t5\.12 %/);assert.match(text,/Rwp\t7\.34 %/);assert.match(text,/Points fitted\t1200/);
+  assert.match(text,/## Parameters \(\d+ refined of \d+\)/);
+  assert.match(text,/\nbkg0\t[^\t]+\t0\.25\t/);
+  assert.match(text,/## Instrument and background/);
+});
+test('a stopped Wyckoff solution in History reports its solutions and sites, and History survives save and load', () => {
+  const a=fitted(),h=a.context.RV.fitHistory;
+  const I={dsId:a.ds.id,dsName:a.ds.name,phaseName:'test',phaseKey:'p1',sg:{symbol:'Fm-3m',number:225}};
+  const site={element:'Na',wyckoff:'4a',multiplicity:4,x:0,y:0,z:0};
+  h.solution('wy',{I,formula:'NaCl',n:20,note:'',o:{particles:64,iterations:10,restarts:1},stopped:true,salvaged:'Stopped.',seconds:'1.0',pick:0,
+    sols:[{z:4,rho:2.16,assignment:'Na 4a, Cl 4b',refinement:{R:.08},searchCC:.95,sites:[site]},{z:8,assignment:'Na 8c',refinement:null,unrefined:true,ranked:false,sites:[site]}]});
+  const r=h.list('wppf','wy').pop(),text=h.runReport(r);
+  assert.match(text,/## Wyckoff search/);assert.match(text,/Stopped\tyes/);assert.match(text,/Kept after\tStopped\./);
+  assert.match(text,/## Solutions \(2\)\nZ\t.*\n4\t2\.16\t8\.00 %/);assert.match(text,/\n8\t—\tnot refined\t/);
+  assert.match(text,/## Sites for Z = 4 \(1\)/);
+  const saved=JSON.parse(JSON.stringify({format:'powder6-history',history:h.exportData(false)})),count=h.list().length;
+  const checked=h.validate(saved.history);h.importData(checked);
+  assert.equal(h.list().length,count);assert.ok(h.find(r.id).solution.sols.length===2);
+});
 test('completed fits keep immutable models and observations shared across checkpoints', () => {
   const a=fitted(),h=a.context.RV.fitHistory;
   const first=h.complete(h.begin([a.ds],false),[a.ds]);
@@ -637,6 +684,29 @@ test('history count and byte budgets prune oldest unkept results while preservin
   assert.ok(h.find(first.id));assert.ok(h.usage().history<=1000000);
 });
 
+test('charge-flipping and Wyckoff records have their own History quota and never evict fits', () => {
+  const a=fitted(),h=a.context.RV.fitHistory;a.state.setSetting('historyCount',2);a.state.setCalculation('wppf');a.ds.stats={ok:true,msg:'converged'};
+  const fits=[0,1].map(()=>h.complete(h.begin([a.ds],false),[a.ds]));
+  const I={dsId:a.ds.id,dsName:a.ds.name,phaseName:'x',phaseKey:'p1',sg:{symbol:'P1',number:1}};
+  for(let i=0;i<5;i++){h.solution('cf',{I,sites:[],best:{bestR:.3}});h.solution('wy',{I,sols:[]});}
+  assert.ok(fits.every(r=>h.find(r.id)),'a structure search evicted a WPPF fit');
+  assert.equal(h.list('wppf','fit').length,2);assert.equal(h.list('wppf','cf').length,2);assert.equal(h.list('wppf','wy').length,2);
+});
+test('a project History is checked record by record: unrestorable runs are dropped, ids stay unique', () => {
+  const a=fitted(),h=a.context.RV.fitHistory,r=h.complete(h.begin([a.ds],false),[a.ds]);
+  const doc=JSON.parse(JSON.stringify(h.exportData(false)));
+  const orphan=JSON.parse(JSON.stringify(r));orphan.id='run-41';orphan.datasets[0].dataKey='gone';delete orphan.kind;
+  doc.records.push(orphan);doc.active={rietveld:{id:'run-41'}};doc.serial=2;
+  const out=h.validate(doc,[]);
+  assert.deepEqual(Array.from(out.dropped),['run-41']);assert.equal(out.records.length,1);assert.equal(out.records[0].kind,'fit');
+  assert.ok(out.serial>=42,'serial must stay above every saved id');assert.equal(out.active.rietveld,undefined);
+  const noObs=Object.assign({},doc,{observations:[],records:[doc.records[0]]});
+  assert.equal(h.validate(noObs,[a.ds.dataKey]).records.length,1,'observations carried by the project datasets count');
+  assert.equal(h.validate(noObs,[]).records.length,0);
+  const dup=Object.assign({},doc,{records:[doc.records[0],doc.records[0]]});
+  assert.throws(()=>h.validate(dup,[]),/Invalid calculation checkpoint run-\d+/);
+  h.importData(out);const next=h.complete(h.begin([a.ds],false),[a.ds]);assert.ok(+next.id.slice(4)>=42);
+});
 test('compressed projects retain datasets, groups, observations and restorable history', async () => {
   const a=fitted(),h=a.context.RV.fitHistory,r=h.complete(h.begin([a.ds],false),[a.ds]);
   a.S.datasetGroups=[{id:'group',name:'Measurements',ids:[a.ds.id]}];

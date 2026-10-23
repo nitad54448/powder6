@@ -490,16 +490,56 @@ RV.panels = (function () {
   }
 
   // ================================================================ Solve
+  // What a fit of ds refines, grouped so it reads at a glance: [label, items] rows.
+  function fitGroups(ds) {
+    var names = St.fitNames(ds), phaseName = {}, rows = [], index = {};
+    S.phases.forEach(function (p) { phaseName[p.key] = p.name; });
+    function add(label, item) { if (!(label in index)) { index[label] = rows.length; rows.push([label, []]); } if (item && rows[index[label]][1].indexOf(item) < 0) rows[index[label]][1].push(item); }
+    names.forEach(function (n) {
+      var c = C.classify(n), ph = c.phase ? (phaseName[c.phase] || c.phase) : '';
+      switch (c.kind) {
+        case 'scale': add('Scale', ph); break;
+        case 'bkg': add('Background', 'Chebyshev ' + c.index); break;
+        case 'bga': add('Background', 'anchor ' + (c.index + 1)); break;
+        case 'zero': add('Zero / geometry', 'zero'); break;
+        case 'disp': add('Zero / geometry', 'displacement'); break;
+        case 'transp': add('Zero / geometry', 'transparency'); break;
+        case 'cell': add(ph + ' · cell', c.comp); break;
+        case 'po': add(ph + ' · preferred orientation', ''); break;
+        case 'profile': add(ph + ' · sample profile', c.comp); break;
+        case 'instrument': add('Resolution', c.comp); break;
+        case 'atom': add(ph + ' · ' + (c.comp === 'B' ? 'B' : c.comp === 'occ' ? 'occupancy' : 'position'), c.comp === 'B' || c.comp === 'occ' ? c.atom : c.atom + ' ' + c.comp); break;
+        default: add('Other', n);
+      }
+    });
+    S.phases.forEach(function (p) {
+      if (p.method === 'wppf' && St.hasPhase(ds, p) && S.disabledPhases.indexOf(p.key) < 0) add(p.name + ' · intensities', 'every reflection (WPPF)');
+      else if (p.method === 'lebail' && St.hasPhase(ds, p) && S.disabledPhases.indexOf(p.key) < 0 && names.length) add(p.name + ' · intensities', 'partitioned again each Le Bail cycle');
+    });
+    // "position: Fe1 x, Fe1 z, C1 x" reads better as "Fe1 (x, z), C1 (x)"
+    rows.forEach(function (r) {
+      if (!/· position$/.test(r[0])) return;
+      var by = {}, order = [];
+      r[1].forEach(function (it) { var m = /^(.*) ([xyz])$/.exec(it); if (!m) return; if (!by[m[1]]) { by[m[1]] = []; order.push(m[1]); } by[m[1]].push(m[2]); });
+      r[1] = order.map(function (a) { return a + ' (' + by[a].join(', ') + ')'; });
+    });
+    return { count: names.length, rows: rows };
+  }
+  function fitListHTML(ds, g, n) {
+    var fg = fitGroups(ds);
+    if (!fg.rows.length) return '<br>Nothing ticked in ' + esc(ds.name) + '.';
+    return '<br>' + (fg.count ? plural(fg.count, 'parameter') + ' ticked' : 'No parameter ticked') + (g && n > 1 ? ' in ' + esc(ds.name) + ' (used for all that hold them)' : n > 1 ? ' in ' + esc(ds.name) + ' (each selected dataset uses its own ticks)' : '') + '; the fit refines:' +
+      '<ul class="fit-list">' + fg.rows.map(function (r) { return '<li><b>' + esc(r[0]) + '</b>' + (r[1].length ? ': ' + esc(r[1].join(', ')) : '') + '</li>'; }).join('') + '</ul>';
+  }
   function syncFitTarget() {
     var n = S.sel.size, g = fitMode() === 'global', f = g ? St.selected()[0] : St.first(), why = n && !S.busy ? RV.cmd.why('fit') : '';
-    var nPar = f ? St.fitNames(f).length : 0;
     $('#fit-target').innerHTML = !S.datasets.length ? 'No datasets yet.' :
       (n ? '<b>' + n + '</b> of ' + S.datasets.length + ' datasets selected' + (n === 1 && f ? ': ' + esc(f.name) : '') : 'No dataset selected. Choose some in Datasets.') +
       '<br>' + (S.phases.length ? plural(S.phases.length, 'phase') + ': ' + S.phases.map(function (p) {
         var k = St.selected().filter(function (d) { return St.hasPhase(d, p); }).length;
         return '<b>' + esc(p.name) + '</b> <span class="mtag">' + esc(C.METHOD_LABELS[p.method]) + (n > 1 && k < n ? ', in ' + k + ' of ' + n : n === 1 && !k ? ', not in it' : '') + '</span>';
       }).join(', ') : 'No phase yet: read a structure CIF or make a new phase.') +
-      (f ? '<br>' + nPar + ' parameters ticked' + (g && n > 1 ? ' in ' + esc(f.name) + ' (used for all that hold them)' : '') : '') +
+      (f ? fitListHTML(f, g, n) : '') +
       (why ? '<br><span class="why-not">' + esc(why) + '</span>' : '');
   }
   function syncFitMode() {
@@ -551,7 +591,7 @@ RV.panels = (function () {
 
   // ================================================================ Settings tab
   var FIELDS = [
-    {legend:'History storage',fields:[{key:'historyMB',label:'Automatic history budget /MB',type:'num',hint:'Oldest unkept calculations are removed when this budget is exceeded. Kept records are preserved.'},{key:'historyCount',label:'Recent unkept calculations per method',type:'int',hint:'Observation arrays are stored once. History retains complete global sets and grouped individual batches.'}]},
+    {legend:'History storage',fields:[{key:'historyMB',label:'Automatic history budget /MB',type:'num',hint:'Oldest unkept calculations are removed when this budget is exceeded. Kept records are preserved.'},{key:'historyCount',label:'Recent unkept calculations per method',type:'int',hint:'Charge-flipping and Wyckoff results have their own quota of the same size. Observation arrays are stored once. History retains complete global sets and grouped individual batches.'}]},
     { legend: 'Numerical conditions', fields: [
       { key: 'algorithm', label: 'Algorithm', type: 'select', options: [['lm', 'LM · Levenberg–Marquardt'], ['pt', 'PT · parallel tempering + LM finish']], hint: 'PT uses WebGPU when available, with automatic CPU fallback. LM then converges in double precision and estimates uncertainties. Results record which PT backend ran.' },
       { key: 'ptSweeps', label: 'PT sweeps', type: 'int', pt: true, hint: '10 to 100000 sweeps; one proposal per replica per sweep.' },

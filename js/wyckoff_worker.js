@@ -18,7 +18,7 @@
 //
 //  Messages in:   'wyckoff-search', 'cancel-wyckoff'
 //  Messages out:  'wy-start', 'wy-progress', 'wy-partial', 'wy-log', 'wy-info', 'wy-error',
-//                 'wy-structure'  -- powder5.html listens for these names, not
+//                 'wy-structure'  -- js/rietveld/rv_solve.js listens for these names, not
 //                 the old 'cf-*' ones.
 // ---------------------------------------------------------------------------
 
@@ -1192,6 +1192,9 @@ if (contactRejects.length) {
         const searchSites = best.sites.map(x => ({ ...x }));
 
         let refinement = null;
+        // A stopped search still has its best structure refined: that is what the
+        // user stopped it to look at. The page is told, so it can ask them to wait.
+        if (wyckoffStopRequested) postMessage({ type: 'wy-refining', z: Z, assignment: best.assignment || null });
         try {
             const obs = wyObservationsFromHkl(job, symops);
             const obsRows = obs.rows || [];
@@ -1574,7 +1577,8 @@ if (constraintBreak) {
             // of the plan to prove it wastes minutes.
             const msg = (e && e.message) || String(e);
             zFailures.push({ Z, why: msg });
-            wySay(`Z = ${Z}: ${msg}`);
+            // With one Z this failure IS the run's error, which the page reports itself.
+            if (zPlan.length > 1) wySay(`Z = ${Z}: ${msg}`);
             if (autoZ && wyRetryableZError(e)) continue;
             hardError = e;
             break;
@@ -1586,7 +1590,7 @@ if (constraintBreak) {
         if (!sol || !sol.sites || !sol.sites.length) {
             const why = (sol && sol.error) || 'no legal structure';
             zFailures.push({ Z, why });
-            wySay(`Z = ${Z}: rejected -- ${why}`);
+            if (zPlan.length > 1) wySay(`Z = ${Z}: rejected -- ${why}`);
             continue;
         }
         // The scan's numbers travel with the solution: the density is the
@@ -1750,7 +1754,7 @@ let wyckoffStopRequested = false;
  * One post, one message.
  *
  * An earlier draft of this file also emitted the old 'cf-*' names so that an
- * un-updated host would keep working. That is a trap: powder5.html listens for
+ * un-updated host would keep working. That is a trap: rv_solve.js listens for
  * BOTH, so every error arrived twice, ran done() twice and raised two toasts.
  * The host is updated in the same change as this file, so the names are simply
  * the new ones.

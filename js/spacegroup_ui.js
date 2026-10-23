@@ -163,8 +163,8 @@
 
                 // Axis-choice chips (shown only when relevant).
                 const axisShown = axisChoiceApplies();
-                n.axesLabel.style.display = axisShown ? '' : 'none';
-                n.axesRow.style.display   = axisShown ? '' : 'none';
+                n.axesLabel.hidden = !axisShown;
+                n.axesRow.hidden   = !axisShown;
                 n.axesRow.innerHTML = '';
                 if (axisShown) {
                     [['hex','Hex. axes'],['rhomb','Rhomb. axes']].forEach(([key, label]) => {

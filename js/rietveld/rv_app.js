@@ -4,6 +4,18 @@
  */
 (function () {
   'use strict';
+  // The modules share globals and load as ordered deferred scripts (index.html): a missing or misordered
+  // file must say so instead of failing later on an undefined property.
+  var REQUIRED = ['JSZip', 'RVCore', 'CFAdaptive', 'RV.bus', 'RV.ui', 'RV.state', 'RV.history', 'RV.plots', 'RV.phasesTab', 'RV.panels', 'RV.results',
+                  'RV.cmd', 'RV.pool', 'RV.sgtest', 'RV.solve', 'RV.pdf', 'RV.datasets', 'RV.fitHistory', 'RV.project', 'RV.workspace', 'RV.layout'];
+  var missing = REQUIRED.filter(function (name) { return !name.split('.').reduce(function (o, k) { return o && o[k]; }, window); });
+  if (missing.length) {
+    var alertBox = document.createElement('p');
+    alertBox.className = 'load-error'; alertBox.setAttribute('role', 'alert');
+    alertBox.textContent = 'Powder 6 could not start: ' + missing.join(', ') + ' did not load. Check that all files next to index.html are present, open the page through a web server, and reload.';
+    document.body.prepend(alertBox);
+    throw new Error('Powder 6: missing modules ' + missing.join(', '));
+  }
   var S = RV.state.S, St = RV.state, ui = RV.ui, curTab = 'pattern';
   function $(s) { return document.querySelector(s); }
   function tabButtons() { return Array.prototype.slice.call(document.querySelectorAll('.panel-tabs [data-tab]')); }
@@ -227,8 +239,6 @@
   }
 
   function init() {
-    RV.workspace.prepare();
-    RV.layout.prepare();
     St.restore();
     RV.history.init();
     RV.plots.init();
@@ -306,7 +316,7 @@
     if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () { if (S.settings.theme !== 'dark' && S.settings.theme !== 'light') applyTheme(); });
     RV.bus.on('settings', function (k) {
       if (k === '*' || k === 'theme') applyTheme();
-      if (k === '*' || /^(yscale|showBkg|showPhases|showTicks|noBackground)$/.test(k)) { syncToolbar(); RV.plots.refresh(k === 'yscale' || k === 'noBackground' || k === '*'); }
+      if (k === '*' || /^(yscale|showBkg|showPhases|showTicks|noBackground)$/.test(k)) { syncToolbar(); RV.plots.refresh(false); }
     });
     if(RV.absorption)RV.absorption.init();
     if(RV.constraints)RV.constraints.init();

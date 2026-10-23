@@ -6,7 +6,7 @@
  *  'settings', 'theme', 'tab', 'tables', 'shared'.
  */
 var RV = window.RV || (window.RV = {});
-RV.version = '2.6 (21 oct 2026)';
+RV.version = '2.7 (22 oct 2026)';
 
 RV.bus = (function () {
   'use strict';
@@ -309,14 +309,18 @@ RV.ui = (function () {
     setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
   }
   // Native Save As gives the user both the filename and destination directory.
-  async function saveTextFile(name, text, mime) {
+  // o: { title, description (of the file type), pickerId (the folder the browser remembers) }
+  async function saveTextFile(name, text, mime, o) {
+    o = o || {};
     mime = mime || 'application/json';
+    var ext = (/\.[A-Za-z0-9]+$/.exec(name) || [''])[0].toLowerCase(), type = mime.split(';')[0].trim();
     if (typeof window.showSaveFilePicker === 'function' && window.isSecureContext !== false) {
-      var writable;
+      var writable, handle = null;
       try {
-        var handle = await window.showSaveFilePicker({
-          id: 'powder6-resolution', suggestedName: name,
-          types: [{ description: 'Instrument resolution JSON', accept: { 'application/json': ['.json'] } }]
+        var accept = {}; if (ext) accept[type] = [ext];
+        handle = await window.showSaveFilePicker({
+          id: String(o.pickerId || 'powder6-save').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) || 'powder6-save', suggestedName: name,
+          types: ext ? [{ description: o.description || (ext.slice(1).toUpperCase() + ' file'), accept: accept }] : undefined
         });
         writable = await handle.createWritable();
         await writable.write(new Blob([text], { type: mime }));
@@ -327,17 +331,18 @@ RV.ui = (function () {
           try { await writable.abort(); } catch (abortError) { /* keep the original error */ }
         }
         if (error.name === 'AbortError') return null;
-        throw error;
+        // The picker refuses without a recent click (a long preparation) or in some embedded pages: download instead.
+        if (handle || (error.name !== 'SecurityError' && error.name !== 'NotAllowedError')) throw error;
       }
     }
-    var choice = await prompt('Save resolution file', [
+    var choice = await prompt(o.title || 'Save file', [
       { key: 'filename', label: 'Filename', type: 'text', value: name }
     ], 'Download', 'Your browser controls the download folder. To choose the location, enable “Ask where to save each file” in its download settings.', {
       check: function (v) { return !v.filename.trim() || /[\\/:*?"<>|]/.test(v.filename) ? 'Enter a filename without folder separators or reserved characters.' : ''; }
     });
     if (!choice) return null;
     var filename = choice.filename.trim();
-    if (!/\.json$/i.test(filename)) filename += '.json';
+    if (ext && filename.toLowerCase().slice(-ext.length) !== ext) filename += ext;
     download(filename, text, mime);
     return { name: filename, downloaded: true };
   }

@@ -20,7 +20,7 @@
 //    browser :  script src="constants.js"
 //                 (written without angle brackets on purpose: a literal
 //                  closing script tag inside this file would terminate the
-//                  page early if anyone ever inlined it into powder5.html)   (before everything else)
+//                  page early if anyone ever inlined it into index.html)     (before everything else)
 //    worker  :  importScripts('constants.js')
 //    node    :  require('./constants.js')              (for the unit tests)
 //

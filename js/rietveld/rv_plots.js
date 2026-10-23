@@ -6,7 +6,7 @@
  */
 RV.plots = (function () {
   'use strict';
-  var S = RV.state.S, P = {}, dirty = true, raf = 0, needAuto = true, shown = false;
+  var S = RV.state.S, P = {}, dirty = true, raf = 0, needAuto = true, shown = false, plottedSig = null;
   var anchorFocus = null, anchorDrag = null;
   function $(s) { return document.querySelector(s); }
   var esc = RV.ui.esc;
@@ -160,6 +160,10 @@ RV.plots = (function () {
     P.pat.o.empty = empty;
     P.pat.o.legendMax = 10 + S.phases.length;
     Object.assign(P.pat.o, yOpts(), { band: bandPx() });
+    // Rescale only when WHAT is plotted changes. A new space group, cell, phase or method changes the
+    // calculated curves, and the user may be zoomed on the region they are checking.
+    var sig = list.map(function (ds) { return ds.id + ':' + ds.dataKey; }).join(',') + '|' + S.settings.yscale + '|' + !!S.settings.noBackground + '|' + S.settings.plotMode;
+    if (sig !== plottedSig) { plottedSig = sig; needAuto = true; }
     if (needAuto) { needAuto = false; [P.pat, P.diff].forEach(function (p) { p.auto = true; p.hidden.clear(); }); }
     P.pat.resize();
     P.pat.setSeries(s.main, true);
@@ -240,9 +244,8 @@ RV.plots = (function () {
     RV.bus.on('paramFocus',focusAnchor);
     ['selection','calculation'].forEach(function(ev){RV.bus.on(ev,function(){anchorFocus=null;anchorDrag=null;if(P.pat && P.pat.drag && P.pat.drag.mode==='anchor')P.pat.drag=null;});});
     RV.bus.on('busy',function(busy){if(busy){anchorDrag=null;anchorFocus=null;if(P.pat)P.pat.drag=null;refresh(false);}});
-    ['selection', 'datasets', 'phases'].forEach(function (ev) { RV.bus.on(ev, function () { refresh(true); }); });
-    ['params', 'stats', 'data', 'theme', 'tables'].forEach(function (ev) { RV.bus.on(ev, function () { refresh(false); }); });
-    RV.bus.on('settings', function (k) { refresh(k === 'yscale' || k === 'maxPlots' || k === '*'); });
+    // render() rescales by itself when the plotted datasets, intensity scale or view mode change
+    ['selection', 'datasets', 'phases', 'params', 'stats', 'data', 'theme', 'tables', 'settings'].forEach(function (ev) { RV.bus.on(ev, function () { refresh(false); }); });
     document.querySelectorAll('[data-plot-action]').forEach(function (b) {
       b.addEventListener('click', function () {
         var a = b.getAttribute('data-plot-action');

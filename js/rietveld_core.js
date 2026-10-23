@@ -1574,7 +1574,10 @@ function* refineSteps(problem, opts) {
         var algorithm = problem.algorithm || 'lm', ptInfo = null, progressTotal = 0;
         if (!only && algorithm !== 'lm' && algorithm !== 'pt') throw new Error('unknown refinement algorithm: ' + algorithm);
         var values = problem.values.map(function (v) { return Object.assign({}, v); });
-        if (!nv && !only && !originalVariableCount) throw new Error('nothing is ticked to refine');
+        // WPPF intensities are variables of their own, solved exactly at every evaluation, so a WPPF fit with nothing
+        // else ticked is a refinement of the intensities at the current cell and profile.
+        var freeIntensities = model.phases.some(function (P) { return P.method === 'wppf'; });
+        if (!nv && !only && !originalVariableCount && !freeIntensities) throw new Error('nothing is ticked to refine');
         var info = vars.map(function (vr) {
             var ds = vr.d >= 0 ? [vr.d] : (Array.isArray(vr.ds) && vr.ds.length ? vr.ds.filter(function (i) { return i >= 0 && i < nd; }) : model.datasets.map(function (_, i) { return i; }));
             if (!ds.length) throw new Error('no dataset for ' + vr.name);
@@ -1830,7 +1833,7 @@ function* refineSteps(problem, opts) {
             return true;
         }
 
-        if(!only && !nv)msg='converged: all ticked parameters are fixed by exact constraints';
+        if(!only && !nv)msg=originalVariableCount?'converged: all ticked parameters are fixed by exact constraints':'converged: WPPF intensities refined; no other parameter is ticked';
         if (!only && nv) {
             var hasLB = model.phases.some(function (P) { return P.method === 'lebail'; }), maxIt = opts.maxIter || problem.maxIter || 20;
             nStages = hasLB ? 2 : 1;

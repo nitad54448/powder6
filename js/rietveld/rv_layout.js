@@ -5,42 +5,6 @@ RV.layout=(function(){
   var commands=['datasets','phases','method','structure','settings'];
   function $(q){return document.querySelector(q);}
   function move(node,parent){if(node && parent)parent.appendChild(node);}
-  function pane(id,cls){var p=document.createElement('section');p.id='pane-'+id;p.className='pane '+cls;p.setAttribute('role','tabpanel');p.setAttribute('aria-labelledby','tab-'+id);return p;}
-  function tab(id,label){var b=document.createElement('button');b.type='button';b.id='tab-'+id;b.dataset.tab=id;b.setAttribute('role','tab');b.setAttribute('aria-controls','pane-'+id);b.setAttribute('aria-selected','false');b.tabIndex=-1;b.textContent=label;return b;}
-  function prepare(){
-    var work=$('#work'),left=$('.side'),right=$('.stage');
-    left.classList.add('command-panel');left.setAttribute('aria-label','Commands');right.classList.add('results-panel');right.setAttribute('aria-label','Results');
-    var commandHead=document.createElement('div');commandHead.className='panel-heading';commandHead.textContent='Commands';
-    var resultHead=document.createElement('div');resultHead.className='panel-heading';resultHead.textContent='Results';
-    var cn=document.createElement('nav');cn.id='command-tabs';cn.className='tabs panel-tabs';cn.setAttribute('role','tablist');cn.setAttribute('aria-label','Command views');
-    var rn=document.createElement('nav');rn.id='result-tabs';rn.className='tabs panel-tabs';rn.setAttribute('role','tablist');rn.setAttribute('aria-label','Result views');
-    var body=document.createElement('div');body.id='command-body';body.className='command-body';
-    left.prepend(commandHead,cn,body);right.prepend(resultHead,rn);
-    ['datasets','phases'].forEach(function(k){move($('#tab-'+k),cn);move($('#pane-'+k),body);});
-    var mt=$('#tab-solve');mt.id='tab-method';mt.dataset.tab='method';mt.setAttribute('aria-controls','pane-method');mt.textContent='Method';mt.title='Choose the next calculation';move(mt,cn);
-    var mp=pane('method','method-pane');body.appendChild(mp);
-    move($('#solve-sticky'),mp);move($('#method-setup'),mp);
-    $('#pane-method [aria-label="Calculation method"]').id='method-selector';
-    cn.appendChild(tab('structure','Structure'));var sp=pane('structure','structure-pane');sp.innerHTML='<p class="hint">Set up extraction, space-group tests, charge flipping and Wyckoff searches here. Inspect their output in Results → Structure.</p>';body.appendChild(sp);move($('#wppf-tools'),sp);
-    move($('#tab-settings'),cn);move($('#pane-settings'),body);
-    var selection=document.createElement('details');selection.className='fit-selection';selection.id='fit-selection';selection.innerHTML='<summary>Datasets for fitting and plotting <span id="fit-selection-count"></span></summary>';$('#pane-datasets .dataset-toolbar').after(selection);var ds=$('#sp-datasets');ds.classList.remove('side-panel');ds.removeAttribute('role');ds.removeAttribute('aria-labelledby');move(ds,selection);
-    var phases=document.createElement('details');phases.id='phase-selection';phases.className='fit-selection';phases.hidden=true;phases.innerHTML='<summary>Choose a phase</summary>';$('#pane-phases .phase-bar').after(phases);var ph=$('#sp-phases');ph.classList.remove('side-panel');ph.removeAttribute('role');ph.removeAttribute('aria-labelledby');move(ph,phases);
-    $('.side-tabs').remove();
-    move($('#tab-pattern'),rn);
-    ['lebail','wppf','rietveld'].forEach(function(m){var b=tab('result-'+m,RVCore.METHOD_LABELS[m]);delete b.dataset.tab;b.dataset.resultMethod=m;b.setAttribute('aria-controls','pane-solve');rn.appendChild(b);});
-    rn.appendChild(tab('structure-results','Structure'));
-    ['log','history'].forEach(function(k){move($('#tab-'+k),rn);});
-    $('.top > .tabs').remove();
-    var runbar=document.createElement('div');runbar.className='result-runbar';runbar.innerHTML='<label>Run <select id="result-run-select" aria-label="Result run"></select></label><button type="button" data-run-action="restore">Use as start</button><button type="button" data-run-action="keep">Keep</button><button type="button" data-run-action="history">Manage history</button>';
-    $('#pane-solve').prepend(runbar);$('#pane-solve').classList.add('fit-results-pane');$('#calculation-body').removeAttribute('aria-labelledby');$('#calculation-body').setAttribute('aria-label','Selected fit result');
-    $('.calc-layout[data-layout="wppf"]').innerHTML='<details class="acc" data-acc="wppf-results" open><summary><span class="acc-t">Results and quantitative analysis</span><span class="acc-s" data-res-title="summary"></span></summary><div class="acc-body" data-res-part="summary"></div></details><details class="acc" data-acc="wppf-atoms"><summary><span class="acc-t" data-res-title="atoms">Atoms</span></summary><div class="acc-body" data-res-part="atoms"></div></details><details class="acc" data-acc="wppf-intensities"><summary><span class="acc-t" data-res-title="refl">Intensities</span></summary><div class="acc-body" data-res-part="refl"></div></details>';
-    var sr=pane('structure-results','structure-results-pane','Structure');sr.innerHTML='<nav class="structure-result-tabs" role="tablist" aria-label="Structure results"><button type="button" role="tab" data-structure-result="sgt">Space group</button><button type="button" role="tab" data-structure-result="cf">Charge flipping</button><button type="button" role="tab" data-structure-result="wy">Wyckoff</button></nav><div id="structure-runbar" class="result-runbar"><label>Run <select id="structure-run-select" aria-label="Structure run"></select></label></div><div id="structure-result-sgt" class="structure-result-body"></div><div id="structure-result-cf" class="structure-result-body"></div><div id="structure-result-wy" class="structure-result-body"></div>';right.appendChild(sr);
-    $('#param-stats').hidden=true;$('#btn-report').title='PDF report of the selected completed run, or of the working plots';
-    var swap=document.createElement('button');swap.type='button';swap.id='swap-panels';swap.className='hbtn';swap.title='Swap command and results panels';swap.setAttribute('aria-pressed','false');swap.textContent='⇄ Panels';$('.top .menus').before(swap);
-    ['sgt','cf','wy'].forEach(function(k){$('#structure-result-'+k).innerHTML='<p class="hint">Set up a structure calculation in Commands → Structure to see its output here.</p>';});
-    var grip=$('#side-grip');grip.innerHTML='<span class="grip-handle" aria-hidden="true">⋮</span>';grip.title='Drag left or right to resize the panels. Arrow keys also resize; double-click resets.';move(grip,work);
-    work.classList.add('dual-panels');
-  }
   function syncTabs(){
     $('#command-tabs').querySelectorAll('[data-tab]').forEach(function(b){var on=b.dataset.tab===command;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;});
     $('#command-body').querySelectorAll(':scope > .pane').forEach(function(p){p.classList.toggle('on',p.id==='pane-'+command);});
@@ -109,5 +73,5 @@ RV.layout=(function(){
     swap(!!St.load('panelsSwapped'));
   }
   function restore(){method=St.load('resultMethod');if(!RVCore.METHODS.includes(method))method=S.calculation;RV.app.showTab(commands.includes(St.load('commandTab'))?St.load('commandTab'):'datasets');RV.app.showTab(['pattern','solve','structure-results','log','history','about'].includes(St.load('resultTab'))?St.load('resultTab'):'pattern');syncRunPicker();}
-  return {prepare:prepare,init:init,restore:restore,showTab:showTab,showResult:showResult,commandTab:function(){return command;},resultTab:function(){return result;},resultMethod:function(){return method;},record:record,selectRun:selectRun,syncRunPicker:syncRunPicker,syncResultLayouts:syncResultLayouts,swap:swap,splitStructure:splitStructure,structureResult:structureResult,latestStructure:latestStructure,structureRecord:structureRecord,structureKind:function(){return structure;}};
+  return {init:init,restore:restore,showTab:showTab,showResult:showResult,commandTab:function(){return command;},resultTab:function(){return result;},resultMethod:function(){return method;},record:record,selectRun:selectRun,syncRunPicker:syncRunPicker,syncResultLayouts:syncResultLayouts,swap:swap,splitStructure:splitStructure,structureResult:structureResult,latestStructure:latestStructure,structureRecord:structureRecord,structureKind:function(){return structure;}};
 })();

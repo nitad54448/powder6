@@ -30,7 +30,7 @@
 //    browser :  script src="profile.js"
 //                 (written without angle brackets on purpose: a literal
 //                  closing script tag inside this file would terminate the
-//                  page early if anyone ever inlined it into powder5.html)   (after constants.js)
+//                  page early if anyone ever inlined it into index.html)     (after constants.js)
 //    worker  :  importScripts('profile.js')
 //    node    :  require('./profile.js')
 //

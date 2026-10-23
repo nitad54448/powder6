@@ -634,7 +634,7 @@ RV.cmd = (function () {
             if(button.dataset.resCal==='save'){
               var values={};C.instrumentProfileParams(activeType).forEach(function(p){values[p[0]]=ui.parseNum(body.querySelector('[data-key="'+p[0]+'"]').value);});
               var output=calibrationOf(Object.assign({},loadedDocument || {},{format:'powder6-instrument-resolution',version:2,profile:'constant-wavelength',profileType:activeType,values:values}));
-              var saved=await ui.saveTextFile('instrument_resolution_'+ui.fileStamp()+'.json',JSON.stringify(output,null,2),'application/json');
+              var saved=await ui.saveTextFile('instrument_resolution_'+ui.fileStamp()+'.json',JSON.stringify(output,null,2),'application/json',{title:'Save resolution file',description:'Instrument resolution JSON',pickerId:'powder6-resolution'});
               if(saved)status((saved.downloaded?'Download started: ':'Saved: ')+saved.name+'. Profile: '+C.PROFILE_LABELS[activeType]+'.');
               return;
             }
@@ -1136,10 +1136,13 @@ RV.cmd = (function () {
 
   // ---------------------------------------------------------------- refining
   function summary(r) { return 'Rwp ' + (100 * r.Rwp).toFixed(2) + ' %, χ² ' + fmt(r.chi2red); }
+  // An enabled WPPF phase in the dataset: its reflection intensities are refined even with nothing ticked.
+  function freeIntensities(ds) { return S.phases.some(function (p) { return p.method === 'wppf' && St.hasPhase(ds, p) && S.disabledPhases.indexOf(p.key) < 0; }); }
+  function refinable(ds) { return St.fitNames(ds).length > 0 || freeIntensities(ds); }
   async function fitSelected() {
     if (!idle() || !haveSel() || !havePhase()) return;
     if (St.calculationIssue()) { ui.toast(St.calculationIssue(), 'warn'); return; }
-    var list = sel().filter(function (ds) { return St.fitNames(ds).length; });
+    var list = sel().filter(refinable);
     if (!list.length) { ui.toast('Tick at least one parameter to refine (Datasets).', 'warn'); return; }
     var jobs = list.filter(function(ds){return St.fitPoints(ds).tth.length>=2;}).map(function(ds){return {id:ds.id,job:null};});
     if (!need(jobs.length, 'Fewer than two points in the fitted range (Data, Instrument and range).')) return;
@@ -1210,7 +1213,7 @@ RV.cmd = (function () {
     if (!idle() || !haveSel(2) || !havePhase()) return;
     if (St.calculationIssue()) { ui.toast(St.calculationIssue(), 'warn'); return; }
     var list=sel(), first=list[0], job=St.globalJob(list);
-    if (!job.vars.length) { ui.toast('Tick at least one parameter (Datasets).', 'warn'); return; }
+    if (!job.vars.length && !list.some(freeIntensities)) { ui.toast('Tick at least one parameter (Datasets).', 'warn'); return; }
     if (job.constraintIssue) { ui.toast(job.constraintIssue,'warn'); return; }
     if (job.mixed.length && !(await ui.confirm('The fit ticks differ between the selected datasets for ' + job.mixed.slice(0, 8).join(', ') + (job.mixed.length > 8 ? ' …' : '') +
         '. The global fit uses for each the ticks of the first of them that holds it, ' + first.name + ' first.', 'Continue', false, 'Global fit'))) return;
@@ -1334,8 +1337,7 @@ RV.cmd = (function () {
     if (St.calculationIssue()) return St.calculationIssue();
     var g = RV.app && RV.app.fitMode() === 'global', list = sel();
     if (g && list.length < 2) return 'A global fit needs at least two selected datasets.';
-    var ticked = list.some(function (ds) { return St.fitNames(ds).length > 0; });
-    return ticked ? '' : 'Tick at least one parameter to refine (Datasets).';
+    return list.some(refinable) ? '' : 'Tick at least one parameter to refine (Datasets).';
   }
   var WHY = {
     read: function () { return S.busy ? BUSY : ''; },

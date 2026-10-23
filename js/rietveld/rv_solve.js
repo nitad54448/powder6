@@ -74,6 +74,15 @@ RV.solve = (function () {
     inspectingSolution=true;SV[k]=value;SV.ints=value.I;SV.dsId=value.I.dsId;SV.phaseKey=value.I.phaseKey;SV.opts=Object.assign({},SV.opts,{formula:value.formula || ''});
     try{return fn();}finally{SV[k]=before.value;['ints','opts','dsId','phaseKey','shown'].forEach(function(key){SV[key]=before[key];});inspectingSolution=false;}
   }
+  // A CF or Wyckoff record restored from History: the solution and the extraction it was made from.
+  function adoptSolution(k,value){
+    if(!['cf','wy'].includes(k) || !value)return false;
+    SV[k]=value;delete solutionSelection[k];
+    var I=value.I,d=I && St.byId(I.dsId),ph=I && St.phaseByKey(I.phaseKey);
+    if(!d || !ph || !St.hasPhase(d,ph)){render();return false;}
+    SV.phaseKey=ph.key;SV.dsId=d.id;SV.ints=I;SV.extractions[d.id]={I:I,stats:d.stats};
+    render();return true;
+  }
   function renderSelectedSolution(k,id){
     if(k==='sgt'){renderSgtOut();return;}solutionSelection[k]=id || null;
     withSolution(k,function(){if(k==='cf')renderCfOut();else renderWyOut();renderStruct(k);});
@@ -236,6 +245,11 @@ RV.solve = (function () {
       return n + (!hasCount && w.a !== w.b ? 2 : 1);
     }, 0);
     if (rules > 8) errors.push('These ' + r.windows.length + ' constraints make ' + rules + ' rules; the kernel holds 8. A bare upper bound counts twice, being applied both ways.');
+    r.windows.forEach(function (w) {
+      if (!Number.isFinite(w.count) || w.count <= 0 || w.count % 2 === 0) return;
+      warnings.push('"' + capEl(w.a) + ' ' + capEl(w.b) + ' ' + w.count + '": ' + w.count + ' is the coordination number of ' + capEl(w.a) + ' (its number of ' + capEl(w.b) + ' neighbours). An odd number keeps ' + capEl(w.a) +
+        ' off every inversion centre, which can leave it no position at all. For a distance window alone write "' + capEl(w.a) + ' ' + capEl(w.b) + ' - ' + (w.dmin == null ? '' : w.dmin) + '/' + (w.dmax == null ? '' : w.dmax) + '".');
+    });
     var slots = r.windows.reduce(function (n, w) { return n + (Number.isFinite(w.count) && w.count > 0 ? w.count : 0); }, 0);
     if (slots > 64) errors.push('The coordination numbers total ' + slots + ', above the 64 neighbour slots of the kernel.');
     for (var i = 0; i < r.windows.length; i++) {
@@ -457,8 +471,9 @@ RV.solve = (function () {
     else if (!(r.overlapTol >= 0)) r.error = 'The overlap tolerance is a non-negative number of degrees 2θ.';
     else if (!(r.peakMerge > 0)) r.error = 'The peak merge distance is a positive number of ångström.';
     else if (!Number.isFinite(r.weakFraction)) r.error = 'The fraction of weak reflections is a number from 0 to 0.33.';
-    if(r.adaptive && (!Number.isSafeInteger(ui.parseNum(o.trials)) || r.trials<CFAdaptive.MIN_STARTS || r.trials>CFAdaptive.MAX_STARTS))r.error='Adaptive CF needs '+CFAdaptive.MIN_STARTS+'–'+CFAdaptive.MAX_STARTS+' random starts.';
-    else if(!r.adaptive && ui.parseNum(o.trials)>CFAdaptive.MAX_STARTS)r.error='At most '+CFAdaptive.MAX_STARTS+' random starts.';
+    var starts=ui.parseNum(o.trials);
+    if(r.adaptive && (!Number.isSafeInteger(starts) || starts<CFAdaptive.MIN_STARTS || starts>CFAdaptive.MAX_STARTS))r.error='Adaptive CF needs '+CFAdaptive.MIN_STARTS+'–'+CFAdaptive.MAX_STARTS+' random starts.';
+    else if(!r.adaptive && starts>CFAdaptive.MAX_STARTS)r.error='At most '+CFAdaptive.MAX_STARTS+' random starts.';
     return r;
   }
   function cfAssessment(I){return CFAdaptive.assess(I,SV.opts.cf,function(r){return reflectionWidth(I,r);});}
@@ -619,7 +634,7 @@ RV.solve = (function () {
     var msg = 'Charge flipping of ' + I.phaseName + (run.stopped ? ' (stopped)' : '') + ': best R = ' + f(run.best.bestR, 4) + ' after ' + plural(SV.cf.trialsDone, 'random start') + ', ' + dt + ' s; ' +
               (run.structure ? plural(sites.length, 'site') + ', symmetry correlation ' + f(run.structure.symmetryCorrelation, 3) : 'no sites (' + (err || 'no symmetry to place the map on') + ')') +
               (asg ? '; ' + asg : '') + '.';
-    ui.toast(msg, err ? 'warn' : 'ok');
+    ui.toast(msg, err || (SV.cf.unplaced || []).length ? 'warn' : 'ok');
     if (sites.length) SV.shown = 'cf';
     renderCfOut(); renderStOut();
   }
@@ -628,29 +643,62 @@ RV.solve = (function () {
     var snapped = C.siteSymmetry(ph.ops, xyz, cell, tol).pos.map(function (v) { v -= Math.floor(v); return Math.abs(v - 1) < 1e-9 ? 0 : v; });
     return St.siteOf(ph, snapped, cell);
   }
+  // Farthest a peak is moved onto a special position when its element needs fewer atoms than the peak's own site holds.
+  var CF_SNAP_MAX = 0.6;
+  // The nearest position of multiplicity <= maxMult within CF_SNAP_MAX Å of the peak, not already taken: {site, shift} or null.
+  function specialSiteFor(R, s, maxMult, taken) {
+    var I = R.I, pseudo = { ops: I.ops, wyckoff: I.wyckoff }, G = metricTensor(I.cell), raw = s.raw || [s.x, s.y, s.z];
+    function dist(a, b) { var d = [0, 1, 2].map(function (k) { var v = a[k] - b[k]; return v - Math.round(v); }); return fracDistance(G, d[0], d[1], d[2]); }
+    // siteSymmetry compares a point with its images, which lie twice as far from it as the special position does
+    for (var tol = 0.2; tol <= 2 * CF_SNAP_MAX + 1e-9; tol += 0.2) {
+      var site;
+      try { site = siteFor(pseudo, raw, I.cell, tol); } catch (e) { return null; }
+      if (!(site.mult < s.mult) || site.mult > maxMult + 0.5) continue;
+      var shift = dist(raw, site.pos);
+      if (shift > CF_SNAP_MAX) return null;
+      if (taken.some(function (p) { return dist(p, site.pos) < 0.3; })) return null;
+      return { site: site, shift: shift };
+    }
+    return null;
+  }
   /* Element types for the peaks from the formula unit: the strongest scatterer on the highest peaks, each element on as
-     many sites as its count times Z asks (Z typed, or from the first peak: the heaviest atom on one site); the peaks
-     left over are kept, unticked. Returns a note, '' without a formula. */
+     many atoms per cell as its count times Z asks (Z typed, or from the first peak: the heaviest atom on one site).
+     A peak whose site holds more atoms than the element still needs is moved onto a nearby special position of small
+     enough multiplicity (charge-flipping peaks of atoms on inversion centres or mirrors are rarely exactly on them);
+     an element that still cannot be placed is named in the note. The peaks left over are kept, unticked.
+     Returns a note, '' without a formula. */
   function assignCf(R,formula,z) {
     R=R || SV.cf;
     if (!R || !R.sites.length) return '';
+    R.sites.forEach(function (s) { if (!s.base) s.base = { x: s.x, y: s.y, z: s.z, mult: s.mult, wyck: s.wyck }; else Object.assign(s, s.base); delete s.snapped; });
     var comp = parseFormula(formula==null?SV.opts.formula:formula);
-    if (!comp) { R.sites.forEach(function (s) { s.use = s.relative >= 0.2; }); return ''; }
+    if (!comp) { R.sites.forEach(function (s) { s.use = s.relative >= 0.2; }); R.unplaced = []; return ''; }
     var rad = R.I.radiation, order = comp.slice().sort(function (a, b) { return power(b.el, rad) - power(a.el, rad); });
     var list = R.sites.slice().sort(function (a, b) { return b.height - a.height; }), Z = z===undefined?typedZ():z;
     list.forEach(function (s) { s.element = ''; s.use = false; });
     if (!Z) Z = list[0].mult / order[0].n;
+    var missing = [], moved = [];
+    function takenPositions() { return list.filter(function (s) { return s.use; }).map(function (s) { return [s.x, s.y, s.z]; }); }
     order.forEach(function (c) {
       var need = c.n * Z;
       list.forEach(function (s) {
-        if (need <= 0.5 || s.element || s.mult > need + 0.5) return;
+        if (need <= 0.5 || s.element) return;
+        if (s.mult > need + 0.5) {
+          var snap = R.I.ops && R.I.wyckoff ? specialSiteFor(R, s, need, takenPositions()) : null;
+          if (!snap) return;
+          s.x = snap.site.pos[0]; s.y = snap.site.pos[1]; s.z = snap.site.pos[2]; s.mult = snap.site.mult; s.wyck = snap.site.wyck; s.snapped = snap.shift;
+          moved.push(c.el + ' to ' + s.wyck + ' (' + snap.shift.toFixed(2) + ' Å)');
+        }
         s.element = c.el; s.use = true; need -= s.mult;
       });
+      if (need > 0.5) missing.push(c.el + ' (' + (+need.toFixed(2)) + ' of ' + (+(c.n * Z).toFixed(2)) + ' per cell)');
     });
     var light = order[order.length - 1].el, n = list.filter(function (s) { return s.use; }).length;
     list.forEach(function (s) { if (!s.element) s.element = light; });
-    R.Z = Z;
-    return 'elements of ' + comp.map(function (c) { return c.el + (c.n === 1 ? '' : c.n); }).join('') + ' on ' + plural(n, 'site') + ' (Z = ' + (+Z.toFixed(2)) + ')';
+    R.Z = Z; R.unplaced = missing;
+    return 'elements of ' + comp.map(function (c) { return c.el + (c.n === 1 ? '' : c.n); }).join('') + ' on ' + plural(n, 'site') + ' (Z = ' + (+Z.toFixed(2)) + ')' +
+      (moved.length ? '; moved onto special positions: ' + moved.join(', ') : '') +
+      (missing.length ? '. NOT PLACED: ' + missing.join(', ') + ' — no peak within ' + CF_SNAP_MAX + ' Å of a free site of small enough multiplicity. Check Z, or place them by hand' : '');
   }
 
   // ---------------------------------------------------------------- 3b. the Wyckoff search
@@ -695,6 +743,7 @@ RV.solve = (function () {
       else if (m.type === 'wy-log') { run.log.push(m.message); ui.log('  ' + m.message, 'info'); }
       else if (m.type === 'wy-start' || m.type === 'cf-wyckoff-start') progress('wy', -1, zTag(m) + 'preparing…');
       else if (m.type === 'wy-partial') { if (m.solution) run.partials.push(m.solution); }
+      else if (m.type === 'wy-refining') { var rl = 'Refining the best structure' + (Number.isFinite(m.z) ? ' (Z = ' + m.z + ')' : '') + '… please wait'; progress('wy', -1, rl); busyLabel(rl); }
       else if (m.type === 'wy-progress') {
         if (Array.isArray(m.bestSites) && m.bestSites.length && Number.isFinite(m.best))
           run.live = { z: m.z, assignment: m.assignment, best: m.best, cc: m.cc, sites: m.bestSites };
@@ -716,6 +765,8 @@ RV.solve = (function () {
     progress('wy', -1, 'starting…');
     syncRun();
   }
+  // The busy card is what the user looks at while the page is locked: it says what is happening now.
+  function busyLabel(text) { if (!S.busy) return; S.busyLabel = text; var el = $('#busy-label'); if (el) el.textContent = text; }
   function zTag(m) { return m.zCount > 1 && Number.isFinite(m.z) ? 'Z = ' + m.z + ' (' + m.zIndex + '/' + m.zCount + '), ' : ''; }
   function stopWy() {
     var run = SV.wyRun;
@@ -724,8 +775,9 @@ RV.solve = (function () {
       // the worker keeps the best structure so far and returns it; a second Stop ends it without waiting
       run.stopped = true;
       try { run.worker.postMessage({ type: 'cancel-wyckoff' }); } catch (e) { /* gone */ }
-      progress('wy', -1, 'stopping: the best structure so far comes back…');
-      ui.toast('Stopping the Wyckoff search: it returns the best structure found so far. Stop again to end it now and keep the best structure already received.', 'info');
+      progress('wy', -1, 'stopping: refining the best structure so far… please wait');
+      busyLabel('Stopping: refining the best structure so far… please wait');
+      ui.toast('Stopping the Wyckoff search. The best structure found so far is being refined; please wait, this can take a little while. (Stop again only to end at once with the unrefined search positions.)', 'warn');
     } else finishWy('Stopped before the search returned its final result.');
   }
   // What the page already holds when the worker gives no final result: every Z it finished
@@ -1131,8 +1183,9 @@ RV.solve = (function () {
       R.sites.map(function (s, i) {
         return '<tr' + (s.use ? '' : ' class="off"') + '><td><input type="checkbox" data-cfuse="' + i + '"' + (s.use ? ' checked' : '') + ' aria-label="Use site ' + s.rank + '"></td><td>' + s.rank + '</td>' +
                '<td><input class="sv-el" data-cfel="' + i + '" list="sv-el-list" value="' + esc(s.element) + '" spellcheck="false" autocomplete="off" aria-label="Element of site ' + s.rank + '"></td>' +
-               '<td>' + f(s.x, 4) + '</td><td>' + f(s.y, 4) + '</td><td>' + f(s.z, 4) + '</td><td>' + esc(s.wyck) + '</td><td>' + f(s.relative, 3) + '</td></tr>';
-      }).join('') + '</tbody></table></div>';
+               '<td>' + f(s.x, 4) + '</td><td>' + f(s.y, 4) + '</td><td>' + f(s.z, 4) + '</td><td' + (Number.isFinite(s.snapped) ? ' title="Peak moved ' + s.snapped.toFixed(2) + ' Å onto this special position so that ' + esc(capEl(s.element)) + ' gets the number of atoms the formula asks for"' : '') + '>' + esc(s.wyck) + (Number.isFinite(s.snapped) ? ' ↦' : '') + '</td><td>' + f(s.relative, 3) + '</td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      ((R.unplaced || []).length ? '<p class="sv-warn">Not placed: ' + esc(R.unplaced.join(', ')) + '. No peak lies within ' + CF_SNAP_MAX + ' Å of a free position of small enough multiplicity. Check Z, or type the element on a site by hand.</p>' : '');
   }
   function spark(canvas, hist) {
     if (!canvas || !hist || !hist.length) return;
@@ -1251,14 +1304,15 @@ RV.solve = (function () {
              R.stopped ? '<p class="sv-warn">Stopped early: the quench was skipped, the choice is provisional.</p>' : '') +
       '<dl class="sv-dl"><dt>Formula unit</dt><dd>' + esc(R.formula) + (Number.isFinite(sol.z) ? ', Z = ' + sol.z : '') + (Number.isFinite(sol.rho) ? ', ρ = ' + f(sol.rho, 3) + ' g/cm³' : '') + '</dd>' +
         '<dt>Assignment</dt><dd>' + esc(prettyAssign(sol.assignment) || '?') + '</dd>' +
-        '<dt>wR(F²)</dt><dd>' + pct(ref.R) + (Number.isFinite(sol.searchCC) ? ', search wR2 ' + pct(1 - sol.searchCC, 1) : '') + '</dd>' +
+        '<dt>wR(F²)</dt><dd>' + (Number.isFinite(ref.R) ? pct(ref.R) : 'not refined') + (Number.isFinite(sol.searchCC) ? ', search wR2 ' + pct(1 - sol.searchCC, 1) : '') + '</dd>' +
+        (ref.skipped ? '<dt>Refinement</dt><dd class="sv-warn">Skipped: ' + esc(ref.skipped) + '.</dd>' : '') +
         (sol.ranked === false ? '<dt>Caution</dt><dd class="sv-warn">Unranked: ' + f(sol.obsPerParam, 2) + ' effective observations per free parameter. One candidate among several, not a solution.</dd>' : '') +
         '<dt>Intensities</dt><dd>' + R.n + '; ' + esc(R.note) + '</dd><dt>Time</dt><dd>' + R.seconds + ' s</dd></dl>';
     if (R.sols.length > 1) {
       h += '<h3>One solution per Z</h3><div class="table-wrap"><table class="grid compact"><thead><tr><th></th><th>Z</th><th>ρ g/cm³</th><th>wR(F²)</th><th>Assignment</th><th>Atoms</th></tr></thead><tbody>' +
         R.sols.map(function (s, i) {
           return '<tr' + (i === R.pick ? ' class="best"' : '') + '><td><input type="radio" name="sv-wy-pick" data-wypick="' + i + '"' + (i === R.pick ? ' checked' : '') + ' aria-label="Solution with Z = ' + s.z + '"></td><td>' + s.z + '</td><td>' + f(s.rho, 2) + '</td><td>' +
-                 (s.unrefined ? 'not refined' : pct(s.refinement && s.refinement.R)) + '</td><td>' + esc(prettyAssign(s.assignment)) + '</td><td>' + (s.nAtoms != null ? s.nAtoms : (s.sites || []).length) + '</td></tr>';
+                 (s.refinement && Number.isFinite(s.refinement.R) ? pct(s.refinement.R) : 'not refined') + '</td><td>' + esc(prettyAssign(s.assignment)) + '</td><td>' + (s.nAtoms != null ? s.nAtoms : (s.sites || []).length) + '</td></tr>';
         }).join('') + '</tbody></table></div>';
     }
     el.innerHTML = h;
@@ -1355,7 +1409,7 @@ RV.solve = (function () {
     }
     if ((k = t.getAttribute('data-wy'))) { if(k==='particles')SV.opts.wy.particlesAuto=false; SV.opts.wy[k] = t.tagName === 'TEXTAREA' ? t.value : t.value.trim(); saveOpts(); if (k === 'constraints' || /^rho/.test(k)) { renderWyStatus(); renderDensity(); } return; }
     if (t.hasAttribute('data-cfuse')) { var s = SV.cf.sites[+t.getAttribute('data-cfuse')]; s.use = t.checked; t.closest('tr').classList.toggle('off', !s.use); renderDensityMap(); renderStruct('cf'); return; }
-    if (t.hasAttribute('data-cfel')) { var s2 = SV.cf.sites[+t.getAttribute('data-cfel')], el = St.elementOf(t.value) || t.value.trim(); s2.element = el; t.value = el; SV.cf.nameFromFormula=false;$('#sv-cf-assign').checked=false;renderStruct('cf');return; }
+    if (t.hasAttribute('data-cfel')) { var s2 = SV.cf.sites[+t.getAttribute('data-cfel')], el = St.elementOf(t.value) || t.value.trim(); s2.element = el; t.value = el; SV.cf.nameFromFormula=false;$('#sv-cf-assign').checked=false;if((SV.cf.unplaced || []).length){SV.cf.unplaced=[];renderCfOut();}renderStruct('cf');return; }
     if (t.hasAttribute('data-wypick')) { SV.wy.pick = +t.getAttribute('data-wypick'); renderWyOut(); renderStruct('wy'); }
   }
   // the formula unit and Z appear under both charge flipping and the Wyckoff search: one value
@@ -1453,5 +1507,5 @@ RV.solve = (function () {
   }
 
   return { init: init, running: running, stop: stop, report: report, render: render, saveHkl:saveHkl, hklWhy:hklWhy, autoExtract:autoExtract, probeGPU:probeGPU, budgetFor:budgetFor, gpuBudget:gpuBudget, state: SV, cfDensityData: cfDensityData, renderDensityMap: renderDensityMap, symopsFor: symopsFor, parseFormula: parseFormula,
-           validateConstraints: validateConstraints, assignCf: assignCf,renderSelectedSolution:renderSelectedSolution,reportSelected:function(){var k=RV.layout && RV.layout.structureKind();return withSolution(k,function(){return report(k);});},archive:archive,restoreArchive:restoreArchive,exportTo:exportTo };
+           validateConstraints: validateConstraints, assignCf: assignCf,renderSelectedSolution:renderSelectedSolution,adoptSolution:adoptSolution,reportSelected:function(){var k=RV.layout && RV.layout.structureKind();return withSolution(k,function(){return report(k);});},archive:archive,restoreArchive:restoreArchive,exportTo:exportTo };
 })();
