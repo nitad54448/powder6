@@ -55,7 +55,7 @@ struct Params {
     nElem: f32, nBondRules: f32, rMinOff: f32, ruleOff: f32,
     fTabOff: f32, nRefl: f32, penClash: f32, penBond: f32,
     penCoord: f32, penScale: f32, centro: f32, pad0: f32,
-    symOff: f32, tablesOff: f32, projOff: f32, pad1: f32,
+    symOff: f32, tablesOff: f32, projOff: f32, penGeom: f32,
 };
 
 struct ParticleState {
@@ -117,7 +117,12 @@ const GROUP_STRIDE: u32 = 3u; //__GROUP_STRIDE__
 // Injected by the host per run (swInject, sized from js/wyckoff_limits.js), at
 // most 32: the rules of one atom are kept as a bitmask in a u32 (myRules).
 const MAX_BOND_RULES: u32 = 8u; //__MAX_BOND_RULES__
-const RULE_STRIDE: u32 = 6u;
+const RULE_STRIDE: u32 = 7u;   // [aType, bType, dmin, dmax, count, mode, geometry]
+// The neighbour vectors a shaped shell needs: MAX_COORD_SLOTS when a rule has
+// a geometry, 1 otherwise so a run without shapes carries no extra scratch.
+const MAX_GEOM_SLOTS: u32 = 1u; //__MAX_GEOM_SLOTS__
+// The squared cosine errors of a shell are weighted by penBond times
+// params.penGeom, the Shape weight of the form (default 1).
 // `slot` is a FUNCTION-SCOPE array, not workgroup storage, so this constant
 // costs nothing against the 16 kB budget that MAX_GEN_ATOMS is competing for.
 // It is per-lane scratch: 64 f32 is 256 bytes a thread, and because
@@ -282,12 +287,30 @@ fn fracDelta(p1: vec3<f32>, p2: vec3<f32>) -> vec3<f32> {
     return q - round(q);
 }
 
+/** Cartesian vector of a fractional vector in the reduced basis. */
+fn cartVec(t: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(params.o0.x*t.x + params.o0.y*t.y + params.o0.z*t.z,
+                     params.o1.x*t.x + params.o1.y*t.y + params.o1.z*t.z,
+                     params.o2.x*t.x + params.o2.y*t.y + params.o2.z*t.z);
+}
+
 /** Cartesian length of a fractional vector in the reduced basis. */
 fn cartLen(t: vec3<f32>) -> f32 {
-    let cx = params.o0.x*t.x + params.o0.y*t.y + params.o0.z*t.z;
-    let cy = params.o1.x*t.x + params.o1.y*t.y + params.o1.z*t.z;
-    let cz = params.o2.x*t.x + params.o2.y*t.y + params.o2.z*t.z;
-    return sqrt(cx*cx + cy*cy + cz*cz);
+    return length(cartVec(t));
+}
+
+// How far the cosine of the angle between two neighbours of a shaped shell is
+// from the shape's (WY_LIMITS.geometries codes). Square-planar and octahedral
+// shells have cis (90 degree) and trans (180 degree) pairs, and each pair is
+// charged against the nearer of the two.
+fn geomCosError(code: u32, c: f32) -> f32 {
+    switch code {
+        case 1u: { return c + 1.0; }                        // linear, 180
+        case 2u: { return c + 0.5; }                        // trigonal planar, 120
+        case 3u: { return c + 0.3333333; }                  // tetrahedral, 109.47
+        case 4u, 5u: { return min(abs(c), abs(c + 1.0)); }  // square planar, octahedral
+        default: { return 0.0; }
+    }
 }
 
 fn cartDist(p1: vec3<f32>, p2: vec3<f32>) -> f32 {
@@ -585,6 +608,7 @@ fn main(@builtin(workgroup_id) wgId: vec3<u32>,
     var ruleMax: array<f32, MAX_BOND_RULES>;
     var ruleN: array<f32, MAX_BOND_RULES>;
     var ruleMode: array<u32, MAX_BOND_RULES>;
+    var ruleGeom: array<u32, MAX_BOND_RULES>;
     for (var k = 0u; k < nRules; k = k + 1u) {
         let rb = ruleOff + k * RULE_STRIDE;
         ruleA[k] = u32(staticFloats[t_off + rb]);
@@ -593,6 +617,8 @@ fn main(@builtin(workgroup_id) wgId: vec3<u32>,
         ruleMax[k] = staticFloats[t_off + rb + 3u];
         ruleN[k] = staticFloats[t_off + rb + 4u];
         ruleMode[k] = u32(staticFloats[t_off + rb + 5u]);
+        // a shape needs the shell's vectors, which only exist when the host sized them
+        ruleGeom[k] = select(0u, u32(staticFloats[t_off + rb + 6u]), MAX_GEOM_SLOTS >= MAX_COORD_SLOTS);
     }
 
     // slotOff[k] is where rule k's nearest-neighbour list starts inside `slot`,
@@ -643,6 +669,8 @@ fn main(@builtin(workgroup_id) wgId: vec3<u32>,
         }
         var slot: array<f32, MAX_COORD_SLOTS>;
         for (var m = 0u; m < slotTotal; m = m + 1u) { slot[m] = NO_NEIGHBOUR; }
+        // the vector to each slot's neighbour, for shaped shells only
+        var slotV: array<vec3<f32>, MAX_GEOM_SLOTS>;
 
         for (var j = 0u; j < nTot; j = j + 1u) {
             let tj = gT[j];
@@ -715,7 +743,8 @@ fn main(@builtin(workgroup_id) wgId: vec3<u32>,
                 for (var sc = -COUNT_SHELL; sc <= COUNT_SHELL; sc = sc + 1) {
                     let si = u32((sa + 1) * 9 + (sb + 1) * 3 + (sc + 1));
                     if (shellLen[si] - dq > cutoff) { continue; }
-                    let dd = cartLen(qf + vec3<f32>(f32(sa), f32(sb), f32(sc)));
+                    let dv = cartVec(qf + vec3<f32>(f32(sa), f32(sb), f32(sc)));
+                    let dd = length(dv);
                     if (dd < 1.0e-4 && j == i) { continue; }   // the atom itself (another atom on the same point stays in the count)
                     if (dd >= ruleMin[k] && dd <= ruleMax[k]) {
                         inWindow[k] = inWindow[k] + 1.0;
@@ -723,15 +752,18 @@ fn main(@builtin(workgroup_id) wgId: vec3<u32>,
                     if (counted) {
                         let lo = slotOff[k];
                         let hi = lo + nk;
+                        let shaped = ruleGeom[k] != 0u;
                         if (dd < slot[hi - 1u]) {
                             var m = hi - 1u;
                             loop {
                                 if (m > lo && slot[m - 1u] > dd) {
                                     slot[m] = slot[m - 1u];
+                                    if (shaped) { slotV[m] = slotV[m - 1u]; }
                                     m = m - 1u;
                                 } else { break; }
                             }
                             slot[m] = dd;
+                            if (shaped) { slotV[m] = dv; }
                             cutoff = max(ruleMax[k], slot[hi - 1u]);
                         }
                     }
@@ -760,6 +792,25 @@ fn main(@builtin(workgroup_id) wgId: vec3<u32>,
                     }
                 }
                 pen = pen + params.penBond * deficit;
+
+                // THE SHAPE OF THE SHELL: the angle between every pair of its
+                // nearest partners, against the shape's. Soft, like the rest; the
+                // distances are charged above, so this sees directions only.
+                if (ruleGeom[k] != 0u && nk >= 2u) {
+                    let lo = slotOff[k];
+                    var g: f32 = 0.0;
+                    for (var m = 0u; m + 1u < nk; m = m + 1u) {
+                        let dm = slot[lo + m];
+                        if (dm >= NO_NEIGHBOUR) { continue; }
+                        for (var n = m + 1u; n < nk; n = n + 1u) {
+                            let dn = slot[lo + n];
+                            if (dn >= NO_NEIGHBOUR) { continue; }
+                            let e = geomCosError(ruleGeom[k], dot(slotV[lo + m], slotV[lo + n]) / max(dm * dn, 1e-6));
+                            g = g + e * e;
+                        }
+                    }
+                    pen = pen + params.penBond * params.penGeom * g;
+                }
 
                 if (ruleMode[k] == 1u) {
                     pen = pen + params.penCoord * max(0.0, inWindow[k] - ruleN[k]);

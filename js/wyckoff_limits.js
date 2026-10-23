@@ -24,6 +24,10 @@ const WY_LIMITS = Object.freeze({
   maxZSearches: 12,
   // Z typed or scanned, at most (the largest general multiplicity).
   zMax: 192,
+  // How Z on Auto is ranked inside the density window: nearest this volume per atom (A^3), with a nudge for a Z
+  // that divides, or is a multiple of, the group order. Charge flipping uses the same rule for its histogram target.
+  vpaTypical: 16,
+  zFavouredBonus: 0.10,
   maxAtomsPerCell: 512,
   // The density window of the form (g/cm3), and the absolute bounds a typed Z must respect.
   rhoWindow: [1, 22],
@@ -34,13 +38,25 @@ const WY_LIMITS = Object.freeze({
   particles: [64, 1536],
   iterations: [10, 10000],
   restarts: [1, 10],
-  defaults: Object.freeze({ rhoMin: 2, rhoMax: 10, maxZ: 3, particles: 512, iterations: 2000, restarts: 4, minContact: 1.0 }),
+  // Shape weight: how strongly the angles of shaped shells count, as a multiple of the bond penalty.
+  shapeWeight: [0, 10],
+  defaults: Object.freeze({ rhoMin: 2, rhoMax: 10, maxZ: 3, particles: 512, iterations: 2000, restarts: 4, minContact: 1.0, shapeWeight: 1 }),
   // The screening stage: when the assignments need more than fullWaves waves, every one is first searched for
   // screenFraction of the iterations (at least screenMinIterations, one restart), and only the best fullWaves
   // waves' worth go on to the full search.
   fullWaves: 2,
   screenFraction: 0.1,
-  screenMinIterations: 60
+  screenMinIterations: 60,
+  // Shapes a counted coordination shell can be given ("S O 4 1.40/1.60 tetrahedron"): the code the kernel reads,
+  // the number of neighbours, and the words the constraint box accepts. The names are the ones the site-symmetry
+  // filter of the enumeration knows (wyckoff_assign.js, coordinationCompatible).
+  geometries: Object.freeze({
+    'linear':          Object.freeze({ code: 1, count: 2, words: ['linear'] }),
+    'trigonal-planar': Object.freeze({ code: 2, count: 3, words: ['triangle', 'triangular', 'trigonal', 'trigonal-planar'] }),
+    'tetrahedral':     Object.freeze({ code: 3, count: 4, words: ['tetrahedron', 'tetrahedral', 'tetra'] }),
+    'square-planar':   Object.freeze({ code: 4, count: 4, words: ['square', 'square-planar', 'planar'] }),
+    'octahedral':      Object.freeze({ code: 5, count: 6, words: ['octahedron', 'octahedral', 'octa'] })
+  })
 });
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { WY_LIMITS };

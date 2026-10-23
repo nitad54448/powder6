@@ -2,6 +2,23 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.14.0 — 23 October 2026
+
+1. Wyckoff search: **Shape weight** (default 1, 0–10) sets how strongly the angles of shaped shells count, as a multiple of the bond penalty; 0 switches the angle term off and keeps the shape's site-symmetry filter. It travels in the kernel's spare parameter slot; the Log states it when a shape is used. Its range and default are in `js/wyckoff_limits.js`.
+2. Documentation: the penalties table gives every term as the kernel computes it, including that the bond penalty (0.10) is divided by the number of neighbour slots charged across the cell and the coordination penalty (0.03) by the number of counted centres, the 0.25 Å softness and the flat charge of 5 for an empty slot, the shape term and a worked comparison, the 0.2 to 4.0 ramp, and that the weights steer the search but never rank its results.
+
+## 2.13.1 — 23 October 2026
+
+1. Wyckoff distance constraints accept shortened shapes: two letters or more of a shape's name, when they belong to one shape only (`lin`, `tri`, `tet`, `sq`, `oct`, or `li`, `tr`, `te`, `oc`). The constraint box shows an example with a shape (`S O 4 1.40/1.60 tet`) in its placeholder and its hint.
+2. Histogram matching with Z on Auto takes the Z of the Wyckoff solution of the same intensities, else the Wyckoff search's own Auto rule (density window, the multiples of Z the positions allow, nearest 16 Å³ per atom, favouring divisors and multiples of the group order), instead of a separate 18 Å³-per-atom estimate. The note under the checkbox and the Log say which Z was used. The 16 Å³ and the group-order nudge now live in `js/wyckoff_limits.js`, read by both.
+
+## 2.13.0 — 23 October 2026
+
+1. Charge flipping: **Apply histogram matching** (off by default). Every 5 cycles from cycle 10 the flip is replaced by matching the map to the density histogram expected for the cell contents (Zhang and Main 1990; with charge flipping on powder data, Baerlocher, McCusker and Palatinus 2007). The target comes from two random structures of the formula unit × Z (typed, or estimated at 18 Å³ per non-H atom) with the X-ray scattering factors or neutron lengths of the elements, on exactly the reflections of the run, with the overall B of a Wilson plot of the data. The matched map keeps its mean and σ. The GPU (four new kernels) and the CPU do the same arithmetic; the GPU map agrees with the CPU reference after the first matching step (correlation 0.994 on a synthetic P1 structure). The Log names the target, and the results give the schedule, atom count and Wilson B.
+2. Wyckoff search: a counted distance constraint may end with a shape, `linear`, `triangle`, `tetrahedron`, `square` or `octahedron` (`S O 4 1.40/1.60 tetrahedron`). The kernel keeps the vectors of each centre's nearest partners and charges the angles between them against the shape's, holding the polyhedron within that centre's own shell. The shape also activates the existing site-symmetry filter for elements it could not infer (a stated tetrahedron keeps Cu off inversion centres; a stated square does not). It costs no extra rule or slot, and a run without shapes compiles the kernel without the vector scratch. The count must match the shape, and an upper distance is required.
+3. The shape definitions (names, counts, kernel codes, accepted words) are in `js/wyckoff_limits.js` with the other Wyckoff limits. The kernel's rule records have seven fields (the geometry code), and a cached older kernel is refused by its missing marker.
+4. Tests: Node checks of the histogram target (Wilson B, skewed atomic distribution), of the matching step (rank order, mean and σ kept, quantiles imposed), of the CPU search with matching, and of the shape packing and filter; `tests/cf-histogram.html` compares GPU and CPU matching and runs a full GPU search; `tests/wyckoff-search.html` also runs a shaped shell on the GPU.
+
 ## 2.12.1 — 23 October 2026
 
 1. Datasets and Phases now mirror each other. The empty Datasets tab shows Read patterns… and Simulate… (its toolbar used to appear only once a dataset existed, so the tab offered only a sentence and the demo link), as Phases always shows New phase…, Read structures (CIF)… and Simulate….

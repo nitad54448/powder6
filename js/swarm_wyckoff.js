@@ -192,7 +192,9 @@ function swRestraintCapacity(restraints) {
         throw new Error(`${rules} rules and ${slots} neighbour slots exceed the kernel maxima ` +
                         `(${L.maxRules} rules, ${L.maxCoordSlots} slots).`);
     }
-    return { rules: Math.max(L.baseRules, rules), slots: Math.max(L.baseCoordSlots, slots) };
+    const capSlots = Math.max(L.baseCoordSlots, slots);
+    // shaped shells keep a vector per slot; a run without shapes keeps none
+    return { rules: Math.max(L.baseRules, rules), slots: capSlots, geomSlots: restraints && restraints.geometry ? capSlots : 1 };
 }
 
 function swInject(src, maxGen, minImageShell = 0, groupStride = 3, countShell = 1, capacity = null) {
@@ -253,6 +255,11 @@ function swInject(src, maxGen, minImageShell = 0, groupStride = 3, countShell = 
         /const\s+MAX_COORD_SLOTS\s*:\s*u32\s*=\s*\d+u\s*;\s*\/\/__MAX_COORD_SLOTS__/,
         `const MAX_COORD_SLOTS: u32 = ${cap.slots}u; //__injected__`);
     if (out === beforeSlots) throw new Error('MAX_COORD_SLOTS marker not found in the kernel source: swarm_reflection.wgsl is older than this page. Reload without the cache.');
+    const beforeGeom = out;
+    out = out.replace(
+        /const\s+MAX_GEOM_SLOTS\s*:\s*u32\s*=\s*\d+u\s*;\s*\/\/__MAX_GEOM_SLOTS__/,
+        `const MAX_GEOM_SLOTS: u32 = ${cap.geomSlots || 1}u; //__injected__`);
+    if (out === beforeGeom) throw new Error('MAX_GEOM_SLOTS marker not found in the kernel source: swarm_reflection.wgsl is older than this page. Reload without the cache.');
     return out;
 }
 
@@ -814,7 +821,8 @@ function swRestraintObservations(restraints, sites) {
         const aType = r[0], mode = r[5], want = r[4];
         const nSites = perType.get(aType) || 0;
         if (!nSites) continue;
-        const per = (mode !== 0 && want > 0) ? want : 1;
+        // a shell shape adds the 2n - 3 angles that fix n directions once their distances are set
+        const per = ((mode !== 0 && want > 0) ? want : 1) + (r[6] > 0 && want >= 2 ? 2 * want - 3 : 0);
         count += per * nSites;
         detail.push({ aType, bType: r[1], perSite: per, sites: nSites, total: per * nSites });
     }
@@ -1343,7 +1351,7 @@ async function runWyckoffSearch(o) {
         nElem: 28, nBondRules: 29, rMinOff: 30, ruleOff: 31,
         fTabOff: 32, nRefl: 33, penClash: 34, penBond: 35,
         penCoord: 36, penScale: 37, centro: 38, pad0: 39,
-        symOff: 40, tablesOff: 41, projOff: 42, pad1: 43
+        symOff: 40, tablesOff: 41, projOff: 42, penGeom: 43
     });
     const params = new Float32Array(44);
     
@@ -1425,6 +1433,9 @@ async function runWyckoffSearch(o) {
     const coordNorm = Math.max(1, coordCentres);
     params[PARAM.penBond] = (o.penBond ?? SW_DEFAULTS.penBond) / bondNorm;
     params[PARAM.penCoord] = (o.penCoord ?? SW_DEFAULTS.penCoord) / coordNorm;
+    // the Shape weight: multiplies penBond for the angles of shaped shells only
+    params[PARAM.penGeom] = Number.isFinite(o.shapeWeight) && o.shapeWeight >= 0 ? o.shapeWeight : WY_LIMITS.defaults.shapeWeight;
+    if ((o.windows || []).some(w => w && w.geometry)) say(`Shaped shells: angle errors weighted ${params[PARAM.penGeom]} x the bond penalty.`);
     if (bondSlots > 0) {
         say(`Distance restraints charge ${bondSlots} neighbour slot(s) across the cell; ` +
             `penBond is divided by that, so the penalty is per bond and stays commensurate ` +

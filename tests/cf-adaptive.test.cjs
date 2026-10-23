@@ -75,6 +75,50 @@ test('the actual CF reflection model and CPU search consume the adapted groups',
   const repeat=cf.runChargeFlippingCPU(j);assert.deepEqual(Array.from(result.map),Array.from(repeat.map));
   assert.ok(cf.compareCFMaps(result.map,repeat.map,8).correlation>1-1e-10);
 });
+// A synthetic P1 structure with real form factors, B = 1.2, every reflection to d = 1.1 A.
+const XRAY=require('../scatters/xray_wk1995_ions.json').table;
+function ff(el,s2){const e=XRAY[el];return e.a.reduce((f,a,i)=>f+a*Math.exp(-e.b[i]*s2),e.c);}
+function synthetic(){
+  const cell={a:6,b:7,c:8,alpha:90,beta:90,gamma:90},B=1.2,atoms=[['Fe',.11,.23,.37],['Fe',.61,.71,.19],['O',.31,.52,.83],['O',.82,.14,.62],['O',.47,.88,.08],['O',.05,.41,.55]];
+  const list=[];
+  for(let h=-5;h<=5;h++)for(let k=-6;k<=6;k++)for(let l=0;l<=7;l++){
+    if(l===0 && (k<0 || (k===0 && h<=0)))continue;
+    const s2=(h*h/36+k*k/49+l*l/64)/4,d=1/Math.sqrt(4*s2);if(d<1.1)continue;
+    let re=0,im=0;for(const [el,x,y,z] of atoms){const f=ff(el,s2)*Math.exp(-B*s2),p=2*Math.PI*(h*x+k*y+l*z);re+=f*Math.cos(p);im+=f*Math.sin(p);}
+    list.push({h_orig:h,k_orig:k,l_orig:l,intensity:2*(re*re+im*im),tth:2*Math.asin(1.5406/(2*d))*180/Math.PI,d,fwhm:.02});
+  }
+  const histogramAtoms=[['Fe',2],['O',4]].map(([el,count])=>({element:el,count,a:XRAY[el].a,b:XRAY[el].b,c:XRAY[el].c}));
+  return {gridSize:32,maxIterations:60,thresholdSigma:1.1,seed:7,cell,symops:[identity],laueClass:'-1',symLambda:0,weakFraction:.15,weakGrouping:'cluster',overlapTolTth:0,overlapFwhmFraction:0,
+    minPeakSeparation:.6,maxPeaks:12,peakHeightCutoff:.04,applyLP:false,hklList:list,histogramAtoms,trueB:B};
+}
+test('histogram matching: the target of the composition is atomic, and matching imposes it without reordering the map',()=>{
+  const j=synthetic(),model=cf.buildReflectionModel(j,32),t=cf.cfHistogramTarget(j,model,32);
+  assert.equal(t.error,undefined);assert.equal(t.nAtoms,6);assert.equal(t.quantiles.length,1024);
+  assert.ok(Math.abs(t.B-j.trueB)<0.6,'Wilson B '+t.B+' for a true B of '+j.trueB);
+  const q=Array.from(t.quantiles),mean=q.reduce((a,b)=>a+b,0)/q.length;
+  assert.ok(Math.abs(mean)<0.05);assert.ok(q.every((v,i)=>i===0 || v>=q[i-1]),'quantiles not sorted');
+  assert.ok(q[q.length-1]>3*Math.abs(q[0]),'an atomic map has a long positive tail: '+q[0]+' to '+q[q.length-1]);
+  // a Gaussian-like map takes the target's shape, keeps its mean, sigma and the order of its points
+  let s=12345;const rnd=()=>{s=(Math.imul(s,1664525)+1013904223)>>>0;return s/4294967296;},N3=32**3;
+  const map=Float64Array.from({length:N3},()=>Math.sqrt(-2*Math.log(rnd()+1e-12))*Math.cos(2*Math.PI*rnd())*3+5),before=Float64Array.from(map);
+  cf.cfHistogramMatch(map,N3,t.quantiles);
+  const order=a=>Array.from(a.keys()).sort((x,y)=>a[x]-a[y]);
+  const o1=order(before),o2=order(map);let same=0;for(let i=0;i<N3;i+=97)if(o1[i]===o2[i])same++;
+  assert.ok(same/Math.ceil(N3/97)>.95,'matching reordered the map');
+  const sorted=Float64Array.from(map).sort(),m=sorted.reduce((a,b)=>a+b,0)/N3,sd=Math.sqrt(sorted.reduce((a,b)=>a+(b-m)**2,0)/N3);
+  assert.ok(Math.abs(m-5)<.05 && Math.abs(sd-3)<.1,'mean '+m+' sigma '+sd);
+  const at=f=>{const x=Math.min(1023,Math.max(0,f*1024-.5)),i=Math.floor(x),w=x-i;return q[i]*(1-w)+q[Math.min(1023,i+1)]*w;};
+  for(const f of [.01,.25,.5,.75,.99]){const got=(sorted[Math.floor(f*N3)]-m)/sd,want=at(f);assert.ok(Math.abs(got-want)<.05*Math.max(1,Math.abs(want)),'quantile '+f+': '+got+' vs '+want);}
+});
+test('histogram matching runs in the CPU search on its schedule and is reported',()=>{
+  assert.deepEqual([0,9,10,11,14,15,20].map(cf.cfHistogramMatchingDue),[false,false,true,false,false,true,true]);
+  const j=synthetic(),plain=cf.runChargeFlippingCPU(j),hm=cf.runChargeFlippingCPU({...j,histogramMatching:true});
+  assert.equal(plain.histogramMatching,null);
+  assert.equal(hm.histogramMatching.applied,true);assert.equal(hm.histogramMatching.every,5);assert.equal(hm.histogramMatching.nAtoms,6);
+  assert.ok(Number.isFinite(hm.bestR) && hm.bestR<0.5,'R '+hm.bestR);
+  assert.notDeepEqual(Array.from(plain.map.slice(0,64)),Array.from(hm.map.slice(0,64)));
+  const missing=cf.runChargeFlippingCPU({...j,histogramMatching:true,histogramAtoms:[]});assert.match(missing.error,/Histogram matching/);
+});
 test('P1 CF keeps its arbitrary origin when extracting sites from a nonempty map',async()=>{
   const j=job(),result=cf.runChargeFlippingCPU(j);
   const structure=await cf.buildStructure({map:result.map,gridSize:8,symops:[identity],cell:j.cell,minPeakSeparation:.5,maxPeaks:10,peakHeightCutoff:.04});

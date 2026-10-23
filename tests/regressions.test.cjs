@@ -343,6 +343,18 @@ test('distance constraints beyond the old eight rules are packed, and the kernel
   const src=read('swarm_reflection.wgsl');
   assert.match(src,/const MAX_BOND_RULES: u32 = \d+u; \/\/__MAX_BOND_RULES__/);assert.match(src,/const MAX_COORD_SLOTS: u32 = \d+u; \/\/__MAX_COORD_SLOTS__/);
 });
+test('a coordination shell can be given a shape: it is packed for the kernel and rules out sites that cannot host it', () => {
+  const A=require('../js/wyckoff_assign.js'),db=require('../sg/all.json').space_groups;
+  const demand=[{element:'CU',count:2,z:29,r:1},{element:'O',count:8,z:8,r:1}];
+  const t=A.buildRestraintTables(demand,[{a:'CU',b:'O',count:4,countMode:'exact',dmin:1.8,dmax:2.1,geometry:'square-planar'}],{});
+  assert.equal(t.ruleStride,7);assert.equal(t.geometry,true);assert.equal(t.rules[0][6],4,'square-planar code');
+  assert.equal(A.buildRestraintTables(demand,[{a:'CU',b:'O',count:4,countMode:'exact',dmin:1.8,dmax:2.1}],{}).geometry,false);
+  assert.throws(()=>A.buildRestraintTables(demand,[{a:'CU',b:'O',count:6,countMode:'exact',dmin:1.8,dmax:2.1,geometry:'tetrahedral'}],{}),/needs exactly 4 neighbours/);
+  assert.throws(()=>A.buildRestraintTables(demand,[{a:'CU',b:'O',count:4,countMode:'exact',dmin:1.8,geometry:'tetrahedral'}],{}),/upper distance/);
+  // P-1: Cu is not a default tetrahedral former, so only a stated tetrahedron keeps it off the inversion centres
+  const s=db[2].settings[0],count=geometry=>A.enumerateAssignments(s.wyckoff,[{element:'CU',count:1,z:29,r:1},{element:'O',count:4,z:8,r:1}],{ceiling:24,symOps:s.sym_ops,coordination:{CU:{count:4,geometry}}}).assignments.length;
+  assert.ok(count('square-planar')>0);assert.equal(count('tetrahedral'),0);
+});
 test('intensity extraction rejects malformed and excessive reflection limits before dispatch', async () => {
   const a=model();a.state.setCalculation('wppf');
   for(const maxRefl of ['10k','1000k',1e6,0,-1,4.5,NaN,Infinity]){

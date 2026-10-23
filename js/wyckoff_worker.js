@@ -346,7 +346,7 @@ const WY_RHO_MIN_LIMIT = WY_LIMITS.rhoWindow[0];   // g/cm^3, the floor a slider
 const WY_RHO_MAX_LIMIT = WY_LIMITS.rhoWindow[1];   // g/cm^3, osmium and iridium, and nothing above
 const WY_RHO_MIN_DEFAULT = WY_LIMITS.defaults.rhoMin;
 const WY_RHO_MAX_DEFAULT = WY_LIMITS.defaults.rhoMax;
-const WY_VPA_TYPICAL = 16.0;  // A^3 per atom, the centre of the plausible band
+const WY_VPA_TYPICAL = WY_LIMITS.vpaTypical;  // A^3 per atom, the centre of the plausible band
 const WY_Z_HARD_MAX = WY_LIMITS.zMax;    // no Z above the largest general multiplicity
 const WY_MAX_ATOMS_PER_CELL = WY_LIMITS.maxAtomsPerCell;  // beyond this no GPU in this program will run
 // HOW MANY Z ARE ACTUALLY SEARCHED. Each one costs a full swarm run, so a
@@ -629,7 +629,7 @@ function wyAutoZ(cell, symops, job, bounds) {
         // symmetry term is a nudge, not a rule: it is worth about a 10%
         // difference in volume per atom, so it breaks ties and nothing else.
         const favoured = !nOps || nOps % Z === 0 || Z % nOps === 0;
-        const score = Math.abs(Math.log(vpa / WY_VPA_TYPICAL)) - (favoured ? 0.10 : 0);
+        const score = Math.abs(Math.log(vpa / WY_VPA_TYPICAL)) - (favoured ? WY_LIMITS.zFavouredBonus : 0);
         list.push({ Z, rho, vpa, nAtoms: f.nAtoms, favoured, score });
     }
     list.sort((a, b) => a.score - b.score);
@@ -1551,6 +1551,7 @@ if (constraintBreak) {
             numParticles: job.swarmParticles || WY_LIMITS.defaults.particles,
             generations: job.swarmIterations || WY_LIMITS.defaults.iterations,
             restarts: job.swarmRestarts || WY_LIMITS.defaults.restarts,
+            shapeWeight: Number.isFinite(job.shapeWeight) ? job.shapeWeight : WY_LIMITS.defaults.shapeWeight,
             minContact: Number.isFinite(job.minContact)
     ? job.minContact
     : 1.0,

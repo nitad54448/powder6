@@ -49,6 +49,31 @@
     const fr=progress.map(p=>p.fraction);check(fr.every(Number.isFinite) && fr.every((f,i)=>i===0 || f>=fr[i-1]-1e-9) && fr[fr.length-1]>.8,'The progress fraction is not monotonic over the plan');
     record('Progress carries the stage, a monotonic fraction and the live best structure',{messages:progress.length});
 
+    // a shaped shell: the kernel is compiled with neighbour vectors and charges the angles
+    set('#sv-wy-constraints','Pb O 6 1.9/2.9 oct');set('#sv-wy-iterations','60');await frame();
+    check(!/not a shape|needs exactly/.test(q('#sv-wy-cstat').textContent),'The octahedron line was refused: '+q('#sv-wy-cstat').textContent);
+    set('#sv-wy-constraints','Pb O 4 1.9/2.9 oc');await frame();
+    check(/needs exactly 6 neighbours/.test(q('#sv-wy-cstat').textContent),'A wrong count for the shape was not reported: '+q('#sv-wy-cstat').textContent);
+    set('#sv-wy-constraints','Pb O 6 1.9/2.9 oct');set('#sv-wy-shapeWeight','2');await frame();
+    const before2=RV.ui.logEntries().length;
+    q('#sv-wy-run').click();await wait(100);
+    check(RV.solve.state.wyRun,'The shaped search did not start: '+q('#status-msg').textContent);
+    const end2=Date.now()+200000;
+    while(RV.solve.state.wyRun){if(Date.now()>end2)throw Error('The shaped search did not finish');await wait(250);}
+    const log2=RV.ui.logEntries().slice(before2).map(e=>e.msg).join('\n'),wy2=RV.solve.state.wy;
+    check(/octahedral shell/.test(log2),'The constraint log does not name the shape');
+    check(/angle errors weighted 2 x/.test(log2),'The Shape weight did not reach the search');
+    check(wy2 && !wy2.error && wy2.sols && wy2.sols.length && !/marker not found|WGSL|validation/i.test(log2),'The shaped search failed: '+(wy2 && wy2.error)+'\n'+log2.slice(-1200));
+    record('a shaped coordination shell compiles and runs on the GPU',{assignment:wy2.sols[0].assignment});
+
+    // charge flipping's histogram target takes the Z the Wyckoff search used when Z is on Auto
+    set('#sv-z-wy','');const hmBox=q('#sv-cf-histogram');hmBox.checked=true;hmBox.dispatchEvent(new w.Event('change',{bubbles:true}));await frame();
+    const note=q('#sv-cf-histogram-note').textContent,usedZ=(wy2.sols[wy2.pick] || wy2.sols[0]).z;
+    check(new RegExp('× '+usedZ+' \\(Z on Auto: the Z of the Wyckoff solution').test(note),'Histogram target ignored the Wyckoff Z '+usedZ+': '+note);
+    set('#sv-z-cf','3');await frame();
+    check(/× 3 \(Z as typed\)/.test(q('#sv-cf-histogram-note').textContent),'A typed Z was not used: '+q('#sv-cf-histogram-note').textContent);
+    record('the histogram target uses a typed Z, else the Z of the Wyckoff solution',{note});
+
     check(!errors.length,'Browser errors: '+errors.join('; '));record('no browser errors');
     window.browserTestResult={ok:true,results};
   }catch(e){results.push({name:'failure',pass:false,error:String(e && e.stack || e)});out.textContent=JSON.stringify(results,null,2);window.browserTestResult={ok:false,results};}

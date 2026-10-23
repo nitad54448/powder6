@@ -65,6 +65,7 @@ const WY_MAX_ELEM = 8;
 const WY_MAX_OPS = 4096;
 const WY_MAX_RULES = WY_L.maxRules;
 const WY_MAX_COORD_SLOTS = WY_L.maxCoordSlots;
+const WY_GEOMETRY = WY_L.geometries;
 
 /* ------------------------------------------------------------------ */
 /*  Wyckoff position helpers                                           */
@@ -949,12 +950,13 @@ function buildRestraintTables(demand, windows = [], options = {}) {
     const rMin = new Float64Array(nElem * nElem);
     rMin.fill(floor);
 
-    // Six floats per rule: [aType, bType, dmin, dmax, count, mode].
+    // Seven floats per rule: [aType, bType, dmin, dmax, count, mode, geometry].
     //   mode 0 = no count requirement (nearest-neighbour rule only)
     //        1 = exactly `count` neighbours in the window
     //        2 = at least `count`
+    //   geometry = WY_GEOMETRY code of the shell's shape, 0 for none
     // dmax is +inf when the constraint left the upper side open.
-    const RULE_STRIDE = 6;
+    const RULE_STRIDE = 7;
     const MODE = { none: 0, exact: 1, atleast: 2 };
     const problems = [];
     const rules = [];
@@ -994,13 +996,23 @@ function buildRestraintTables(demand, windows = [], options = {}) {
         // a coordination number, or an upper distance.
         if (!hasCount && dmax === null) continue;
 
-        const rec = [a, b, dmin ?? 0, dmax ?? Infinity, hasCount ? w.count : 0, mode];
+        // A shape is a statement about a counted shell: it needs the count the
+        // shape has, and a window, or "the nearest four" is the whole cell.
+        const geom = w.geometry ? WY_GEOMETRY[String(w.geometry).toLowerCase()] : null;
+        if (w.geometry && !geom) {
+            problems.push(`Constraint ${w.a}-${w.b}: unknown geometry "${w.geometry}" was ignored.`);
+        }
+        if (geom && (!hasCount || w.count !== geom.count || dmax === null)) {
+            throw new Error(`Constraint ${w.a}-${w.b}: a ${w.geometry} needs exactly ${geom.count} ` +
+                            `neighbours and an upper distance (e.g. "${w.a} ${w.b} ${geom.count} 1.40/1.60 ${w.geometry}").`);
+        }
+        const rec = [a, b, dmin ?? 0, dmax ?? Infinity, hasCount ? w.count : 0, mode, geom ? geom.code : 0];
         rules.push(rec);
         // A coordination number is DIRECTED - "four O around every S" says
         // nothing about how many S surround an O - so it is never mirrored.
         // A bare upper bound is a nearest-neighbour condition and is symmetric.
         if (!hasCount && w.bothWays !== false && a !== b) {
-            rules.push([b, a, dmin ?? 0, dmax ?? Infinity, 0, MODE.none]);
+            rules.push([b, a, dmin ?? 0, dmax ?? Infinity, 0, MODE.none, 0]);
         }
     }
     // BOTH OF THESE THROW. They used to be advisory strings on `problems`,
@@ -1049,6 +1061,8 @@ function buildRestraintTables(demand, windows = [], options = {}) {
     for (const r of rules) if (Number.isFinite(r[3])) maxDistance = Math.max(maxDistance, r[3]);
 
     return { tables, rMinOff, ruleOff, nRules: rules.length, nElem, slotsNeeded,
+             // whether any shell has a shape: the kernel then keeps the neighbours' vectors
+             geometry: rules.some(r => r[6] > 0),
              ruleStride: RULE_STRIDE, maxDistance, problems,
              // The rule RECORDS, not just their count. A restraint is a
              // statement about the structure that did not come from the

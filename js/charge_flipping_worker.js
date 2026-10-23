@@ -941,6 +941,145 @@ symmetrySource: built.source,
     return model;
 }
 
+// ===========================================================================
+//  HISTOGRAM MATCHING (Zhang & Main 1990; with charge flipping on powder data,
+//  Baerlocher, McCusker & Palatinus 2007)
+//
+//  The distribution of density values of a map of atoms at a given resolution
+//  depends on the composition and the resolution, hardly on where the atoms
+//  are. Every CF_HM_EVERY cycles from CF_HM_START, the flip is replaced by
+//  giving each grid point the target value of the same rank, which pulls the
+//  map towards atomic density. The target is the map of random structures of
+//  the composition on the SAME reflections (same grid points, no F000) with
+//  the overall B of the data, normalised to zero mean and unit sigma; the
+//  matched map keeps its own mean and sigma, so only its shape changes.
+//
+//  The step is the same on both backends: a histogram of CF_HM_BINS bins over
+//  [mean + CF_HM_LO sigma, mean + CF_HM_HI sigma], ranks by the cumulative
+//  count, linear interpolation inside a bin and in the quantile table.
+// ===========================================================================
+const CF_HM_EVERY = 5;          // must match the host's description
+const CF_HM_START = 10;
+const CF_HM_QUANTILES = 1024;
+const CF_HM_BINS = 8192;        // must match HM_BINS in the WGSL
+const CF_HM_LO = -8;            // must match HM_LO
+const CF_HM_HI = 32;            // must match HM_HI
+const CF_HM_STRUCTURES = 2;
+
+function cfHistogramMatchingDue(iter) {
+    return iter >= CF_HM_START && (iter - CF_HM_START) % CF_HM_EVERY === 0;
+}
+
+/**
+ * job.histogramAtoms: [{ element, count (atoms per cell), a: [5], b: [5], c }]
+ * for X-rays, or [{ element, count, bCoh }] for neutrons.
+ * Returns { quantiles: Float32Array(CF_HM_QUANTILES), B, nAtoms } or { error }.
+ */
+function cfHistogramTarget(job, model, N) {
+    const atoms = (job.histogramAtoms || []).filter(a => a && a.count > 0);
+    if (!atoms.length) return { error: 'histogram matching needs the composition of the cell' };
+    const inv = buildInvDsq(job.cell);
+    if (!inv) return { error: 'histogram matching needs a valid cell' };
+    const N2 = N * N, N3 = N2 * N, half = N >> 1;
+    const signed = v => (v < half ? v : v - N);
+    const fOf = (a, s2) => {
+        if (Number.isFinite(a.bCoh)) return a.bCoh;
+        let f = Number(a.c) || 0;
+        for (let i = 0; i < a.a.length; i++) f += a.a[i] * Math.exp(-a.b[i] * s2);
+        return f;
+    };
+    // the data points: every member grid point, its indices, s^2 and intensity
+    const pts = [];
+    for (let g = 0; g < model.nOrbits; g++) {
+        const start = model.orbitStart[g], count = model.orbitCount[g], Im = model.orbitTargetI[g] / Math.max(1, count);
+        for (let i = 0; i < count; i++) {
+            const j = model.orbitIdx[start + i] & 0x7fffffff;
+            const h = signed(j % N), k = signed(Math.floor(j / N) % N), l = signed(Math.floor(j / N2));
+            pts.push({ j, h, k, l, s2: invDsq(inv, h, k, l) / 4, I: Im });
+        }
+    }
+    if (pts.length < 10) return { error: 'too few reflections for histogram matching' };
+    // overall B from a Wilson plot: ln(<I> / sum n f^2) = ln K - 2 B s^2, ten shells of equal count
+    const sumF2 = s2 => atoms.reduce((s, a) => { const f = fOf(a, s2); return s + a.count * f * f; }, 0);
+    const bySq = pts.slice().sort((p, q) => p.s2 - q.s2), shells = 10, xs = [], ys = [];
+    for (let s = 0; s < shells; s++) {
+        const part = bySq.slice(Math.floor(s * bySq.length / shells), Math.floor((s + 1) * bySq.length / shells));
+        if (!part.length) continue;
+        const ms2 = part.reduce((t, p) => t + p.s2, 0) / part.length, mI = part.reduce((t, p) => t + p.I, 0) / part.length, sf = sumF2(ms2);
+        if (mI > 0 && sf > 0) { xs.push(ms2); ys.push(Math.log(mI / sf)); }
+    }
+    let B = 2;
+    if (xs.length >= 3) {
+        const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
+        let sxy = 0, sxx = 0;
+        for (let i = 0; i < xs.length; i++) { sxy += (xs[i] - mx) * (ys[i] - my); sxx += (xs[i] - mx) * (xs[i] - mx); }
+        if (sxx > 0) B = -sxy / sxx / 2;
+    }
+    if (!Number.isFinite(B)) B = 2;
+    B = Math.min(8, Math.max(0, B));
+    // random structures on the same grid points; the sorted values, averaged
+    const rand = mulberry32((job.seed ^ 0x5bd1e995) >>> 0);
+    const quantiles = new Float64Array(CF_HM_QUANTILES);
+    const per = atoms.map(a => ({ a, n: Math.max(0, Math.round(a.count)) }));
+    const nAtoms = per.reduce((s, p) => s + p.n, 0);
+    if (!nAtoms) return { error: 'the composition gives no atom in the cell' };
+    const fs = pts.map(p => per.map(q => fOf(q.a, p.s2) * Math.exp(-B * p.s2)));
+    for (let r = 0; r < CF_HM_STRUCTURES; r++) {
+        const xyz = [];
+        per.forEach((q, e) => { for (let n = 0; n < q.n; n++) xyz.push([rand(), rand(), rand(), e]); });
+        const re = new Float64Array(N3), im = new Float64Array(N3);
+        for (let i = 0; i < pts.length; i++) {
+            const p = pts[i], fe = fs[i];
+            let sr = 0, si = 0;
+            for (const x of xyz) {
+                const ang = 2 * Math.PI * (p.h * x[0] + p.k * x[1] + p.l * x[2]), f = fe[x[3]];
+                sr += f * Math.cos(ang); si += f * Math.sin(ang);
+            }
+            re[p.j] = sr; im[p.j] = si;
+        }
+        fft3d(re, im, N, true);
+        let mean = 0;
+        for (let i = 0; i < N3; i++) mean += re[i];
+        mean /= N3;
+        let v = 0;
+        for (let i = 0; i < N3; i++) { const d = re[i] - mean; v += d * d; }
+        const sd = Math.sqrt(v / N3) || 1;
+        const sorted = Float64Array.from(re).sort();
+        for (let q = 0; q < CF_HM_QUANTILES; q++) {
+            const at = Math.min(N3 - 1, Math.floor((q + 0.5) / CF_HM_QUANTILES * N3));
+            quantiles[q] += (sorted[at] - mean) / sd / CF_HM_STRUCTURES;
+        }
+    }
+    return { quantiles: Float32Array.from(quantiles), B, nAtoms };
+}
+
+function cfHistogramReport(hm) {
+    return hm && !hm.error ? { applied: true, every: CF_HM_EVERY, start: CF_HM_START, B: hm.B, nAtoms: hm.nAtoms } : null;
+}
+
+/** Matches the real part of the map (Float64Array re, length N3) to the target quantiles, in place. */
+function cfHistogramMatch(re, N3, quantiles) {
+    let mean = 0;
+    for (let i = 0; i < N3; i++) mean += re[i];
+    mean /= N3;
+    let v = 0;
+    for (let i = 0; i < N3; i++) { const d = re[i] - mean; v += d * d; }
+    const sd = Math.sqrt(v / N3);
+    if (!(sd > 0)) return;
+    const lo = mean + CF_HM_LO * sd, width = (CF_HM_HI - CF_HM_LO) * sd, Bn = CF_HM_BINS;
+    const hist = new Uint32Array(Bn), cum = new Float64Array(Bn + 1);
+    const binOf = x => { const t = (x - lo) / width * Bn; const b = Math.min(Bn - 1, Math.max(0, Math.floor(t))); return [b, Math.min(1, Math.max(0, t - b))]; };
+    for (let i = 0; i < N3; i++) hist[binOf(re[i])[0]]++;
+    for (let b = 0; b < Bn; b++) cum[b + 1] = cum[b] + hist[b];
+    const Q = quantiles.length;
+    for (let i = 0; i < N3; i++) {
+        const [b, frac] = binOf(re[i]);
+        const rank = (cum[b] + frac * hist[b]) / N3, q = Math.min(Q - 1, Math.max(0, rank * Q - 0.5));
+        const q0 = Math.floor(q), q1 = Math.min(Q - 1, q0 + 1), w = q - q0;
+        re[i] = mean + sd * (quantiles[q0] * (1 - w) + quantiles[q1] * w);
+    }
+}
+
 // Interleaved-complex packing helpers shared by both backends.
 function modelInitialGrid(model, N, seed) {
     const init = new Float32Array(2 * N * N * N);
@@ -1324,6 +1463,9 @@ if (model.error) {
 // translations they cannot determine space-group phase relations.
 const lambda = model.haveTranslations ? requestedLambda : 0;
 
+const hm = job.histogramMatching ? cfHistogramTarget(job, model, N) : null;
+if (hm && hm.error) return { error: 'Histogram matching: ' + hm.error + '.' };
+
 
 
     // WEAK-REFLECTION PHASE FLIP (Oszlanyi & Suto 2005), same as the GPU path.
@@ -1376,7 +1518,10 @@ const weakI = weak.cutoff;
         for (let i = 0; i < N3; i++) { const d = re[i] - mean; varSum += d * d; }
         const delta = deltaSigma * Math.sqrt(varSum / N3);
 
-        for (let i = 0; i < N3; i++) {
+        if (hm && cfHistogramMatchingDue(iter)) {
+            cfHistogramMatch(re, N3, hm.quantiles);
+            im.fill(0);
+        } else for (let i = 0; i < N3; i++) {
             if (re[i] < delta) re[i] = -re[i];
             im[i] = 0;
         }
@@ -1538,6 +1683,7 @@ const weakI = weak.cutoff;
         map: bestRho, gridSize: N, peaks, rHistory, bestR, bestIter,
         finalR: rHistory[maxIter - 1], seed: job.seed, cell,
         volume: cellVolume(cell), backend: 'cpu', symLambda: lambda,
+histogramMatching: cfHistogramReport(hm),
 symLambdaRequested: requestedLambda,
 weakFraction,
 weakI,
@@ -1761,7 +1907,7 @@ async function cfLoadShader() {
     }
 
     const source = await cfWaitForGPU(resp.text(),'reading the charge-flipping shader');
-    const requiredAbi = 'CF_KERNEL_ABI: orbit-weak-v1';
+    const requiredAbi = 'CF_KERNEL_ABI: orbit-weak-hm-v1';
 
     if (!source.includes(requiredAbi)) {
         const got =
@@ -1827,6 +1973,16 @@ async function cfGetPipelines(device) {
     const plBest = device.createPipelineLayout({
         bindGroupLayouts: [layout0, layoutEmpty, layoutBest]
     });
+    // Histogram matching binds group 3 (histogram, cumulative counts, target
+    // quantiles); groups 1 and 2 are empty for its pipelines, as for keep_best.
+    const layoutHM = device.createBindGroupLayout({
+        entries: [
+            { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+            { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }
+        ]
+    });
+    const plHM = device.createPipelineLayout({ bindGroupLayouts: [layout0, layoutEmpty, layoutEmpty, layoutHM] });
 
     postMessage({type:'cf-status',message:'Compiling the GPU calculation…'});
     const mk = (entryPoint, pipelineLayout) => cfWaitForGPU(device.createComputePipelineAsync({
@@ -1834,7 +1990,7 @@ async function cfGetPipelines(device) {
     }),'compiling the charge-flipping shader',30000);
 
     const pipelines = {
-        layout0, layout1, layoutBest, layoutEmpty,
+        layout0, layout1, layoutBest, layoutEmpty, layoutHM,
         fft_stage:        mk('fft_stage', plGrid),
         copy_buf:         mk('copy_buf', plGrid),
         scale_inverse:    mk('scale_inverse', plGrid),
@@ -1849,7 +2005,11 @@ async function cfGetPipelines(device) {
         repartition:      mk('repartition', plSym),
         symmetrize:       mk('symmetrize', plSym),
         constrain:        mk('constrain', plSym),
-        zero_absent:      mk('zero_absent', plSym)
+        zero_absent:      mk('zero_absent', plSym),
+        hm_clear:         mk('hm_clear', plHM),
+        hm_count:         mk('hm_count', plHM),
+        hm_cumulate:      mk('hm_cumulate', plHM),
+        hm_apply:         mk('hm_apply', plHM)
     };
     const entries=Object.keys(pipelines).filter(k=>!k.startsWith('layout'));
     const compiled=await Promise.all(entries.map(k=>pipelines[k]));
@@ -2009,6 +2169,9 @@ if (model.error) {
 // Do not turn a Laue-only fallback into a false symmorphic phase model.
 const lambda = model.haveTranslations ? requestedLambda : 0;
 
+const hm = job.histogramMatching ? cfHistogramTarget(job, model, N) : null;
+if (hm && hm.error) return { error: 'Histogram matching: ' + hm.error + '.' };
+
 
     // ----------------------------------------------------------------------
     //  WEAK-REFLECTION PHASE FLIP (Oszlanyi & Suto 2005).
@@ -2100,7 +2263,7 @@ const weakI = weak.cutoff;
 
     const wgFull = cfCeilGroups(N3);
     const wgCluster = cfCeilGroups(model.nClusters);
-    const partialsLen = 4 + 2 * Math.max(wgFull, wgCluster);
+    const partialsLen = 8 + 2 * Math.max(wgFull, wgCluster);   // header of 8, see P_BASE in the WGSL
     const partialsBuf = mkStorage(partialsLen * 4);
     // partials[P_BESTR] is the record R that keep_best compares against. It has
     // to start at +inf so the first cycle always snapshots.
@@ -2256,6 +2419,21 @@ for (let g = 0; g < model.nOrbits; g++) {
     });
     const bgEmpty = device.createBindGroup({ layout: pl.layoutEmpty, entries: [] });
 
+    let bgHM = null;
+    if (hm) {
+        const hmHist = mkStorage(CF_HM_BINS * 4), hmCum = mkStorage((CF_HM_BINS + 1) * 4), hmQuant = mkStorage(hm.quantiles.length * 4);
+        device.queue.writeBuffer(hmQuant, 0, hm.quantiles);
+        bgHM = device.createBindGroup({ layout: pl.layoutHM, entries: [
+            { binding: 0, resource: { buffer: hmHist } }, { binding: 1, resource: { buffer: hmCum } }, { binding: 2, resource: { buffer: hmQuant } }] });
+    }
+    const passHM = (enc, pipeline, groups) => {
+        const p = enc.beginComputePass();
+        p.setPipeline(pipeline);
+        p.setBindGroup(0, bgMain); p.setBindGroup(1, bgEmpty); p.setBindGroup(2, bgEmpty); p.setBindGroup(3, bgHM);
+        p.dispatchWorkgroups(groups);
+        p.end();
+    };
+
     const res = { bufA, bufB, bgMain, bgSwapped, fftBindGroups };
 
     const pass1 = (enc, pipeline, groups, withSym) => {
@@ -2353,7 +2531,12 @@ for (let g = 0; g < model.nOrbits; g++) {
         cfEncodeFFT(enc, pl, res, N, true);              // F -> rho, in bufA
         pass1(enc, pl.reduce_moments, wgFull, false);
         pass1(enc, pl.finalize_moments, 1, false);       // writes partials[0] = delta
-        pass1(enc, pl.flip, wgFull, false);
+        if (hm && cfHistogramMatchingDue(iter)) {
+            passHM(enc, pl.hm_clear, cfCeilGroups(CF_HM_BINS));
+            passHM(enc, pl.hm_count, wgFull);
+            passHM(enc, pl.hm_cumulate, 1);
+            passHM(enc, pl.hm_apply, wgFull);
+        } else pass1(enc, pl.flip, wgFull, false);
         cfEncodeFFT(enc, pl, res, N, false);             // rho -> F, in bufA
 
         pass1(enc, pl.reduce_rfactor, wgCluster, true);
@@ -2472,6 +2655,7 @@ for (let g = 0; g < model.nOrbits; g++) {
         
 
         volume: cellVolume(cell), backend: 'gpu', symLambda: lambda,
+        histogramMatching: cfHistogramReport(hm),
         symLambdaRequested: requestedLambda,
 
         syncBatch: rBatch, msPerIteration: lastBatchMs > 0 ? lastBatchMs / Math.max(1, rBatch) : null,
@@ -2504,6 +2688,7 @@ if (typeof module !== 'undefined' && module.exports) {
         lorentzPolarization, polarizationK, describePolarization,
         normalizeSymops, findPeaks,
         runChargeFlipping: runChargeFlippingCPU, runChargeFlippingCPU, compareCFMaps,
+        cfHistogramTarget, cfHistogramMatch, cfHistogramMatchingDue,
         metricTensor, fracDistance, buildStructure, findOriginShift,
         symmetryAverage, reduceToAsymmetricUnit, applyOp, LAUE_OPS
     };
