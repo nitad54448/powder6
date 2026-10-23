@@ -20,6 +20,32 @@ RV.project = (function(){
     if(doc.fitHistory)doc.fitHistory.observations=Object.values(pool).map(function(raw){var o={key:raw.key};columns.forEach(function(c){o[c]=raw[c] || null;});return o;});
     return doc;
   }
-  async function save(){if(S.busy)return;RV.fitHistory.observations();var storage=RV.fitHistory.usage(),choice=await RV.ui.prompt('Save project',[{key:'compact',label:'Compact history',type:'checkbox',value:false,hint:'Keep the latest fit of each method and all records marked Keep. Otherwise save every retained record.'},{key:'density',label:'Include CF density maps',type:'checkbox',value:false,hint:'Atomic candidates and source information are always saved; density grids can be large.'}],'Prepare file','Observations: '+(storage.observations/1000000).toFixed(2)+' MB, stored once. Calculation history: '+(storage.history/1000000).toFixed(2)+' MB before compression.');if(!choice)return;St.setBusy(true,'Compressing project…');try{var output=await pack({compact:choice.compact,density:choice.density,progress:function(p){RV.ui.progress(p,100,'Saving '+p.toFixed(0)+'%');}});RV.ui.download('powder6_'+RV.ui.fileStamp()+'.powder6',output,'application/zip');RV.ui.toast('Saved project: '+(output.byteLength/1000000).toFixed(2)+' MB compressed.','ok');}finally{St.setBusy(false);RV.ui.progress(0,0);}}
+  /* Ask what to keep, then WHERE (Save As, while the click still counts), then compress and write. Every way out
+     says what happened: refused while busy, cancelled, saved (name and size), or failed and why. */
+  async function save(){
+    var ui=RV.ui;
+    if(S.busy){ui.toast('A calculation is running: wait for it to finish, or press Stop, then save the project again.','warn');return;}
+    if(!S.datasets.length && !S.phases.length){ui.toast('Nothing to save yet: read a pattern or make a phase first.','info');return;}
+    RV.fitHistory.observations();var storage=RV.fitHistory.usage(),hasPicker=typeof window.showSaveFilePicker==='function' && window.isSecureContext!==false;
+    var choice=await ui.prompt('Save project',[{key:'compact',label:'Compact history',type:'checkbox',value:false,hint:'Keep the latest fit of each method and all records marked Keep. Otherwise save every retained record.'},{key:'density',label:'Include CF density maps',type:'checkbox',value:false,hint:'Atomic candidates and source information are always saved; density grids can be large.'}],
+      hasPicker?'Choose file…':'Save',
+      'Observations: '+(storage.observations/1000000).toFixed(2)+' MB, stored once. Calculation history: '+(storage.history/1000000).toFixed(2)+' MB before compression. '+
+      (hasPicker?'Next, choose the file name and folder.':'The file goes to your browser’s download folder (to choose it each time, enable “Ask where to save each file” in the browser’s download settings).'));
+    if(!choice)return;
+    var target;
+    try{target=await ui.chooseSaveTarget('powder6_'+ui.fileStamp()+'.powder6','application/zip',{title:'Save project',description:'Powder 6 project',pickerId:'powder6-project',askName:false});}
+    catch(x){ui.toast('The project was not saved: the browser refused the file ('+(x && x.message || x)+').','err');return;}
+    if(!target){ui.toast('Project not saved (cancelled).','info');return;}
+    if(S.busy){ui.toast('A calculation started meanwhile: the project was not saved. Save again when it ends.','warn');return;}
+    St.setBusy(true,'Compressing project…');
+    try{
+      var output=await pack({compact:choice.compact,density:choice.density,progress:function(p){ui.progress(p,100,'Saving '+p.toFixed(0)+'%');}});
+      await ui.writeSaveTarget(target,output,'application/zip');
+      var size=(output.byteLength/1000000).toFixed(2)+' MB';
+      ui.toast(target.download?'Saved project '+target.name+' ('+size+') to your browser’s download folder. If it is not there, look for a blocked-download notice next to the address bar.':'Saved project as '+target.name+' ('+size+').','ok');
+    }catch(x){
+      ui.toast('The project could not be saved: '+(x && x.message || x)+'.'+(target.handle?' The file '+target.name+' may have been left empty; save again.':' Nothing was downloaded.'),'err');
+    }finally{St.setBusy(false);ui.progress(0,0);}
+  }
   return {pack:pack,unpack:unpack,save:save,binary:binary,values:values};
 })();

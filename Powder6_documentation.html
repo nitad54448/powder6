@@ -610,7 +610,7 @@ R_Bragg = Σ|I_obs − I_calc| / Σ I_obs   (Rietveld phases)</div>
 <h3 id="export">Export</h3>
 <div class="tablewrap"><table class="wrapfirst">
 <tr><th>Where</th><th>What it writes</th></tr>
-<tr><td>File → Save project (<kbd>Ctrl</kbd>+<kbd>S</kbd>)</td><td><code>powder6_&lt;timestamp&gt;.powder6</code>: compressed binary observations, datasets, phases, method setup, groups, retained history and structure candidates. Open it later with File → Open project, or drop it on the window.</td></tr>
+<tr><td>File → Save project (<kbd>Ctrl</kbd>+<kbd>S</kbd>)</td><td><code>powder6_&lt;timestamp&gt;.powder6</code>: compressed binary observations, datasets, phases, method setup, groups, retained history and structure candidates. After the options, <b>Choose file…</b> opens the browser's Save As dialog (name and folder) before compressing; where the browser has none, the file goes to its download folder and the message names it. Saving is refused, with a message, while a calculation runs; a failure is reported. Open it later with File → Open project, or drop it on the window.</td></tr>
 <tr><td>File → Save results of selected</td><td><code>&lt;calculation&gt;_results_&lt;timestamp&gt;.txt</code>: agreement factors, phases and atoms.</td></tr>
 <tr><td>File → Save reflections and intensities</td><td><code>…_reflections_….txt</code>: the reflection list, with extracted intensities and uncertainties for Le Bail and WPPF phases, and the flags above.</td></tr>
 <tr><td>File → Save calculated patterns</td><td><code>…_patterns_….txt</code>: observed and calculated patterns of each selected dataset.</td></tr>
