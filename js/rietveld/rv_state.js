@@ -819,6 +819,77 @@ RV.state = (function () {
     phaseChanged(ph);
   }
 
+  /* The phase carried to another space group by the change of basis (P, p) (js/sg_convert.js): the space group, the cell of
+     the starting model, of every dataset holding the phase and of each of their saved calculations, and the atoms of each,
+     rebuilt from its OWN values of the source atoms, so refined positions and B stay refined. conv: SGConvert.convertStructure
+     of the starting model (its atoms define the new sites and names). The preferred-orientation direction and the uniaxial
+     broadening axes follow the basis (h' = h P). Fit flags follow the source atoms and the cell; uncertainties and results are
+     cleared, and atomic constraints and parameter links of the old atoms are removed, since their atoms no longer exist.
+     Returns what was changed, for the message. */
+  function convertPhase(ph, sg, conv, P, p) {
+    var K = SGConvert, k = ph.key + '.', oldOps = ph.ops, oldLabels = ph.atoms.map(function (a) { return a.label; });
+    var CELLS = ['a', 'b', 'c', 'alpha', 'beta', 'gamma'], free = C.cellParams(sg.system, sg.uniqueAxis);
+    var maps = [{ v: ph.v, fit: ph.fit, template: true }], nDatasets = 0, nBanks = 0;
+    S.datasets.forEach(function (d) {
+      if (hasPhase(d, ph)) { maps.push({ v: d.p, fit: d.fit }); nDatasets++; }
+      Object.keys(d.calculations || {}).forEach(function (m) {
+        var b = d.calculations[m];
+        if (b && b.p && Number.isFinite(b.p[k + 'a'])) { if (!b.fit) b.fit = {}; maps.push({ v: b.p, fit: b.fit }); nBanks++; }
+      });
+    });
+    // what each holds now, read with the old symmetry before any name changes
+    maps.forEach(function (m) {
+      m.cell = cellOf(ph, m.v) || cellOf(ph, ph.v);
+      m.cellFit = CELLS.some(function (c) { return !!m.fit[k + c]; });
+      m.atoms = {};
+      oldLabels.forEach(function (l) {
+        var pre = k + l + '.', val = function (c) { return Number.isFinite(m.v[pre + c]) ? m.v[pre + c] : ph.v[pre + c]; };
+        m.atoms[l] = { xyz: [val('x'), val('y'), val('z')], occ: val('occ'), B: val('B'), fitXYZ: ['x', 'y', 'z'].some(function (c) { return !!m.fit[pre + c]; }), fitOcc: !!m.fit[pre + 'occ'], fitB: !!m.fit[pre + 'B'] };
+      });
+    });
+    function mine(n) { var c = C.classify(n); return c.kind === 'atom' && c.phase === ph.key; }
+    function drop(m) { if (m) Object.keys(m).forEach(function (n) { if (mine(n)) delete m[n]; }); }
+    [ph.v, ph.fit, S.shared, S.limits].forEach(drop);
+    S.datasets.forEach(function (ds) {
+      [ds.p, ds.fit, ds.esd, ds.mem, ds.apart].forEach(drop);
+      Object.keys(ds.calculations || {}).forEach(function (m) { var b = ds.calculations[m]; [b.p, b.fit, b.esd].forEach(drop); b.stats = null; b.ints = null; b.esd = {}; });
+    });
+    var links = S.parameterLinks.length;
+    S.parameterLinks = S.parameterLinks.filter(function (l) { return !mine(l.source.name) && !mine(l.target.name); });
+    var constraints = (ph.constraints || []).length;
+    // the new group
+    ph.sg = { number: sg.number, symbol: sg.symbol, hall: sg.hall, system: sg.system, laue: sg.laue, setting: sg.setting, uniqueAxis: sg.uniqueAxis };
+    ph.ops = sg.ops; ph.wyckoff = sg.wyckoff; ph.atoms = []; ph.constraints = [];
+    ph.poDir = K.hklToNew(ph.poDir, P);
+    var broad = C.broadeningConfig(ph.broadening);
+    broad.sizeAxis = K.hklToNew(broad.sizeAxis, P); broad.strainAxis = K.hklToNew(broad.strainAxis, P);
+    ph.broadening = C.broadeningConfig(broad);
+    // the cells, each from its own
+    maps.forEach(function (m) {
+      var nc = normaliseCell(K.transformCell(m.cell, P), sg.system, sg.uniqueAxis);
+      CELLS.forEach(function (c) { m.v[k + c] = nc[c]; m.fit[k + c] = m.cellFit && free.indexOf(c) >= 0; });
+      m.newCell = nc;
+    });
+    // the atoms: sites from the starting model, values of each from its own source atoms
+    var used = new Set();
+    conv.atoms.forEach(function (a) { addAtomTo(ph, { label: a.label, type: a.type, x: a.x, y: a.y, z: a.z, occ: a.occ, B: a.B }, maps[0].newCell, used); });
+    maps.forEach(function (m, mi) {
+      conv.atoms.forEach(function (a, ai) {
+        var at = ph.atoms[ai], pre = k + at.label + '.', src = m.atoms[a.from.label];
+        if (!src) return;
+        if (!m.template) {
+          var xyz = C.sitePosition(at.site, K.derive(a.from, src.xyz, oldOps, P, p, sg.ops));
+          m.v[pre + 'x'] = xyz[0]; m.v[pre + 'y'] = xyz[1]; m.v[pre + 'z'] = xyz[2]; m.v[pre + 'occ'] = src.occ; m.v[pre + 'B'] = src.B;
+        }
+        ['x', 'y', 'z'].forEach(function (c, i) { m.fit[pre + c] = src.fitXYZ && at.site.free.indexOf(i) >= 0; });
+        m.fit[pre + 'occ'] = src.fitOcc; m.fit[pre + 'B'] = src.fitB;
+      });
+    });
+    S.datasets.forEach(function (ds) { ds.stats = null; ds.esd = {}; ds.ints = null; });
+    phaseChanged(ph);
+    return { datasets: nDatasets, banks: nBanks, linksDropped: links - S.parameterLinks.length, constraintsDropped: constraints };
+  }
+
   // ---------------------------------------------------------------- values
   function invalidate(ds) { ds.calc = null; }
   function clearFit(ds, banks) {
@@ -1291,7 +1362,7 @@ RV.state = (function () {
     selectIds: selectIds, toggle: toggle, setFocus: setFocus, range: range, selectAll: selectAll, selected: selected, first: first,
     currentPhase: currentPhase, selectPhase: selectPhase, makePhase: makePhase, addAtomTo: addAtomTo, addPhase: addPhase, removePhase: removePhase,
     hasPhase: hasPhase, phasesIn: phasesIn, participatingPhases:participatingPhases, holdersOf: holdersOf, setPhaseIn: setPhaseIn,
-    phaseChanged: phaseChanged, renameAtom: renameAtom, removeAtom: removeAtom, replaceAtoms: replaceAtoms, setPhaseSG: setPhaseSG, cleanLabel: cleanLabel,
+    phaseChanged: phaseChanged, renameAtom: renameAtom, removeAtom: removeAtom, replaceAtoms: replaceAtoms, setPhaseSG: setPhaseSG, convertPhase: convertPhase, cleanLabel: cleanLabel,
     invalidate: invalidate, invalidateAll: invalidateAll, setParam: setParam, setFit: setFit, copyParams: copyParams,
     pointWeight: pointWeight, fitPoints: fitPoints, phaseDefs:phaseDefs, problemFor: problemFor, jobFor: jobFor, globalJob: globalJob, sharedStartConflicts:sharedStartConflicts, resolveSharedStarts:resolveSharedStarts, fitNames: fitNames, calcFor: calcFor,
     estimateScales: estimateScales, applyResult: applyResult, fitStatus: fitStatus,

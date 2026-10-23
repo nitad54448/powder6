@@ -2,6 +2,13 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.8.0 — 23 October 2026
+
+1. Phases → **Convert…** (left of Browse…) describes a phase in another space group or setting. The structure is expanded to the full cell, carried to the new axes and origin, and reduced with the new symmetry; the cell, the atomic positions, B and occupancies of the starting model, of every dataset holding the phase (each from its own refined values) and of their saved calculations are converted, with their fit flags. The transformation (new axes a′, b′, c′ and origin) is found automatically among axis changes with entries −1, 0, 1 and origin shifts in eighths, or entered by hand (e.g. "a+b,-a+b,c", "1/8,1/8,1/8"). A live preview shows how the groups relate (same group in another setting, subgroup, supergroup), the old and new cells, the sites that split or merge, and the cell content.
+   - A subgroup splits sites (Fe1 → Fe1a, Fe1b); a supergroup merges atoms the new symmetry relates, and is refused, with the atom and distance named, when the structure or any dataset's refined positions lack that symmetry within the tolerance (0.1 Å by default).
+   - The preferred-orientation direction and uniaxial broadening axes follow the new axes; anisotropic size and Stephens strain coefficients are flagged for refinement; atomic constraints and parameter links of the old atoms are removed and counted. Fit results are cleared; Ctrl+Z undoes the conversion.
+2. Projects are saved with the extension **.project**. Opening accepts .project, .archive, the .powder6 files of earlier versions, and any zip that holds a project.json, whatever its name; other zips still go to the pattern readers.
+
 ## 2.7.1 — 23 October 2026
 
 1. Saving a project always ends with a message and, unless cancelled, a file. After the options, Choose file… opens the browser's Save As dialog before compression, so the name and folder are chosen while the click still counts; the compressed project is then written there. Where the browser has no Save As (or refuses it), the project downloads to its download folder and the message gives the file name and where to look if the browser held the download. Saving while a calculation runs, with nothing to save, a cancel, and a failure while compressing or writing each give a message instead of nothing. Download links stay valid long enough for large files.

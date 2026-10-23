@@ -27,6 +27,7 @@
 <script defer src="js/wyckoff_report.js"></script>
 <script defer src="js/density3d.js"></script>
 <script defer src="js/spacegroup_ui.js"></script>
+<script defer src="js/sg_convert.js"></script>
 <!-- the fit (also run by js/rietveld_worker.js) and the program -->
 <script defer src="js/atomic_constraints.js"></script>
 <script defer src="js/rietveld_core.js"></script>
@@ -148,7 +149,8 @@
         <p>The dataset checkboxes define both the fit and plot selection. Choose All datasets or a saved group for large batches. Clicking a selected dataset inspects it without changing that selection. Plots offers Overlay, Overview and Inspect one dataset. Anchors, Backgnd, Phases, Refl and Backgnd subtract have independent display controls.</p>
         <p>Ctrl+click places an anchor at both cursor coordinates; right-drag moves it, Escape cancels the move. Edit exact X (2θ), Y (intensity) and the Y refinement checkbox in <b>Datasets → dataset tab → Background</b>. Magenta filled anchors are refinable; grey hollow anchors are fixed. A yellow line identifies the anchor being edited. Ctrl+Shift+drag edits exclusions.</p>
         <p>Each method retains its own setup and current result. <b>History</b> stores completed fits by method, with grouped individual batches and complete global fits, and every charge-flipping and Wyckoff solution. For the chosen run it lists everything: settings, phases, statistics, every parameter with its uncertainty, instrument, and for solutions their sites. Set restores a record; Keep protects it from automatic pruning; Delete asks first. <b>Save History…</b> and the report buttons write the records, with all their results, as JSON or text. The default automatic budget is 100 MB, with 20 recent unkept records for each method and, separately, for charge flipping and for the Wyckoff search; current and kept results are protected. Ctrl+Z undoes recent editing. Log contains detailed messages.</p>
-        <p>Save a compressed <b>.powder6</b> project to retain observations, model definitions, method states, groups, history and structure candidates. Observations are stored once. Compact history and CF density-map inclusion are optional. Open the file later using File or drag and drop; this is how History is read back.</p>
+        <p>Save a compressed <b>.project</b> file (projects saved as .powder6 or .archive open too) to retain observations, model definitions, method states, groups, history and structure candidates. Observations are stored once. Compact history and CF density-map inclusion are optional. Open the file later using File or drag and drop; this is how History is read back.</p>
+        <p><b>Convert…</b> next to the space group of a phase describes the structure in another space group or setting: the cell, the atomic positions and the values of every dataset are transformed with it, sites split for a subgroup and merge for a supergroup (only when the structure has that symmetry). The transformation is found automatically or entered as new axes and origin.</p>
         <p>Instrument resolution belongs to explicitly selected datasets. Sample presets target a phase and datasets. CF and Wyckoff candidates can be copied to an existing or new phase, with affected datasets shown before transfer. The source solution remains in History.</p>
         <table class="grid"><tbody><tr><th>Parameter ownership</th><th>Controls</th></tr>
           <tr><td>Acquisition / dataset</td><td>Wavelength, radiation, polarization, range, excluded regions and background; zero point defaults to local.</td></tr>

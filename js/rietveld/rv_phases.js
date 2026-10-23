@@ -81,6 +81,7 @@ RV.phasesTab = (function () {
         '<section class="pblock"><h2>Phase</h2><div class="form-grid">' +
           '<label for="phase-select">Phase name</label><div><span class="phase-control-row phase-name-row"><select id="phase-select" aria-label="Phase name"></select><input type="color" id="ph-color" data-ph="color" aria-label="Phase colour" title="Change phase colour" value="' + RV.plots.phaseColor(S.phases.indexOf(ph)) + '"><button type="button" id="ph-rename" data-act="rename-phase" title="Rename this phase">Edit</button></span></div>' +
           '<label for="ph-sg">Space group</label><div><span class="phase-control-row"><input id="ph-sg" data-ph="sg" list="sg-list" value="' + esc(ph.sg.symbol) + '" spellcheck="false" autocomplete="off" title="Symbol, number or Hall symbol">' +
+            '<button type="button" data-act="sg-convert" title="Describe this structure in another space group or setting: the cell, the atomic positions and the values of every dataset are transformed with it">Convert…</button>' +
             '<button type="button" data-act="sg-browse" title="Choose the space group and its setting by crystal system, centring, symbol or number">Browse…</button></span><small id="ph-sg-info"></small></div>' +
           (C.usesSeparatedProfile(ph) ? ['size','strain'].map(function (kind) {
             var b = C.broadeningConfig(ph.broadening), choices = kind === 'size' ? [['isotropic','Isotropic'],['uniaxial','Uniaxial'],['ellipsoid','Ellipsoidal']] : [['isotropic','Isotropic'],['uniaxial','Uniaxial'],['stephens','Stephens quartic']];
@@ -288,6 +289,7 @@ RV.phasesTab = (function () {
     else if (a === 'atom') RV.cmd.addAtom();
     else if (a === 'rename-phase' && ph && !busy()) renamePhase(ph);
     else if (a === 'sg-browse' && ph && !busy()) openBrowser(ph);
+    else if (a === 'sg-convert' && ph && !busy()) convertDialog(ph);
     else if (a === 'preset-load' && ph && !busy()) {RV.app.showTab('datasets');RV.cmd.loadPreset();}
     else if (a === 'preset-save' && ph) RV.cmd.savePreset();
     else if (a === 'del-atom' && ph && !busy()) {
@@ -296,6 +298,130 @@ RV.phasesTab = (function () {
       var switched = St.removeAtom(ph, label);
       ui.toast('Atom ' + label + ' deleted from ' + ph.name + '.' + (switched ? ' It was the last one: ' + ph.name + ' is now fitted by Le Bail.' : ''), switched ? 'warn' : 'info');
     }
+  }
+
+  // ---------------------------------------------------------------- conversion to another space group (js/sg_convert.js)
+  function atomList(ph, v) {
+    return ph.atoms.map(function (a) {
+      var pre = ph.key + '.' + a.label + '.', val = function (c) { return Number.isFinite(v[pre + c]) ? v[pre + c] : ph.v[pre + c]; };
+      return { label: a.label, type: a.type, x: val('x'), y: val('y'), z: val('z'), occ: val('occ'), B: val('B') };
+    });
+  }
+  function cellText(c) { return c ? ['a', 'b', 'c'].map(function (k) { return c[k].toFixed(4); }).join(', ') + ' Å; ' + ['alpha', 'beta', 'gamma'].map(function (k) { return c[k].toFixed(3); }).join(', ') + '°' : '—'; }
+  // f: { target, mode ('auto' | 'manual'), basis, shift, tol } -> everything the preview shows and the conversion needs
+  function convertPlan(ph, f) {
+    var K = SGConvert, sg = St.resolveSG(String(f.target || '').trim());
+    if (!sg) return { error: 'Space group not recognised: "' + f.target + '". Type a symbol (P 21/n, Fm-3m), a number or a Hall symbol.' };
+    var cell = St.cellOf(ph, ph.v), norm = function (c) { return normaliseCell(c, sg.system, sg.uniqueAxis); }, t, others = 0;
+    if (f.mode === 'auto') {
+      if (sg.hall === ph.sg.hall) return { sg: sg, error: ph.name + ' is already in ' + St.sgText(sg) + (sg.setting ? ', setting ' + sg.setting : '') + '. To move the origin or the axes within it, choose Enter it.' };
+      var found = K.findTransforms(ph.ops, sg.ops, cell, { normalise: norm });
+      if (!found.length) return { sg: sg, error: 'No change of axes (entries −1, 0, 1) and origin (in eighths) relates ' + St.sgText(ph.sg) + ' and ' + St.sgText(sg) +
+        ' with a cell that fits the ' + sg.system + ' metric within 3 %. The new group must be a subgroup, a supergroup or another setting of the old one, in a compatible cell; otherwise enter the transformation (for example a centred or doubled cell) by hand.' };
+      t = found[0]; others = found.length - 1;
+    } else {
+      var P = K.parseBasis(f.basis), p = K.parseShift(f.shift);
+      if (!P) return { sg: sg, error: 'New axes: write three vectors in the old axes, e.g. "a+b,-a+b,c" or "2a,b,c"; they must not be coplanar.' };
+      if (!p) return { sg: sg, error: 'New origin: three numbers in the old axes, e.g. "0,0,0" or "1/8,1/8,1/8".' };
+      var nc = K.transformCell(cell, P);
+      t = { P: P, p: p, relation: K.relation(ph.ops, sg.ops, P, p), cell: nc, misfit: K.metricMisfit(nc, norm) };
+    }
+    var newCell = norm(t.cell);
+    if (!newCell) return { sg: sg, error: 'The transformed cell cannot be given the ' + sg.system + ' metric.' };
+    var conv = K.convertStructure(atomList(ph, ph.v), ph.ops, sg.ops, cell, t.P, t.p, { tol: f.tol, cell: newCell });
+    // every dataset's own (refined) positions must have the new symmetry too
+    var dsBad = [];
+    if (!conv.violations.length && t.relation !== 'same' && t.relation !== 'subgroup') St.holdersOf(ph).forEach(function (d) {
+      var c = St.cellOf(ph, d.p) || cell, r = K.convertStructure(atomList(ph, St.atomicValues(d)), ph.ops, sg.ops, c, t.P, t.p, { tol: f.tol, cell: norm(K.transformCell(c, t.P)) });
+      if (r.violations.length) dsBad.push(d.name + ': ' + r.violations[0]);
+    });
+    return { sg: sg, t: t, others: others, conv: conv, cell: cell, newCell: newCell, dsBad: dsBad, det: K.det3(t.P) };
+  }
+  function previewHTML(ph, plan) {
+    var K = SGConvert;
+    if (plan.error) return '<p class="warn">' + esc(plan.error) + '</p>';
+    var t = plan.t, c = plan.conv, rel = {
+      same: 'Another setting of the same group: the structure is unchanged, described in new axes.',
+      subgroup: 'A subgroup of ' + St.sgText(ph.sg) + ': every atom is kept; sites the lower symmetry no longer relates are split and refine independently.',
+      supergroup: 'A supergroup of ' + St.sgText(ph.sg) + ': atoms the new symmetry relates are merged into one site. This is allowed only because the structure has that symmetry within the tolerance.',
+      '': 'With this transformation neither group contains the other: every atom must still find its equivalents.' }[t.relation];
+    var split = Object.keys(c.split).map(function (l) { return l + ' → ' + c.split[l] + ' sites'; }), merged = c.merged.map(function (g) { return g.join(' + '); });
+    var h = '<div class="convert-preview-body"><p><b>' + esc(St.sgText(ph.sg)) + ' → ' + esc(St.sgText(plan.sg)) + (plan.sg.setting ? ', ' + esc(plan.sg.setting) : '') + '.</b> ' + esc(rel) + '</p>' +
+      '<dl class="sv-dl"><dt>New axes</dt><dd>a′, b′, c′ = ' + esc(K.formatBasis(t.P)) + (plan.others ? ' <span class="hint">(' + plan.others + ' other equivalent choice' + (plan.others === 1 ? '' : 's') + ' found; Enter it to use another)</span>' : '') + '</dd>' +
+      '<dt>New origin</dt><dd>' + esc(K.formatShift(t.p)) + ' in the old axes</dd>' +
+      '<dt>Cell</dt><dd>' + esc(cellText(plan.cell)) + '<br>→ ' + esc(cellText(plan.newCell)) + (Math.abs(Math.abs(plan.det) - 1) > 1e-9 ? ' <span class="hint">(volume × ' + (+Math.abs(plan.det).toFixed(4)) + ')</span>' : '') + '</dd>' +
+      (t.misfit > 1e-4 ? '<dt>Metric</dt><dd class="warn">The cell was adjusted by up to ' + (100 * t.misfit).toFixed(2) + ' % to obey the ' + esc(plan.sg.system) + ' metric.</dd>' : '') +
+      (plan.det < 0 ? '<dt>Hand</dt><dd class="warn">The new axes are left-handed: the structure is inverted.</dd>' : '') +
+      '<dt>Atoms</dt><dd>' + ph.atoms.length + ' → ' + c.atoms.length + ' site' + (c.atoms.length === 1 ? '' : 's') + (split.length ? '; split: ' + esc(split.join(', ')) : '') + (merged.length ? '; merged: ' + esc(merged.join(', ')) : '') + '</dd>' +
+      '<dt>Cell content</dt><dd>' + (+c.contentNew.toFixed(3)) + ' atoms' + (Math.abs(c.contentNew - c.contentExpected) > 1e-3 ? ' <span class="warn">(expected ' + (+c.contentExpected.toFixed(3)) + ')</span>' : ', as expected') + '</dd></dl>';
+    if (c.atoms.length) h += '<div class="table-wrap"><table class="grid compact"><thead><tr><th>New site</th><th>From</th><th>x</th><th>y</th><th>z</th><th>Mult.</th></tr></thead><tbody>' +
+      c.atoms.slice(0, 40).map(function (a) { return '<tr><td>' + esc(a.label) + '</td><td>' + esc(a.from.label) + '</td><td>' + a.x.toFixed(5) + '</td><td>' + a.y.toFixed(5) + '</td><td>' + a.z.toFixed(5) + '</td><td>' + a.mult + '</td></tr>'; }).join('') + '</tbody></table></div>' +
+      (c.atoms.length > 40 ? '<p class="hint">and ' + (c.atoms.length - 40) + ' more.</p>' : '');
+    var holders = St.holdersOf(ph).length, notes = [];
+    notes.push('The cell and the atoms of ' + (holders ? holders + ' dataset' + (holders === 1 ? '' : 's') + ' (each from its own values) and the starting model' : 'the starting model') + ' are converted; their fit results are cleared. Ctrl+Z undoes the conversion.');
+    if (ph.constraints && ph.constraints.length) notes.push(ph.constraints.length + ' atomic constraint(s) refer to the old atoms and are removed.');
+    var b = C.broadeningConfig(ph.broadening);
+    if (b.size === 'ellipsoid' || b.strain === 'stephens') notes.push('Anisotropic size or Stephens strain coefficients refer to the old axes and Laue class: refine them again.');
+    var po = K.hklToNew(ph.poDir, t.P);
+    if (po.join() !== ph.poDir.join()) notes.push('Preferred orientation (' + ph.poDir.join(' ') + ') becomes (' + po.join(' ') + ').');
+    h += '<p class="hint">' + esc(notes.join(' ')) + '</p>';
+    if (c.violations.length) h += '<p class="warn"><b>Not converted: the structure does not have this symmetry.</b> ' + esc(c.violations.slice(0, 4).join(' ')) + (c.violations.length > 4 ? ' (' + (c.violations.length - 4) + ' more)' : '') + ' Raise the tolerance if the structure is only slightly distorted, or choose a subgroup.</p>';
+    if (plan.dsBad.length) h += '<p class="warn"><b>Not converted:</b> the refined positions of ' + plan.dsBad.length + ' dataset(s) do not have this symmetry. ' + esc(plan.dsBad.slice(0, 2).join(' ')) + '</p>';
+    return h + '</div>';
+  }
+  async function convertDialog(ph) {
+    if (typeof SGConvert === 'undefined' || !S.sgReady) { ui.toast('The space-group database is not loaded.', 'warn'); return; }
+    var key = ph.key, last = null;
+    var fields = [
+      { key: 'target', label: 'New space group', type: 'text', value: ph.sg.symbol, list: 'sg-list', hint: 'Symbol, number or Hall symbol. A subgroup splits sites, a supergroup merges atoms the new symmetry relates, another setting changes only the axes.' },
+      { key: 'mode', label: 'Transformation', type: 'select', value: 'auto', options: [['auto', 'Find it'], ['manual', 'Enter it']] },
+      { key: 'basis', label: 'New axes a′, b′, c′', type: 'text', value: 'a,b,c', when: 'mode:manual', hint: 'In the old axes, e.g. a+b,-a+b,c or 2a,b,c.' },
+      { key: 'shift', label: 'New origin', type: 'text', value: '0,0,0', when: 'mode:manual', hint: 'In the old axes, e.g. 1/8,1/8,1/8.' },
+      { key: 'tol', label: 'Tolerance /Å', type: 'number', value: 0.1, hint: 'How far an atom may be from where the new symmetry puts its equivalent (supergroups only).' }
+    ];
+    function read(body) { var o = {}; fields.forEach(function (f) { var e = body.querySelector('[data-key="' + f.key + '"]'); o[f.key] = f.type === 'number' ? ui.parseNum(e.value) : e.value; }); return o; }
+    var res = await ui.prompt('Convert ' + ph.name + ' to another space group', fields, 'Convert',
+      'Now ' + esc(St.sgText(ph.sg)) + (ph.sg.setting ? ', ' + esc(ph.sg.setting) : '') + ', ' + ph.atoms.length + ' site' + (ph.atoms.length === 1 ? '' : 's') + '. The structure is expanded to the full cell, carried to the new axes and origin, and reduced again with the new symmetry.',
+      { wide: true, after: '<div class="convert-preview" data-convert-preview aria-live="polite"></div>',
+        onOpen: function (body) {
+          var timer = 0, out = body.querySelector('[data-convert-preview]');
+          function update() {
+            var f = read(body), p = St.phaseByKey(key);
+            if (!p) return;
+            try { last = convertPlan(p, f); } catch (e) { last = { error: e.message }; }
+            out.innerHTML = previewHTML(p, last);
+          }
+          body.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(update, 200); });
+          body.addEventListener('change', function (e) {
+            // switching to Enter it starts from the transformation that was found
+            if (e.target.getAttribute('data-key') === 'mode' && e.target.value === 'manual' && last && last.t) {
+              body.querySelector('[data-key="basis"]').value = SGConvert.formatBasis(last.t.P); body.querySelector('[data-key="shift"]').value = SGConvert.formatShift(last.t.p);
+            }
+            clearTimeout(timer); update();
+          });
+          update();
+        },
+        check: function (v, body) {
+          var p = St.phaseByKey(key);
+          if (!p) return 'The phase is gone.';
+          if (!(v.tol > 0 && v.tol <= 2)) return 'The tolerance is a distance between 0 and 2 Å.';
+          last = convertPlan(p, v);
+          body.querySelector('[data-convert-preview]').innerHTML = previewHTML(p, last);
+          if (last.error) return last.error;
+          if (last.conv.violations.length) return 'The structure does not have the symmetry of ' + St.sgText(last.sg) + ' within ' + v.tol + ' Å (see the preview).';
+          if (last.dsBad.length) return 'The refined positions of ' + last.dsBad.length + ' dataset(s) do not have the symmetry of ' + St.sgText(last.sg) + ' (see the preview).';
+          return '';
+        } });
+    if (!res || !last || last.error) return;
+    ph = St.phaseByKey(key);
+    if (!ph || busy()) return;
+    var plan = last, from = St.sgText(ph.sg);
+    RV.history.take('convert ' + ph.name + ' to ' + plan.sg.symbol);
+    var r = St.convertPhase(ph, plan.sg, plan.conv, plan.t.P, plan.t.p);
+    var msg = ph.name + ' converted from ' + from + ' to ' + St.sgText(plan.sg) + ' (a′, b′, c′ = ' + SGConvert.formatBasis(plan.t.P) + '; origin ' + SGConvert.formatShift(plan.t.p) + '): ' +
+      ph.atoms.length + ' site' + (ph.atoms.length === 1 ? '' : 's') + ', ' + (r.datasets ? r.datasets + ' dataset' + (r.datasets === 1 ? '' : 's') + (r.banks ? ' and ' + r.banks + ' saved calculation' + (r.banks === 1 ? '' : 's') : '') + ' converted' : 'starting model converted') +
+      (r.constraintsDropped ? '; ' + r.constraintsDropped + ' atomic constraint(s) removed' : '') + (r.linksDropped ? '; ' + r.linksDropped + ' parameter link(s) to the old atoms removed' : '') + '. Fit again.';
+    ui.toast(msg, r.constraintsDropped || r.linksDropped ? 'warn' : 'ok');
   }
 
   // the space-group browser (spacegroup_ui.js); Apply sets the space group of the phase it was opened for

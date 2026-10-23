@@ -17,7 +17,8 @@ Full documentation: [`Powder6_documentation.html`](Powder6_documentation.html): 
 - Space-group test, charge flipping (WebGPU with CPU fallback) and a Wyckoff-site search (WebGPU), handing the atoms back for a Rietveld fit.
 - Readers for xy/csv/txt, PANalytical `.xrdml`, Bruker `.brml`/`.uxd`, Rigaku `.ras`/`.rasx`, Philips `.udf`/`.rd`/`.sd`, GSAS `.xra`/`.esd`, Jade `.mdi`, pdCIF, and project files.
 - Results as text, CIF, pdCIF, SHELX HKLF 4 and a PDF report; command line, edit undo, and persistent calculation History with Set/Keep.
-- Compressed `.powder6` projects, saved dataset groups, and overview/focused inspection for large series.
+- Phases → Convert… carries a phase to another space group or setting (subgroups split sites, supergroups merge them when the structure has the symmetry); cell, positions and every dataset are transformed.
+- Compressed `.project` files (`.archive` and the `.powder6` files of earlier versions open too), saved dataset groups, and overview/focused inspection for large series.
 
 ## Run it
 
@@ -58,7 +59,7 @@ Data files the page fetches. Without them the program still starts, but loses th
 3. In **Commands → Method**, choose Le Bail or WPPF. In **Datasets**, choose a coloured dataset tab and set its values, refinement flags, bounds, sharing and links. Phase definitions and starting models are in **Phases**; numerical conditions are in **Settings**.
 4. With atoms in the phase, switch it to Rietveld and refine positions, B and occupancies.
 5. For an unknown structure: WPPF fit → **Commands → Structure** to extract intensities, test the space group and run charge flipping or a Wyckoff search → inspect **Results → Structure** → transfer atoms to the phase and fit by Rietveld.
-6. Press **FIT** or F9 from any view. Inspect the **Le Bail**, **WPPF** or **Rietveld** results tab and choose a completed run. **Use as start** restores that run into the working setup; **Keep** protects it. Save a compressed `.powder6` project from File (Ctrl+S): after the options, a Save As dialog lets you choose the name and folder; browsers without one download it to their download folder, and the message names the file.
+6. Press **FIT** or F9 from any view. Inspect the **Le Bail**, **WPPF** or **Rietveld** results tab and choose a completed run. **Use as start** restores that run into the working setup; **Keep** protects it. Save a compressed `.project` file from File (Ctrl+S): after the options, a Save As dialog lets you choose the name and folder; browsers without one download it to their download folder, and the message names the file.
 
 On the pattern, Ctrl+click places a background anchor at the cursor's angle and height; right-drag an anchor to move it. Ctrl+Shift+drag still marks exclusions. Filled magenta anchors are refinable, hollow grey anchors are fixed, and editing an anchor shows a yellow vertical guide. Edit exact X/Y coordinates and the Y refinement flag together in the dataset tab's **Background** group. Plots has separate **Anchors**, **Backgnd**, **Phases**, **Refl** and **Backgnd subtract** controls. Anchors is greyed out when no plotted dataset uses spline anchors, in a multi-dataset Overview, or during background subtraction; its checked preference is preserved. Chebyshev backgrounds use coefficients rather than anchor points. Each dataset has independent **Sample** and **Resolution** refinement checkboxes. Each method retains its own background and fitted results; Le Bail and WPPF results display the retained Rietveld atomic model as unused.
 
@@ -89,7 +90,7 @@ Each method's results show one completed run, with a selector for previous runs.
 
 Set and Keep are independent: use both to restore a run and retain it for later. Automatic pruning uses a configurable 100 MB budget and 20 recent unkept records per method, with separate quotas of the same size for charge-flipping and Wyckoff results, so structure searches never push out fits; each method's current result is also protected while current. Delete asks for confirmation (Ctrl+Z undoes it). History shows every detail of the chosen run and can be saved as JSON (with observations) or as a text report; it is read back only as part of a project. Undo keeps 40 recent editing states in memory and shares observation/result arrays.
 
-Project format 3 uses a compressed `.powder6` archive. Observation columns are binary 64-bit values and are stored once, with JSON model and history metadata. Full saves include retained history; compact saves include current results and kept records. CF sites and candidates are retained; density grids are optional. The completed save reports its compressed size.
+Project format 3 uses a compressed archive saved as `.project`; `.archive`, `.powder6` (versions before 2.8) and any zip holding `project.json` are opened. Observation columns are binary 64-bit values and are stored once, with JSON model and history metadata. Full saves include retained history; compact saves include current results and kept records. CF sites and candidates are retained; density grids are optional. The completed save reports its compressed size.
 
 ## Command line (bottom of the window)
 

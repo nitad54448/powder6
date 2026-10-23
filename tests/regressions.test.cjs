@@ -28,7 +28,7 @@ function app(withTables = true) {
   });
   context.window = context;
   for (const file of ['constants', 'crystal', 'profile', 'wppf_linear', 'atomic_constraints', 'rietveld_core',
-    'cif_reader', 'data_io', 'parsers', 'cif_structure']) {
+    'cif_reader', 'data_io', 'parsers', 'cif_structure', 'sg_convert']) {
     vm.runInContext(read('js/' + file + '.js'), context, { filename: file + '.js' });
   }
   context.SG_DATABASE = database;
@@ -196,6 +196,61 @@ test('space-group precision limits the tested reflections and reports the availa
   assert.deepEqual(Array.from(limited.precision.index),Array.from(all.precision.index).slice(0,4));
 });
 
+function convertible(sgNumber, atoms, cell, hall) {
+  const a=app();a.S.calculation='rietveld';
+  const sg=a.state.resolveSG(sgNumber,hall),ph=a.state.makePhase({name:'X',sg,cell,atoms});a.state.addPhase(ph);
+  const ds=a.state.makeDataset({name:'d1',tth:Array.from({length:100},(_,i)=>10+i*.5),y:Array(100).fill(10),inst:{bkgN:1,lambda2:0,ratio:0}});
+  a.S.datasets.push(ds);a.state.selectIds([ds.id]);a.state.remapAll();
+  return {...a,ph,ds,K:a.context.SGConvert};
+}
+function convert(a, target, hall, mode) {
+  const sg=a.state.resolveSG(target,hall),cell=a.state.cellOf(a.ph,a.ph.v),norm=c=>a.context.normaliseCell(c,sg.system,sg.uniqueAxis);
+  const t=mode || a.K.findTransforms(a.ph.ops,sg.ops,cell,{normalise:norm})[0];
+  assert.ok(t,'no transformation found');
+  const atoms=a.ph.atoms.map(at=>{const p=a.ph.key+'.'+at.label+'.';return {label:at.label,type:at.type,x:a.ph.v[p+'x'],y:a.ph.v[p+'y'],z:a.ph.v[p+'z'],occ:a.ph.v[p+'occ'],B:a.ph.v[p+'B']};});
+  const conv=a.K.convertStructure(atoms,a.ph.ops,sg.ops,cell,t.P,t.p,{cell:norm(a.K.transformCell(cell,t.P))});
+  return {sg,t,conv,report:conv.violations.length?null:a.state.convertPhase(a.ph,sg,conv,t.P,t.p)};
+}
+test('converting a phase to a subgroup splits its sites and keeps each dataset\'s own cell, positions, B and flags', () => {
+  const a=convertible(225,[{label:'Na1',type:'Na',x:0,y:0,z:0,B:1},{label:'Cl1',type:'Cl',x:.5,y:.5,z:.5,B:1}],{a:5.64});
+  const k=a.ph.key+'.';a.ds.p[k+'a']=5.7;a.ds.p[k+'Na1.B']=1.7;a.ds.fit[k+'Na1.B']=true;a.ds.fit[k+'a']=true;a.ph.poDir=[1,1,0];
+  const r=convert(a,'P 4/m m m');
+  assert.equal(r.t.relation,'subgroup');assert.equal(r.report.datasets,1);
+  assert.equal(a.ph.sg.number,123);assert.equal(a.ph.atoms.length,6,'without the F centring, Na and Cl each split over three sites in P4/mmm');
+  assert.deepEqual(Array.from(a.ph.atoms,x=>x.label).sort(),['Cl1a','Cl1b','Cl1c','Na1a','Na1b','Na1c']);
+  assert.deepEqual(Array.from(a.ph.atoms.filter(x=>/^Na/.test(x.label)),x=>x.site.mult).sort(),[1,1,2]);
+  assert.equal(a.ph.atoms.reduce((s,x)=>s+x.site.mult,0),8,'cell content kept');
+  assert.ok(Math.abs(a.ds.p[k+'a']-5.7)<1e-9 && Math.abs(a.ds.p[k+'c']-5.7)<1e-9,'the dataset keeps its own cell');
+  assert.ok(Math.abs(a.ph.v[k+'a']-5.64)<1e-9,'the starting model keeps its cell');
+  ['Na1a','Na1b','Na1c'].forEach(l=>{assert.equal(a.ds.p[k+l+'.B'],1.7);assert.equal(a.ds.fit[k+l+'.B'],true);});
+  assert.equal(a.ds.fit[k+'a'],true);assert.equal(a.ds.fit[k+'c'],true);
+  assert.equal(a.ds.stats,null);assert.deepEqual(Array.from(a.ph.poDir),[1,1,0]);
+});
+test('an origin change in Fd-3m moves every position by the shift, in the phase and in each dataset', () => {
+  const s=require('../sg/all.json').space_groups['227'].settings,o1=s.find(x=>/:1/.test(x.symbol)).hall,o2=s.find(x=>/:2/.test(x.symbol)).hall;
+  const a=convertible(227,[{label:'Si1',type:'Si',x:.125,y:.125,z:.125,B:.5}],{a:5.43},o2);
+  const r=convert(a,227,o1);
+  assert.equal(r.t.relation,'same');assert.deepEqual(Array.from(r.t.p,v=>+v.toFixed(4)),[-0.125,-0.125,-0.125]);
+  const k=a.ph.key+'.Si1.';
+  assert.deepEqual([a.ph.v[k+'x'],a.ph.v[k+'y'],a.ph.v[k+'z']].map(Number),[0,0,0]);assert.equal(a.ph.atoms[0].site.mult,8);
+  assert.deepEqual([a.ds.p[k+'x'],a.ds.p[k+'y'],a.ds.p[k+'z']].map(v=>+v.toFixed(9)),[0,0,0]);
+});
+test('a supergroup the structure does not have is refused; one it has merges the atoms', () => {
+  const a=convertible(1,[{label:'Na1',type:'Na',x:0,y:0,z:0},{label:'Na2',type:'Na',x:0,y:.5,z:.5},{label:'Na3',type:'Na',x:.5,y:0,z:.5},{label:'Na4',type:'Na',x:.5,y:.5,z:0},
+    {label:'Cl1',type:'Cl',x:.5,y:.5,z:.5},{label:'Cl2',type:'Cl',x:.5,y:0,z:0},{label:'Cl3',type:'Cl',x:0,y:.5,z:0},{label:'Cl4',type:'Cl',x:0,y:0,z:.53}],{a:5.64,b:5.64,c:5.64,alpha:90,beta:90,gamma:90});
+  let r=convert(a,225);
+  assert.equal(r.report,null);assert.ok(r.conv.violations.length>0 && /Cl4|Cl/.test(r.conv.violations.join(' ')));assert.equal(a.ph.sg.number,1,'refused: nothing changed');
+  a.ph.v[a.ph.key+'.Cl4.z']=.5;r=convert(a,225);
+  assert.ok(r.report);assert.equal(a.ph.atoms.length,2);assert.deepEqual(Array.from(a.ph.atoms,x=>x.site.mult),[4,4]);
+});
+test('a monoclinic setting change transforms the cell, the positions and the preferred-orientation direction', () => {
+  const s=require('../sg/all.json').space_groups['14'].settings,pc=s.find(x=>x.symbol.replace(/\s/g,'')==='P121/c1').hall,pn=s.find(x=>x.symbol.replace(/\s/g,'')==='P121/n1').hall;
+  const a=convertible(14,[{label:'O1',type:'O',x:.1,y:.2,z:.3}],{a:7,b:8,c:9,beta:110},pc);a.ph.poDir=[0,0,1];
+  const r=convert(a,14,pn),k=a.ph.key+'.';
+  assert.equal(r.t.relation,'same');assert.ok(a.ph.v[k+'beta']>90,'obtuse beta');
+  const c=a.ph.v;assert.ok(Math.abs(c[k+'a']*c[k+'b']*c[k+'c']*Math.sin(c[k+'beta']*Math.PI/180)-7*8*9*Math.sin(110*Math.PI/180))<1e-6,'same volume');
+  assert.equal(a.ph.atoms[0].site.mult,4);assert.deepEqual(Array.from(a.ph.poDir),Array.from(a.K.hklToNew([0,0,1],r.t.P)));
+});
 test('a WPPF fit with nothing ticked refines the intensities; Rietveld still asks for a ticked parameter', () => {
   const a=model();a.state.setCalculation('wppf');
   Object.keys(a.ds.fit).forEach(k=>{a.ds.fit[k]=false;});

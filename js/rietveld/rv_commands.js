@@ -111,7 +111,8 @@ RV.cmd = (function () {
     for (var i = 0; i < files.length; i++) {
       var f = files[i], buf;
       try { buf = await ui.readBuffer(f); } catch (e) { ui.toast(f.name + ': ' + e.message, 'err'); continue; }
-      if(/\.powder6$/i.test(f.name)){try{project={name:f.name,document:await RV.project.unpack(buf)};}catch(e){ui.toast(f.name+': '+e.message,'err');}continue;}
+      // a project: saved as .project (also read: .archive, and .powder6 from earlier versions), or any zip holding project.json
+      if(RV.project.isProjectName(f.name) || await RV.project.isProjectArchive(buf)){try{project={name:f.name,document:await RV.project.unpack(buf)};}catch(e){ui.toast(f.name+': '+e.message,'err');}continue;}
       var head = '';
       try { head = new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(buf, 0, Math.min(buf.byteLength, 65536))); } catch (e) { head = ''; }
       if (/^\s*\{/.test(head) && (head.indexOf('"powder6-project"') >= 0)) { project = { name: f.name, text: new TextDecoder().decode(buf) }; continue; }
@@ -1277,7 +1278,7 @@ RV.cmd = (function () {
     ui.toast('Opened a project with ' + plural(S.phases.length, 'phase') + ' and ' + plural(S.datasets.length, 'dataset') + '.', 'ok');
   }
   async function openProjectFile() {
-    var fs = await ui.pickFiles({ accept: '.powder6,.json,application/json,application/zip' });
+    var fs = await ui.pickFiles({ accept: RV.project.EXTENSIONS.join(',') + ',.json,application/json,application/zip' });
     if (!fs.length) return;
     await readFiles(fs);
   }

@@ -3,6 +3,15 @@
 RV.project = (function(){
   'use strict';
   var St=RV.state,S=St.S,columns=['tth','y','sig','weights'];
+  // saved as the first; all of them are opened (.powder6 is what versions before 2.8 wrote)
+  var EXTENSIONS=['.project','.archive','.powder6'];
+  function isProjectName(name){return EXTENSIONS.some(function(e){return String(name || '').toLowerCase().slice(-e.length)===e;});}
+  // a zip holding project.json, whatever the file is called (a pattern format may be a zip too: it has no project.json)
+  async function isProjectArchive(buffer){
+    var b=new Uint8Array(buffer,0,Math.min(4,buffer.byteLength));
+    if(b.length<4 || b[0]!==0x50 || b[1]!==0x4b || b[2]!==0x03 || b[3]!==0x04 || typeof JSZip==='undefined')return false;
+    try{return !!(await JSZip.loadAsync(buffer)).file('project.json');}catch(e){return false;}
+  }
   function binary(array){var buffer=new ArrayBuffer(array.length*8),view=new DataView(buffer);for(var i=0;i<array.length;i++)view.setFloat64(i*8,array[i],true);return new Uint8Array(buffer);}
   function values(array){if(array.byteLength%8)throw new Error('Invalid observation column size.');var view=new DataView(array.buffer,array.byteOffset,array.byteLength),out=new Float64Array(array.length/8);for(var i=0;i<out.length;i++)out[i]=view.getFloat64(i*8,true);return out;}
   async function pack(opts){opts=opts || {};if(typeof JSZip==='undefined')throw new Error('Project compression library is unavailable.');var doc=JSON.parse(St.projectJSON(RV.ui.logEntries?RV.ui.logEntries():[],{metadataOnly:true})),pool=RV.fitHistory.observations(),zip=new JSZip(),index=[];
@@ -33,7 +42,7 @@ RV.project = (function(){
       (hasPicker?'Next, choose the file name and folder.':'The file goes to your browser’s download folder (to choose it each time, enable “Ask where to save each file” in the browser’s download settings).'));
     if(!choice)return;
     var target;
-    try{target=await ui.chooseSaveTarget('powder6_'+ui.fileStamp()+'.powder6','application/zip',{title:'Save project',description:'Powder 6 project',pickerId:'powder6-project',askName:false});}
+    try{target=await ui.chooseSaveTarget('powder6_'+ui.fileStamp()+EXTENSIONS[0],'application/zip',{title:'Save project',description:'Powder 6 project',pickerId:'powder6-project',askName:false});}
     catch(x){ui.toast('The project was not saved: the browser refused the file ('+(x && x.message || x)+').','err');return;}
     if(!target){ui.toast('Project not saved (cancelled).','info');return;}
     if(S.busy){ui.toast('A calculation started meanwhile: the project was not saved. Save again when it ends.','warn');return;}
@@ -47,5 +56,5 @@ RV.project = (function(){
       ui.toast('The project could not be saved: '+(x && x.message || x)+'.'+(target.handle?' The file '+target.name+' may have been left empty; save again.':' Nothing was downloaded.'),'err');
     }finally{St.setBusy(false);ui.progress(0,0);}
   }
-  return {pack:pack,unpack:unpack,save:save,binary:binary,values:values};
+  return {pack:pack,unpack:unpack,save:save,binary:binary,values:values,EXTENSIONS:EXTENSIONS,isProjectName:isProjectName,isProjectArchive:isProjectArchive};
 })();

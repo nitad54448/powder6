@@ -29,15 +29,15 @@
 
     await RV.cmd.saveProject();
     const head=new Uint8Array(await written.slice(0,2).arrayBuffer());
-    check(prompts[0].ok==='Choose file…' && picker && /^powder6_\d+\.powder6$/.test(picker.suggestedName) && picker.id==='powder6-project' && written.size>1000 && head[0]===80 && head[1]===75,'Save As did not write a project: '+JSON.stringify({picker,size:written && written.size}));
-    check(/Saved project as powder6_\d+\.powder6 \(\d+\.\d+ MB\)/.test(status()) && !S.busy && !downloads.length,'Save As message: '+status());
+    check(prompts[0].ok==='Choose file…' && picker && /^powder6_\d+\.project$/.test(picker.suggestedName) && picker.id==='powder6-project' && written.size>1000 && head[0]===80 && head[1]===75,'Save As did not write a project: '+JSON.stringify({picker,size:written && written.size}));
+    check(/Saved project as powder6_\d+\.project \(\d+\.\d+ MB\)/.test(status()) && !S.busy && !downloads.length,'Save As message: '+status());
     const back=await RV.project.unpack(w.Uint8Array.from(new Uint8Array(await written.arrayBuffer())));check(back.datasets.length===1 && back.phases.length===1,'The written file does not read back');
     record('Save As: the user picks the file first, the compressed project is written there and reads back',{kB:Math.round(written.size/1000)});
 
     w.__pickerError='AbortError';written=null;await RV.cmd.saveProject();
     check(/not saved \(cancelled\)/.test(status()) && !written && !S.busy && !downloads.length,'Cancel: '+status());
     w.__pickerError='SecurityError';await RV.cmd.saveProject();w.__pickerError=null;
-    check(downloads.length===1 && /^powder6_\d+\.powder6$/.test(downloads[0]) && /download folder/.test(status()),'Fallback download: '+status()+' '+downloads);
+    check(downloads.length===1 && /^powder6_\d+\.project$/.test(downloads[0]) && /download folder/.test(status()),'Fallback download: '+status()+' '+downloads);
     const hadPicker=w.showSaveFilePicker;delete w.showSaveFilePicker;w.showSaveFilePicker=undefined;prompts=[];await RV.cmd.saveProject();w.showSaveFilePicker=hadPicker;
     check(prompts[0].ok==='Save' && /download folder/.test(prompts[0].intro) && downloads.length===2,'Browser without Save As: '+JSON.stringify(prompts[0]));
     record('cancel says so; without Save As (or when it is refused) the project downloads and the message names the file');
