@@ -95,7 +95,7 @@ RV.cmd = (function () {
   function need(ok, msg) { if (!ok) ui.toast(msg, 'warn'); return !!ok; }
   function idle() { return need(!S.busy, 'A fit is running. Wait for it to finish or press Stop.'); }
   function haveSel(n) { n = n || 1; return need(S.sel.size >= n, n > 1 ? 'Select at least ' + n + ' datasets.' : 'Select one or more datasets first.'); }
-  function havePhase() { return need(S.phases.length, 'No phase yet. Read a structure CIF (File) or make a new phase (Refine).'); }
+  function havePhase() { return need(S.phases.length, 'No phase yet. Read structures (CIF) or make a new phase in Phases.'); }
   function haveSG() { return need(S.sgReady, S.sgLoading ? 'The space groups are still loading.' : 'The space-group database is not loaded: open index.html through a web server.'); }
   function sel() { return St.selected(); }
   function datasetTargets() { var d=RV.workspace && RV.workspace.dataset();return d?[d]:[]; }
@@ -1331,7 +1331,7 @@ RV.cmd = (function () {
 
   // ---------------------------------------------------------------- availability: why a command cannot run now ('' when it can)
   var NO_DATA = 'No data loaded yet. Use File, or drop files on the window.', NO_SEL = 'No dataset selected.', BUSY = 'Not while a fit is running.',
-      NO_PHASE = 'No phase yet. Read a structure CIF (File) or make a new phase (Refine).', NO_SG = 'The space-group database is not loaded.';
+      NO_PHASE = 'No phase yet. Read structures (CIF) or make a new phase in Phases.', NO_SG = 'The space-group database is not loaded.';
   function noSel() { return !S.datasets.length ? NO_DATA : !S.sel.size ? NO_SEL : ''; }
   function idleSel() { return S.busy ? BUSY : noSel(); }
   function fitWhy() {
@@ -1502,7 +1502,7 @@ RV.cmd = (function () {
   // ---------------------------------------------------------------- menus
   function init() {
     var M = {
-      file: [['Read powder patterns…', readData0, 'read'], ['Read a structure CIF…', readStructure, 'phase'], ['Load calibration or sample-broadening preset…', loadPreset, 'havePhase'], null,
+      file: [['Read patterns…', readData0, 'read'], ['Read structures (CIF)…', readStructure, 'phase'], ['Load calibration or sample-broadening preset…', loadPreset, 'havePhase'], null,
              ['Open project…', openProjectFile, 'read'], ['Save project', saveProject, 'saveProject'], null,
              ['Report (PDF)…', function () { RV.pdf.report(); }, 'report'],
              ['Save results of selected…', function () { RV.results.save('save'); }, 'selection'],
@@ -1520,7 +1520,7 @@ RV.cmd = (function () {
                ['… and peak shapes', function () { tickSteps('profile'); }, 'edit'], ['… and atoms', function () { tickSteps('atoms'); }, 'edit'],
                ['Untick everything', function () { tickSteps('none'); }, 'edit'], ['Estimate scales and background', estimate, 'withPhase'], null,
                ['Sharing in the global fit…', function () { sharing(); }, 'global'], null,
-               ['New phase…', newPhase, 'phase'], ['Phases of the datasets…', phaseMap, 'phaseMap'], ['Add an atom to the current phase…', addAtom, 'havePhase'], ['Delete the current phase…', deletePhase, 'havePhase']]
+               ['Phases of the datasets…', phaseMap, 'phaseMap'], ['Add an atom to the current phase…', addAtom, 'havePhase'], ['Delete the current phase…', deletePhase, 'havePhase']]
     };
     document.querySelectorAll('[data-menu]').forEach(function (b) {
       b.addEventListener('click', function () {

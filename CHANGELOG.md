@@ -2,6 +2,11 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.12.1 — 23 October 2026
+
+1. Datasets and Phases now mirror each other. The empty Datasets tab shows Read patterns… and Simulate… (its toolbar used to appear only once a dataset existed, so the tab offered only a sentence and the demo link), as Phases always shows New phase…, Read structures (CIF)… and Simulate….
+2. One name per action: Read patterns… in the File menu and the Datasets tab (was Read powder patterns… in File), Read structures (CIF)… in the File menu and the Phases tab (was Read a structure CIF… and From CIF / pdCIF…). New phase… is no longer in the Refine menu, which is about fitting; it stays in the Phases tab. Messages asking for a phase point to Phases instead of Refine.
+
 ## 2.12.0 — 23 October 2026
 
 1. Dataset groups are removed. They only saved a fixed list of datasets for reselection, linked nothing, could not be edited or deleted, and looked like a second selection concept. Datasets are chosen with the selection alone: All, Shift+click ranges, checkboxes and the search box. Save group… is gone from the dataset toolbar, the scope menu offers the selection and all datasets, and projects, restore points and History restores no longer carry groups.

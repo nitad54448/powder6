@@ -165,7 +165,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 
 <h3 id="first">A first fit</h3>
 <ol>
-  <li>Click <b>load the demo</b> in the Datasets panel when it is empty, or type <code>demo</code> in the command line (NaCl and Si, simulated with Cu and Co radiation), or read your own pattern with <b>File → Read powder patterns</b> or by dropping it on the window.</li>
+  <li>Click <b>load the demo</b> in the Datasets panel when it is empty, or type <code>demo</code> in the command line (NaCl and Si, simulated with Cu and Co radiation), or read your own pattern with <b>Read patterns…</b> (Datasets tab or File menu) or by dropping it on the window.</li>
   <li>Check <b>Datasets → Instrument</b>: wavelength, radiation, polarisation and the 2θ range to fit.</li>
   <li>In <b>Phases</b>, read a structure CIF or make a new phase from a space group and cell.</li>
   <li>In <b>Commands → Method</b>, pick a method. Start with Le Bail or WPPF to settle the zero, cell and peak shape.</li>
@@ -262,7 +262,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <section id="datasets">
 <h2>Datasets</h2>
 <h3 id="formats">File formats</h3>
-<p>Drop files on the window or use <b>File → Read powder patterns</b>. The reader detects the format from the name and the content.</p>
+<p>Drop files on the window or use <b>Read patterns…</b> in the Datasets tab or the File menu. The reader detects the format from the name and the content.</p>
 <div class="tablewrap"><table class="wrapfirst">
 <tr><th>Format</th><th>Notes</th></tr>
 <tr><td>Two-column text (<code>.xy .csv .txt .dat .asc</code>)</td><td>The fallback for anything that is not recognised.</td></tr>
@@ -349,7 +349,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 
 <section id="phases">
 <h2>Phases</h2>
-<p>Create a phase with <b>New phase…</b> (a space group and a cell), <b>From CIF / pdCIF…</b> (cell, space group and atoms) or <b>Simulate…</b> to calculate a pattern from phases that have atoms. Each phase has a name and a colour used for its contribution and its reflection ticks. Assign phases to datasets with <b>Datasets → Phases…</b> (or <code>phases&gt;&gt;p1&amp;p2</code>); a phase taken out keeps its values for when it comes back.</p>
+<p>Create a phase with <b>New phase…</b> (a space group and a cell), <b>Read structures (CIF)…</b> (cell, space group and atoms; also in the File menu) or <b>Simulate…</b> to calculate a pattern from phases that have atoms. Each phase has a name and a colour used for its contribution and its reflection ticks. Assign phases to datasets with <b>Datasets → Phases…</b> (or <code>phases&gt;&gt;p1&amp;p2</code>); a phase taken out keeps its values for when it comes back.</p>
 <p>The Phase name row selects the phase and its colour. Edit, immediately right of the colour picker, renames the phase. In Choose a phase, the × at the end of each row removes that phase after confirmation, including its assignments to datasets; Undo restores it.</p>
 
 <h3 id="sg">Space group</h3>
@@ -371,7 +371,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <p>In hexagonal and trigonal cells the special forms depend on the Bravais–Miller index <i>i</i> = −(<i>h</i>+<i>k</i>) as much as on <i>h</i> and <i>k</i>: a reflection lies on a mirror whenever any two of <i>h</i>, <i>k</i>, <i>i</i> are equal in magnitude, so (1 -2 <i>l</i>) and (2 -4 <i>l</i>) are special although |<i>h</i>| ≠ |<i>k</i>|. This follows automatically from the operators. The Laue class matters in two further places: the Stephens anisotropic-broadening terms allowed (see <a href="#c-profile">Profile symmetry</a>) and the orbit sizes used by charge flipping (see <a href="#c-solve">Constraints in structure solution</a>).</p>
 
 <h3 id="atoms">Atoms</h3>
-<p><b>Add atom…</b> takes a label, an element or ion type, fractional coordinates, occupancy and B. Each atom shows its Wyckoff site; coordinates on special positions are constrained automatically. Relationships between atoms are made with <b>Atomic constraints…</b>, described in <a href="#c-atomic">Atomic constraints</a>. A CIF read with <b>From CIF</b> brings its atoms in the same way, and the sites are re-derived from the space group. Hydrogen scatters weakly for X-rays and is usually not located by powder data; the Wyckoff search does not place it.</p>
+<p><b>Add atom…</b> takes a label, an element or ion type, fractional coordinates, occupancy and B. Each atom shows its Wyckoff site; coordinates on special positions are constrained automatically. Relationships between atoms are made with <b>Atomic constraints…</b>, described in <a href="#c-atomic">Atomic constraints</a>. A CIF read with <b>Read structures (CIF)…</b> brings its atoms in the same way, and the sites are re-derived from the space group. Hydrogen scatters weakly for X-rays and is usually not located by powder data; the Wyckoff search does not place it.</p>
 
 <h3 id="shape">Peak shape</h3>
 <p>Each dataset has an instrument profile. Choose it in Datasets → Instrument resolution; TCH is the default. Every available family combines the instrument response with independent crystallite-size and microstrain broadening for each phase contribution. The Gaussian and Lorentzian widths depend on θ; the resulting peak is a pseudo-Voigt, pV(x) = η L(x) + (1 − η) G(x).</p>
@@ -1013,7 +1013,7 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
 
 <section id="corrections">
 <h2>Recent changes</h2>
-<p>Version 2.12.0, 23 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
+<p>Version 2.12.1, 23 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 <ul>
   <li>Dataset groups are removed: datasets are chosen with the selection alone.</li>
   <li>Convert… shows the standard setting of each space group in bold, marked “standard”.</li>
