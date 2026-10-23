@@ -200,8 +200,37 @@ RV.state = (function () {
     if (typeof SG_ENGINE === 'undefined' || !globalThis.SG_DATABASE) return null;
     var rec = null;
     try { if (hall) rec = SG_ENGINE.resolve(String(hall).trim()); } catch (e) { rec = null; }
+    // the exact symbol of a setting first: the general resolver reads "Pnnn:2" as origin choice 1
+    if (!rec && input != null) rec = settingBySymbol(input);
     try { if (!rec && input != null && String(input).trim()) rec = SG_ENGINE.resolve(String(input).trim()); } catch (e) { rec = null; }
     return fromRecord(rec);
+  }
+  var symbolIndex = null;
+  function settingBySymbol(s) {
+    var key = String(s).replace(/\s+/g, '');
+    if (!key || typeof SG_ENGINE.listSettings !== 'function') return null;
+    // a monoclinic number: the standard setting of International Tables (b unique, cell choice 1)
+    if (/^\d+$/.test(key) && +key >= 3 && +key <= 15) {
+      var mono = SG_ENGINE.listSettings(+key) || [];
+      return mono.filter(function (r) { return r.setting_description === 'b1'; })[0] || mono.filter(function (r) { return r.setting_description === 'b'; })[0] || null;
+    }
+    if (!symbolIndex) {
+      symbolIndex = {};
+      var all = [];
+      for (var n = 1; n <= 230; n++) (SG_ENGINE.listSettings(n) || []).forEach(function (r) { all.push(r); var k = String(r.symbol || '').replace(/\s+/g, ''); if (k && !(k in symbolIndex)) symbolIndex[k] = r; });
+      // the short monoclinic symbols people type (P21/c for P121/c1), the b-unique axis first, as in International Tables
+      [/^([PABCIF])1(.+)1$/, /^([PABCIF])11(.+)$/, /^([PABCIF])(.+)11$/].forEach(function (re) {
+        all.forEach(function (r) { var m = re.exec(String(r.symbol || '').replace(/\s+/g, '')); if (m && r.system === 'monoclinic' && !((m[1] + m[2]) in symbolIndex)) symbolIndex[m[1] + m[2]] = r; });
+      });
+    }
+    return symbolIndex[key] || null;
+  }
+  // every setting of every group, for the lists that offer them: { number, symbol, hall, system, setting }
+  function allSettings() {
+    var out = [];
+    if (typeof SG_ENGINE === 'undefined' || typeof SG_ENGINE.listSettings !== 'function') return out;
+    for (var n = 1; n <= 230; n++) (SG_ENGINE.listSettings(n) || []).forEach(function (r) { out.push({ number: n, symbol: r.symbol, hall: r.hall, system: r.system || '', setting: r.setting_description || '' }); });
+    return out;
   }
   /* The setting a FILE names (structure CIF), as resolveFileSpaceGroup() of powder5.html: the Hall symbol, then the full
      symbol (ICSD's origin suffixes "Z" and "S" read as :2 and :1), then among the settings with the same short symbol the
@@ -1362,7 +1391,7 @@ RV.state = (function () {
     selectIds: selectIds, toggle: toggle, setFocus: setFocus, range: range, selectAll: selectAll, selected: selected, first: first,
     currentPhase: currentPhase, selectPhase: selectPhase, makePhase: makePhase, addAtomTo: addAtomTo, addPhase: addPhase, removePhase: removePhase,
     hasPhase: hasPhase, phasesIn: phasesIn, participatingPhases:participatingPhases, holdersOf: holdersOf, setPhaseIn: setPhaseIn,
-    phaseChanged: phaseChanged, renameAtom: renameAtom, removeAtom: removeAtom, replaceAtoms: replaceAtoms, setPhaseSG: setPhaseSG, convertPhase: convertPhase, cleanLabel: cleanLabel,
+    phaseChanged: phaseChanged, renameAtom: renameAtom, removeAtom: removeAtom, replaceAtoms: replaceAtoms, setPhaseSG: setPhaseSG, convertPhase: convertPhase, allSettings: allSettings, cleanLabel: cleanLabel,
     invalidate: invalidate, invalidateAll: invalidateAll, setParam: setParam, setFit: setFit, copyParams: copyParams,
     pointWeight: pointWeight, fitPoints: fitPoints, phaseDefs:phaseDefs, problemFor: problemFor, jobFor: jobFor, globalJob: globalJob, sharedStartConflicts:sharedStartConflicts, resolveSharedStarts:resolveSharedStarts, fitNames: fitNames, calcFor: calcFor,
     estimateScales: estimateScales, applyResult: applyResult, fitStatus: fitStatus,

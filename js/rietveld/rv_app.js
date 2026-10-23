@@ -125,8 +125,10 @@
   }
 
   function initBusyGuard() {
+    var wasBusy=false;
     function update(b) {
       document.body.classList.toggle('busy',!!b);
+      if(!!b!==wasBusy){wasBusy=!!b;ui.busyRun(wasBusy);}
       $('#busy-guard').hidden=!b;
       $('#busy-label').textContent=S.busyLabel || 'Calculation running…';
       // Navigation and plot inspection remain available during a fit. Mutating commands guard S.busy.
@@ -215,7 +217,8 @@
         document.head.appendChild(s);
       });
       S.sgReady = true;
-      $('#sg-list').innerHTML = SG_ENGINE.list().map(function (sym) { return '<option value="' + ui.esc(sym) + '">'; }).join('');
+      // every setting, written as the fields write it (Fm-3m, P121/n1), so the suggestions match what is typed
+      $('#sg-list').innerHTML = St.allSettings().map(function (s) { return '<option value="' + ui.esc(s.symbol) + '" label="' + ui.esc(s.number + ' · ' + s.system + (s.setting && s.setting !== 'standard' ? ' · ' + s.setting : '')) + '">'; }).join('');
       notes.push(Object.keys(SG_DATABASE.space_groups).length + ' space groups');
     } catch (e) {
       ui.toast('The space groups are not loaded (' + ((e && e.message) || e) + '). Open index.html through a web server.', 'err');

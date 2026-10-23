@@ -65,7 +65,15 @@
     w.Worker=function(url){if(!String(url).includes('wyckoff_worker'))return new Orig(url);fake={sent:[],terminate(){},postMessage(job){this.sent.push(job.type);if(job.type==='wyckoff-search')setTimeout(()=>fake.onmessage({data:{type:'wy-progress',wave:1,waves:1,restart:1,restarts:1,generation:5,generations:10,best:.8,cc:.81,z:2,zIndex:1,zCount:1,assignment:'Si 2i',bestSites:[{element:'Si',wyckoff:'2i',multiplicity:2,x:.1,y:.2,z:.3}]}}),20);}};return fake;};
     q('#tab-structure').click();await frame();
     const fi=q('#sv-formula-wy');fi.value='Si';fi.dispatchEvent(new w.Event('input',{bubbles:true}));fi.dispatchEvent(new w.Event('change',{bubbles:true}));await frame();
-    q('#sv-wy-run').click();await wait(100);check(RV.solve.state.wyRun,'Wyckoff run did not start: '+q('#status-msg').textContent+' | button: '+q('#sv-wy-run').disabled+' '+q('#sv-wy-run').title+' | ints '+!!RV.solve.state.ints);
+    const shared=k=>q('#sv-formula-'+k).closest('.sv-row').nextElementSibling.textContent,dens=k=>q('.sv-dens[data-k="'+k+'"]').textContent;
+    check(/only to name its peaks/.test(shared('cf')) && /places these atoms and no others/.test(shared('wy')) && shared('cf')!==shared('wy'),'Formula hints are not specific: '+shared('cf')+' | '+shared('wy'));
+    check(/from the highest peak/.test(dens('cf')) && /Wyckoff search tries Z/.test(dens('wy')),'Z hints are not specific: '+dens('cf')+' | '+dens('wy'));
+    fi.value='';fi.dispatchEvent(new w.Event('change',{bubbles:true}));await frame();
+    check(/Optional here/.test(dens('cf')) && /Required/.test(dens('wy')),'Empty-formula hints: '+dens('cf')+' | '+dens('wy'));
+    fi.value='Si';fi.dispatchEvent(new w.Event('change',{bubbles:true}));await frame();
+    q('#sv-wy-run').click();await wait(100);
+    const stops=[...w.document.querySelectorAll('button')].filter(b=>/\bStop\b/.test(b.textContent) && b.offsetParent!==null);
+    check(stops.length===1 && stops[0].id==='busy-cancel' && /Wyckoff search: /.test(q('#busy-detail').textContent) && !q('#busy-guard').hidden,'Running panel: '+stops.length+' Stop buttons, detail "'+q('#busy-detail').textContent+'"');check(RV.solve.state.wyRun,'Wyckoff run did not start: '+q('#status-msg').textContent+' | button: '+q('#sv-wy-run').disabled+' '+q('#sv-wy-run').title+' | ints '+!!RV.solve.state.ints);
     RV.solve.stop();await frame();
     const prog=()=>(q('#sv-wy-prog') || {}).textContent || '';
     check(fake.sent.includes('cancel-wyckoff') && /please wait/i.test(q('#status-msg').textContent) && /refining the best structure/.test(prog()) && /please wait/.test(q('#busy-label').textContent),'Stop did not ask the user to wait: '+q('#status-msg').textContent+' | '+prog()+' | '+q('#busy-label').textContent);

@@ -20,11 +20,26 @@
     q('#tab-phases').click();await frame();
     const conv=q('[data-act="sg-convert"]'),browse=q('[data-act="sg-browse"]');
     check(conv && browse && conv.nextElementSibling===browse && conv.textContent==='Convert…','Convert… is not just left of Browse…');
+    const dl=[...q('#sg-list').options];check(dl.length===520 && dl.some(o=>o.value==='Fm-3m') && dl.some(o=>o.value==='P121/n1' && /14 · monoclinic/.test(o.label)),'The suggestion list must hold every setting as the fields write it');
+    // the space-group row shares the columns of the name row: field under field, Convert… under the colour, Browse… under Edit
+    const box=el=>el.getBoundingClientRect(),same=(a,b)=>Math.abs(a.left-b.left)<0.5 && Math.abs(a.width-b.width)<0.5;
+    const rows=[[q('#phase-select'),q('#ph-sg')],[q('#ph-color'),conv],[q('#ph-rename'),browse]];
+    check(rows.every(([a,b])=>same(box(a),box(b)) && box(b).top>box(a).bottom-1) && Math.abs(box(conv).top-box(browse).top)<0.5,'Phase controls are not aligned: '+JSON.stringify(rows.map(([a,b])=>[box(a).left,box(a).width,box(b).left,box(b).width])));
     // 2. the dialog: subgroup preview, convert, undo
     conv.click();await frame();
     const dlg=q('#dlg'),field=k=>dlg.querySelector('[data-key="'+k+'"]'),preview=()=>dlg.querySelector('[data-convert-preview]').textContent;
-    check(dlg.open && /Fm-3m/.test(dlg.textContent),'Dialog did not open');
-    field('target').value='P 4/m m m';field('target').dispatchEvent(new w.Event('input',{bubbles:true}));await wait(350);
+    const choose=t=>{field('find').value=t;field('find').dispatchEvent(new w.Event('input',{bubbles:true}));};
+    const visible=()=>[...field('target').options].filter(o=>!o.hidden);
+    check(dlg.open && /Fm-3m/.test(dlg.textContent) && field('target').tagName==='SELECT' && field('target').options.length===520 && /225 · Fm-3m · cubic/.test(field('target').selectedOptions[0].textContent),'Dialog did not open with every setting, the current one chosen');
+    check(/is in Fm-3m \(225\)/.test(preview()) && dlg.querySelector('[data-convert-preview] .hint'),'Opening preview should be guidance, not a warning');
+    choose('14');await wait(300);
+    check(visible().length===9 && visible().every(o=>/^14 · /.test(o.textContent)) && /P121\/c1/.test(field('target').selectedOptions[0].textContent),'Find 14: '+visible().length+' '+field('target').selectedOptions[0].textContent);
+    choose('P21/n');await wait(300);
+    check(/P121\/n1/.test(field('target').selectedOptions[0].textContent),'Find P21/n selected '+field('target').selectedOptions[0].textContent);
+    field('find').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await frame();
+    check(dlg.open && St.phaseByKey(ph.key).sg.number===225,'Enter in Find started the conversion');
+    choose('');await frame();check(visible().length===520,'Clearing Find did not restore the list');
+    choose('P 4/m m m');await wait(350);
     check(/A subgroup/.test(preview()) && /2 → 6 sites/.test(preview()) && /Na1 → 3 sites/.test(preview()) && /a′, b′, c′ = a,b,c/.test(preview()),'Subgroup preview: '+preview().slice(0,300));
     field('mode').value='manual';field('mode').dispatchEvent(new w.Event('change',{bubbles:true}));await frame();
     check(field('basis').value==='a,b,c' && field('shift').value==='0,0,0' && !field('basis').closest('[hidden]'),'Enter it was not prefilled with the transformation found');
@@ -37,18 +52,20 @@
 
     // 3. a supergroup the structure lacks: preview says so, Convert keeps the dialog open
     q('[data-act="sg-convert"]').click();await frame();
-    field('target').value='P 4/m m m';field('target').dispatchEvent(new w.Event('input',{bubbles:true}));await wait(350);
+    choose('P 4/m m m');await wait(350);
     [...dlg.querySelectorAll('.btns button')].find(b=>b.textContent==='Convert').click();await frame();
     let p2=St.phaseByKey(ph.key);check(p2.sg.number===123 && p2.atoms.length===6,'Second conversion failed');
     q('[data-act="sg-convert"]').click();await frame();
-    field('target').value='Fm-3m';field('target').dispatchEvent(new w.Event('input',{bubbles:true}));await wait(350);
+    choose('Fm-3m');await wait(350);
     check(/A supergroup/.test(preview()) && !/Not converted/.test(preview()),'Supergroup with the symmetry should be allowed: '+preview().slice(0,300));
-    const moved=p2.atoms.find(x=>x.site.mult===2 && /^Cl/.test(x.label));p2.v[p2.key+'.'+moved.label+'.z']=.47;field('target').dispatchEvent(new w.Event('input',{bubbles:true}));await wait(350);
+    const moved=p2.atoms.find(x=>x.site.mult===2 && /^Cl/.test(x.label));p2.v[p2.key+'.'+moved.label+'.z']=.47;field('find').dispatchEvent(new w.Event('input',{bubbles:true}));await wait(350);
     check(/Not converted: the structure does not have this symmetry/.test(preview()),'Missing symmetry not reported: '+preview().slice(0,400));
     [...dlg.querySelectorAll('.btns button')].find(b=>b.textContent==='Convert').click();await frame();
     check(dlg.open && /does not have the symmetry/.test(status()) && St.phaseByKey(ph.key).sg.number===123,'Refused conversion closed or applied');
-    field('target').value='Q 99 z';field('target').dispatchEvent(new w.Event('input',{bubbles:true}));await wait(350);
-    check(/not recognised/.test(preview()),'Unknown group not reported');
+    choose('Q 99 z');await wait(350);
+    check(field('find').classList.contains('invalid'),'No match not shown');
+    [...dlg.querySelectorAll('.btns button')].find(b=>b.textContent==='Convert').click();await frame();
+    check(dlg.open && /No space group matches/.test(status()) && St.phaseByKey(ph.key).sg.number===123,'A Find without match was not refused: '+status());
     [...dlg.querySelectorAll('.btns button')].find(b=>b.textContent==='Cancel').click();await frame();
     check(!dlg.open && St.phaseByKey(ph.key).sg.number===123,'Cancel changed the phase');
     record('a supergroup the structure lacks, or an unknown group, is explained in the preview and refused');

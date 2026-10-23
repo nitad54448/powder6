@@ -80,7 +80,7 @@ RV.phasesTab = (function () {
       '<div class="phase-cols">' +
         '<section class="pblock"><h2>Phase</h2><div class="form-grid">' +
           '<label for="phase-select">Phase name</label><div><span class="phase-control-row phase-name-row"><select id="phase-select" aria-label="Phase name"></select><input type="color" id="ph-color" data-ph="color" aria-label="Phase colour" title="Change phase colour" value="' + RV.plots.phaseColor(S.phases.indexOf(ph)) + '"><button type="button" id="ph-rename" data-act="rename-phase" title="Rename this phase">Edit</button></span></div>' +
-          '<label for="ph-sg">Space group</label><div><span class="phase-control-row"><input id="ph-sg" data-ph="sg" list="sg-list" value="' + esc(ph.sg.symbol) + '" spellcheck="false" autocomplete="off" title="Symbol, number or Hall symbol">' +
+          '<label for="ph-sg">Space group</label><div><span class="phase-control-row phase-sg-row"><input id="ph-sg" data-ph="sg" list="sg-list" value="' + esc(ph.sg.symbol) + '" spellcheck="false" autocomplete="off" title="Symbol, number or Hall symbol">' +
             '<button type="button" data-act="sg-convert" title="Describe this structure in another space group or setting: the cell, the atomic positions and the values of every dataset are transformed with it">Convert…</button>' +
             '<button type="button" data-act="sg-browse" title="Choose the space group and its setting by crystal system, centring, symbol or number">Browse…</button></span><small id="ph-sg-info"></small></div>' +
           (C.usesSeparatedProfile(ph) ? ['size','strain'].map(function (kind) {
@@ -310,11 +310,11 @@ RV.phasesTab = (function () {
   function cellText(c) { return c ? ['a', 'b', 'c'].map(function (k) { return c[k].toFixed(4); }).join(', ') + ' Å; ' + ['alpha', 'beta', 'gamma'].map(function (k) { return c[k].toFixed(3); }).join(', ') + '°' : '—'; }
   // f: { target, mode ('auto' | 'manual'), basis, shift, tol } -> everything the preview shows and the conversion needs
   function convertPlan(ph, f) {
-    var K = SGConvert, sg = St.resolveSG(String(f.target || '').trim());
+    var K = SGConvert, sg = St.resolveSG(String(f.target || '').trim(), String(f.target || '').trim());
     if (!sg) return { error: 'Space group not recognised: "' + f.target + '". Type a symbol (P 21/n, Fm-3m), a number or a Hall symbol.' };
     var cell = St.cellOf(ph, ph.v), norm = function (c) { return normaliseCell(c, sg.system, sg.uniqueAxis); }, t, others = 0;
     if (f.mode === 'auto') {
-      if (sg.hall === ph.sg.hall) return { sg: sg, error: ph.name + ' is already in ' + St.sgText(sg) + (sg.setting ? ', setting ' + sg.setting : '') + '. To move the origin or the axes within it, choose Enter it.' };
+      if (sg.hall === ph.sg.hall) return { sg: sg, idle: true, error: ph.name + ' is in ' + St.sgText(sg) + (sg.setting ? ', setting ' + sg.setting : '') + ' now. Choose the new space group above (Find narrows the list); to move only the origin or the axes within this group, choose Enter it.' };
       var found = K.findTransforms(ph.ops, sg.ops, cell, { normalise: norm });
       if (!found.length) return { sg: sg, error: 'No change of axes (entries −1, 0, 1) and origin (in eighths) relates ' + St.sgText(ph.sg) + ' and ' + St.sgText(sg) +
         ' with a cell that fits the ' + sg.system + ' metric within 3 %. The new group must be a subgroup, a supergroup or another setting of the old one, in a compatible cell; otherwise enter the transformation (for example a centred or doubled cell) by hand.' };
@@ -339,7 +339,7 @@ RV.phasesTab = (function () {
   }
   function previewHTML(ph, plan) {
     var K = SGConvert;
-    if (plan.error) return '<p class="warn">' + esc(plan.error) + '</p>';
+    if (plan.error) return '<p class="' + (plan.idle ? 'hint' : 'warn') + '">' + esc(plan.error) + '</p>';
     var t = plan.t, c = plan.conv, rel = {
       same: 'Another setting of the same group: the structure is unchanged, described in new axes.',
       subgroup: 'A subgroup of ' + St.sgText(ph.sg) + ': every atom is kept; sites the lower symmetry no longer relates are split and refine independently.',
@@ -373,7 +373,9 @@ RV.phasesTab = (function () {
     if (typeof SGConvert === 'undefined' || !S.sgReady) { ui.toast('The space-group database is not loaded.', 'warn'); return; }
     var key = ph.key, last = null;
     var fields = [
-      { key: 'target', label: 'New space group', type: 'text', value: ph.sg.symbol, list: 'sg-list', hint: 'Symbol, number or Hall symbol. A subgroup splits sites, a supergroup merges atoms the new symmetry relates, another setting changes only the axes.' },
+      { key: 'find', label: 'Find', type: 'text', value: '', hint: 'A number or a symbol (14, P21/n, Fm-3m, Pnnn:2): the list below keeps the matches.' },
+      { key: 'target', label: 'New space group', type: 'select', value: ph.sg.hall, options: St.allSettings().map(function (s) { return [s.hall, s.number + ' · ' + s.symbol + ' · ' + s.system + (s.setting && s.setting !== 'standard' ? ' · ' + s.setting : '')]; }),
+        hint: 'Every setting of the 230 groups. A subgroup splits sites, a supergroup merges atoms the new symmetry relates, another setting changes only the axes.' },
       { key: 'mode', label: 'Transformation', type: 'select', value: 'auto', options: [['auto', 'Find it'], ['manual', 'Enter it']] },
       { key: 'basis', label: 'New axes a′, b′, c′', type: 'text', value: 'a,b,c', when: 'mode:manual', hint: 'In the old axes, e.g. a+b,-a+b,c or 2a,b,c.' },
       { key: 'shift', label: 'New origin', type: 'text', value: '0,0,0', when: 'mode:manual', hint: 'In the old axes, e.g. 1/8,1/8,1/8.' },
@@ -384,7 +386,22 @@ RV.phasesTab = (function () {
       'Now ' + esc(St.sgText(ph.sg)) + (ph.sg.setting ? ', ' + esc(ph.sg.setting) : '') + ', ' + ph.atoms.length + ' site' + (ph.atoms.length === 1 ? '' : 's') + '. The structure is expanded to the full cell, carried to the new axes and origin, and reduced again with the new symmetry.',
       { wide: true, after: '<div class="convert-preview" data-convert-preview aria-live="polite"></div>',
         onOpen: function (body) {
-          var timer = 0, out = body.querySelector('[data-convert-preview]');
+          var timer = 0, out = body.querySelector('[data-convert-preview]'), find = body.querySelector('[data-key="find"]'), pick = body.querySelector('[data-key="target"]');
+          // Find narrows the list to the matches and selects the setting the text names (P21/n -> P121/n1), else the first match
+          find.addEventListener('input', function () {
+            var norm = function (s) { return String(s).replace(/\s+/g, '').toLowerCase(); }, q = norm(find.value), named = q ? St.resolveSG(find.value.trim()) : null, first = null, keep = false;
+            Array.prototype.forEach.call(pick.options, function (o) {
+              var label = o.textContent, hit = !q || (/^\d+$/.test(q) ? label.indexOf(q + ' ·') === 0 : norm(label).indexOf(q) >= 0) || (named && o.value === named.hall);
+              o.hidden = !hit; o.disabled = !hit;
+              if (hit && !first) first = o;
+              if (hit && o.value === pick.value) keep = true;
+            });
+            if (named && Array.prototype.some.call(pick.options, function (o) { return o.value === named.hall; })) pick.value = named.hall;
+            else if (!keep && first) pick.value = first.value;
+            find.classList.toggle('invalid', !!q && !first);
+          });
+          // Enter in Find accepts the match; it does not start the conversion
+          find.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); pick.focus(); } });
           function update() {
             var f = read(body), p = St.phaseByKey(key);
             if (!p) return;
@@ -405,6 +422,8 @@ RV.phasesTab = (function () {
           var p = St.phaseByKey(key);
           if (!p) return 'The phase is gone.';
           if (!(v.tol > 0 && v.tol <= 2)) return 'The tolerance is a distance between 0 and 2 Å.';
+          var chosen = body.querySelector('[data-key="target"]').selectedOptions[0];
+          if (!chosen || chosen.disabled) return 'No space group matches the text in Find.';
           last = convertPlan(p, v);
           body.querySelector('[data-convert-preview]').innerHTML = previewHTML(p, last);
           if (last.error) return last.error;

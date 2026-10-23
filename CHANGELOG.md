@@ -2,6 +2,21 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.9.2 — 23 October 2026
+
+1. Convert…: the new space group is chosen from a drop-down list of all 520 settings of the 230 groups (number · symbol · crystal system · setting), with a Find box above it that keeps the matches as you type a number or a symbol and selects the setting the text names (14 → P121/c1, P21/n → P121/n1, Pnnn:2). Enter in Find accepts the match instead of starting the conversion; a Find with no match is refused. The previous field showed a drop-down arrow that opened an empty list.
+2. The space-group suggestions of the Phases field and of New phase list every setting, written as the fields write them (Fm-3m, P121/n1), labelled with number, crystal system and setting. They used the spaced symbols of the 230 standard settings only ("F m -3 m"), so the list stayed empty for a field holding "Fm-3m" and other settings could not be picked.
+3. Typed space-group symbols resolve to the right setting. The exact symbol of every setting now gives that setting (origin choice 2 of 30 groups, such as Pnnn:2, used to give origin choice 1); short monoclinic symbols give the standard b-unique setting (P 21/c → P121/c1, it gave P121/a1; P21/n, which was not recognised, → P121/n1); and a monoclinic number gives the standard setting (14 → P121/c1).
+
+## 2.9.1 — 23 October 2026
+
+1. Phases: the space-group row now uses the same columns as the phase-name row, so the space-group field lines up with the phase name, Convert… sits under the colour selection and Browse… under Edit, all at the same size. Browse… no longer wraps onto a line of its own.
+
+## 2.9.0 — 23 October 2026
+
+1. One running panel for every calculation (fits, extraction, space-group test, charge flipping, Wyckoff search), at the top centre under the header instead of a small card in the bottom-right corner. It shows what is running, its progress (the same as the progress bars of the footer and of Commands → Structure, which it now mirrors) with the elapsed time, a progress bar, and the only Stop of the page: a red ■ Stop button that also names its key, Esc.
+2. The formula unit and Z rows say what each method does with them, instead of the same sentence twice. Charge flipping: the formula is optional and only names the peaks (count × Z atoms per cell, strongest scatterer on the highest peaks); Z = Auto comes from the highest peak. Wyckoff search: the formula is required and is exactly what is placed; Z = Auto tries every Z with a plausible density.
+
 ## 2.8.0 — 23 October 2026
 
 1. Phases → **Convert…** (left of Browse…) describes a phase in another space group or setting. The structure is expanded to the full cell, carried to the new axes and origin, and reduced with the new symmetry; the cell, the atomic positions, B and occupancies of the starting model, of every dataset holding the phase (each from its own refined values) and of their saved calculations are converted, with their fit flags. The transformation (new axes a′, b′, c′ and origin) is found automatically among axis changes with entries −1, 0, 1 and origin shifts in eighths, or entered by hand (e.g. "a+b,-a+b,c", "1/8,1/8,1/8"). A live preview shows how the groups relate (same group in another setting, subgroup, supergroup), the old and new cells, the sites that split or merge, and the cell content.

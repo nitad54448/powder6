@@ -310,9 +310,11 @@ RV.solve = (function () {
     comp.forEach(function (c) { var need = g / gcd(g, c.n); step = step * need / gcd(step, need); });
     return Math.max(1, step);
   }
-  function densityHint() {
+  // k: 'cf' or 'wy', the method whose row the hint is under
+  function densityHint(k) {
     var comp = parseFormula(SV.opts.formula), Z = typedZ(), raw = String(SV.opts.formula || '').trim();
-    if (!raw) return { text: 'The formula unit is what the Wyckoff search places and what charge flipping names its peaks with.', warn: false };
+    if (!raw) return k === 'cf' ? { text: 'Optional here: with a formula unit the peaks are given element types; without one they stay unnamed.', warn: false }
+                                : { text: 'Required: the Wyckoff search places exactly the atoms of this formula unit, Z times per cell.', warn: false };
     if (!comp) return { text: raw + ' is not a formula this program can read (element symbols, counts and brackets: Ca(OH)2).', warn: true };
     var M = formulaMass(comp), V = volume();
     if (!(V > 0)) return { text: 'M = ' + M.toFixed(2) + ' g/mol.', warn: false };
@@ -320,6 +322,7 @@ RV.solve = (function () {
       var rho = density(Z, comp), bad = !(rho >= RHO_MIN && rho <= RHO_MAX);
       return { text: 'Z = ' + Z + ': ρ = ' + rho.toFixed(3) + ' g/cm³ (M = ' + M.toFixed(2) + ' g/mol, V = ' + V.toFixed(1) + ' Å³).' + (bad ? ' No solid has that density: Z counts formula units, not atoms.' : ''), warn: bad };
     }
+    if (k === 'cf') return { text: 'Z = Auto: from the highest peak, its site multiplicity over the count of the heaviest element. M = ' + M.toFixed(2) + ' g/mol, V = ' + V.toFixed(1) + ' Å³.', warn: false };
     var w = wyOptions(), lo = Math.max(1, Math.ceil(V * w.rhoMin / (AMU_A3 * M) - 1e-9)), hi = Math.min(192, Math.floor(V * w.rhoMax / (AMU_A3 * M) + 1e-9)), st = zStep(comp), list = [];
     for (var z = Math.max(st, Math.ceil(lo / st) * st); z <= hi && list.length < 12; z += st) list.push(z);
     return { text: 'Z = Auto: ' + (list.length ? 'the Wyckoff search tries Z = ' + list.join(', ') + (st > 1 ? ' (multiples of ' + st + ' the positions allow)' : '') + ', ρ ' + density(list[0], comp).toFixed(2) + '–' + density(list[list.length - 1], comp).toFixed(2) + ' g/cm³'
@@ -990,6 +993,7 @@ RV.solve = (function () {
     p.classList.toggle('indet', s.frac < 0);
     p.querySelector('i').style.width = s.frac >= 0 ? (100 * Math.min(1, s.frac)).toFixed(1) + '%' : '';
     p.querySelector('span').textContent = s.label;
+    if (SV[k + 'Run']) ui.busyProgress(s.frac, (k === 'cf' ? 'Charge flipping: ' : 'Wyckoff search: ') + s.label);
   }
 
   // ---------------------------------------------------------------- rendering
@@ -1020,11 +1024,15 @@ RV.solve = (function () {
         (withAtoms ? block(k + '-atoms', '<span data-res-title="atoms">Atoms</span>', '<div data-res-part="atoms"></div>', false, null, 'sub') : '') +
         block(k + '-ints', '<span data-res-title="refl">Intensities</span>', '<div data-res-part="refl"></div>', false, null, 'sub');
     }
-    // the formula unit is one value, shown in both methods that use it
+    // the formula unit is one value, shown in both methods that use it, each saying what it does with it
+    var FORMULA_USE = {
+      cf: 'Charge flipping uses the formula unit and Z only to name its peaks: the strongest scatterer goes on the highest peaks, each element on count × Z atoms per cell. The map itself does not depend on them. The Wyckoff search below uses the same values.',
+      wy: 'The Wyckoff search places these atoms and no others: count × Z of each element per cell, on the Wyckoff positions of the space group. Z = Auto tries every Z with a plausible density. Charge flipping above uses the same values to name its peaks.'
+    };
     function formulaRow(k) {
       return '<div class="sv-row"><label class="sv-lbl" for="sv-formula-' + k + '">Formula unit</label><input id="sv-formula-' + k + '" class="sv-formula" data-opt="formula" value="' + esc(o.formula) + '" placeholder="e.g. PbSO4" spellcheck="false" autocomplete="off">' +
         '<label class="sv-lbl" for="sv-z-' + k + '">Z</label><input id="sv-z-' + k + '" class="num sv-z" data-opt="z" value="' + esc(o.z) + '" placeholder="Auto" inputmode="numeric" autocomplete="off">' +
-        '<span class="hint sv-dens"></span></div><p class="hint sv-shared">Shared by charge flipping and the Wyckoff search.</p>';
+        '<span class="hint sv-dens" data-k="' + k + '"></span></div><p class="hint sv-shared">' + esc(FORMULA_USE[k]) + '</p>';
     }
     function structBlock(k) {
       return block(k + '-struct', '3D structure', '<div class="sv-st-head" id="sv-' + k + '-st-head"></div><div class="sv-struct sv-struct-host" id="sv-' + k + '-st" data-src="' + k + '"></div>', false, null, 'sub');
@@ -1147,8 +1155,7 @@ RV.solve = (function () {
       '<span class="sub">Extracted ' + esc(I.stamp) + (I.pre ? ', precision block of the ' + I.pre.n + ' lowest-angle' : '') + '.</span></p>' + (why ? '<p class="sv-warn">' + esc(why) + '</p>' : '');
   }
   function renderDensity() {
-    var h = densityHint();
-    document.querySelectorAll('#solve .sv-dens').forEach(function (el) { el.textContent = h.text; el.classList.toggle('sv-warn', !!h.warn); });
+    document.querySelectorAll('#solve .sv-dens').forEach(function (el) { var h = densityHint(el.getAttribute('data-k') === 'cf' ? 'cf' : 'wy'); el.textContent = h.text; el.classList.toggle('sv-warn', !!h.warn); });
   }
   function chipsOf(recs, max) {
     var shown = recs.slice(0, max).map(function (r) {

@@ -373,7 +373,17 @@
   <div class="progress" id="fit-progress" hidden><div class="track"><i></i></div><span></span></div>
 </footer>
 
-<div id="busy-guard" hidden role="status" aria-live="polite"><div class="busy-card"><span id="busy-label">Calculation running…</span><button type="button" id="busy-cancel">Stop</button></div></div>
+<!-- the one running panel: every calculation (fits, extraction, space-group test, charge flipping, Wyckoff search) shows here, with its only Stop -->
+<div id="busy-guard" hidden>
+  <div class="busy-card" role="status" aria-live="polite">
+    <div class="busy-main">
+      <span class="busy-spin" aria-hidden="true"></span>
+      <div class="busy-text"><b id="busy-label">Calculation running…</b><span id="busy-detail"></span></div>
+      <button type="button" id="busy-cancel" class="danger stop-btn" title="Stop the calculation (Esc)"><span aria-hidden="true">■</span> Stop <kbd>Esc</kbd></button>
+    </div>
+    <div class="busy-track indet" id="busy-track"><i></i></div>
+  </div>
+</div>
 <dialog id="dlg"></dialog>
 <div id="menu-pop" class="menu-pop" role="menu" hidden></div>
 <div class="drop-hint" aria-hidden="true">Drop powder patterns, structure CIFs or a project to read them</div>

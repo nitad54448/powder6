@@ -6,7 +6,7 @@
  *  'settings', 'theme', 'tab', 'tables', 'shared'.
  */
 var RV = window.RV || (window.RV = {});
-RV.version = '2.8.0 (23 oct 2026)';
+RV.version = '2.9.2 (23 oct 2026)';
 
 RV.bus = (function () {
   'use strict';
@@ -378,10 +378,33 @@ RV.ui = (function () {
     p.classList.toggle('indet', total < 0);
     bar.style.width = total > 0 ? (100 * Math.min(1, done / total)).toFixed(1) + '%' : (total < 0 ? '' : '0');
     lab.textContent = label || (total > 0 ? done + ' / ' + total : (total < 0 ? 'working' : ''));
+    if (total) busyProgress(total > 0 ? done / total : -1, label || (total > 0 ? done + ' / ' + total : ''));
+  }
+  // ---------------------------------------------------------------- the running panel (#busy-guard): progress and elapsed time
+  var busyText = '', busyStart = 0, busyTimer = 0;
+  function paintBusyDetail() {
+    var d = $('#busy-detail');
+    if (!d) return;
+    var s = busyStart ? Math.floor((Date.now() - busyStart) / 1000) : 0, t = s >= 60 ? Math.floor(s / 60) + ' min ' + (s % 60) + ' s' : s + ' s';
+    d.textContent = (busyText ? busyText + ' · ' : '') + t;
+  }
+  // frac < 0: no measure of progress (the bar sweeps)
+  function busyProgress(frac, text) {
+    var tr = $('#busy-track');
+    if (!tr) return;
+    tr.classList.toggle('indet', !(frac >= 0));
+    tr.querySelector('i').style.width = frac >= 0 ? (100 * Math.min(1, frac)).toFixed(1) + '%' : '';
+    busyText = text || '';
+    paintBusyDetail();
+  }
+  function busyRun(on) {
+    clearInterval(busyTimer); busyTimer = 0;
+    if (on) { busyStart = Date.now(); busyProgress(-1, ''); busyTimer = setInterval(paintBusyDetail, 1000); }
+    else { busyStart = 0; busyText = ''; }
   }
 
   return { modal: modal, prompt: prompt, confirm: confirm, fieldHTML: fieldHTML, collect: collect, toast: toast, log: log,
            logEntries: logEntries, logLoad: logLoad, menu: menu, closeMenu: closeMenu, able: able, pickFiles: pickFiles,
-           readBuffer: readBuffer, download: download, saveTextFile: saveTextFile, chooseSaveTarget: chooseSaveTarget, writeSaveTarget: writeSaveTarget, fileStamp: fileStamp, stamp: stamp, progress: progress,
+           readBuffer: readBuffer, download: download, saveTextFile: saveTextFile, chooseSaveTarget: chooseSaveTarget, writeSaveTarget: writeSaveTarget, fileStamp: fileStamp, stamp: stamp, progress: progress, busyProgress: busyProgress, busyRun: busyRun,
            esc: esc, h: h, parseNum: parseNum, fmt: fmt, withEsd: withEsd };
 })();

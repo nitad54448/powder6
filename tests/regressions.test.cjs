@@ -196,6 +196,16 @@ test('space-group precision limits the tested reflections and reports the availa
   assert.deepEqual(Array.from(limited.precision.index),Array.from(all.precision.index).slice(0,4));
 });
 
+test('every space-group setting resolves from its own symbol; short monoclinic symbols and numbers give the standard setting', () => {
+  const a=app(),E=a.context.SG_ENGINE,all=a.state.allSettings();
+  assert.equal(all.length,520);
+  const wrong=all.filter(s=>{const g=a.state.resolveSG(s.symbol);return !g || g.hall!==s.hall;}).map(s=>s.symbol);
+  assert.deepEqual(Array.from(wrong),[],'symbols that resolve to another setting');
+  const sym=t=>a.state.resolveSG(t).symbol;
+  assert.equal(sym('Pnnn:2'),'Pnnn:2');assert.equal(sym('P 21/c'),'P121/c1');assert.equal(sym('P21/n'),'P121/n1');assert.equal(sym('C2/c'),'C12/c1');
+  assert.equal(sym('14'),'P121/c1');assert.equal(sym('15'),'C12/c1');assert.equal(sym('225'),'Fm-3m');assert.equal(sym('F m -3 m'),'Fm-3m');
+  assert.equal(a.state.resolveSG('-P 2yn').symbol,'P121/n1','a Hall symbol still resolves');
+});
 function convertible(sgNumber, atoms, cell, hall) {
   const a=app();a.S.calculation='rietveld';
   const sg=a.state.resolveSG(sgNumber,hall),ph=a.state.makePhase({name:'X',sg,cell,atoms});a.state.addPhase(ph);
