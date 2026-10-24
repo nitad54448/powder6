@@ -2,6 +2,15 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.22.6 — 24 October 2026
+
+Removed the redundant Refinement parameters button from Selection and batch; it only reopened the Datasets view without revealing or scrolling to the editor.
+
+1. **Interface consistency and readability.** Shared control borders have stronger contrast in both themes; the default light-theme dataset and phase colours meet normal-text contrast on the workspace; placeholders use readable text contrast; editable parameter fields have visible boundaries. Small labels and structure-report tables use the shared type scale (at least 12 px), with larger default plot labels. Scientific values retain tabular numerals and monospaced parameter editing.
+2. **Keyboard and assistive technology.** Focus indicators retain a visible outline even on controls with their own shadows and in forced-colour mode. Dialogs expose their visible title as their accessible name, the workspace skip-link has a focusable destination, History tabs support arrow keys/Home/End with one tab stop, and Structure tabs explicitly identify their panels. Switching dataset accordions retains keyboard focus, and their headings remain available for inspection while a calculation runs.
+3. **Compact actions.** Remove, help, previous/next and parameter sharing controls use consistent targets of at least 24 px; parameter grids accommodate their larger actions. Fixed parameters no longer fade their sharing controls below readable contrast.
+4. **Browser checks.** Added an interface consistency page covering light/dark text and control contrast, focus outlines, selected-dataset accordions, History keyboard navigation, Structure panel relationships, dialog titles and desktop/tablet/narrow viewport overflow.
+
 ## 2.22.5 — 24 October 2026
 
 1. **Selected dataset accordions.** Show a coloured accordion heading for every selected dataset instead of only the active one. Opening a heading selects that dataset for inspection and places the parameter editor under it, without changing the fit selection.

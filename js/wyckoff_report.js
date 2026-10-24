@@ -472,7 +472,7 @@ Plot.prototype.draw = function () {
         [['c', 1], ['b', 2], ['a', 4]].forEach(([name, idx]) => {
             const P = px(this.corners[idx]);
             ctx.fillStyle = cssVar('--fg-3', '#7a7f86');
-            ctx.font = '10px ' + cssVar('--font-mono', 'monospace');
+            ctx.font = cssVar('--fs-sm', '12px') + ' ' + cssVar('--font-mono', 'monospace');
             ctx.fillText(name, O[0] + (P[0] - O[0]) * 1.06, O[1] + (P[1] - O[1]) * 1.06);
         });
     }
@@ -526,7 +526,7 @@ Plot.prototype.draw = function () {
             }
             if (s.showLabels) {
                 ctx.fillStyle = cssVar('--fg', '#1a1c1f');
-                ctx.font = '10px ' + cssVar('--font-mono', 'monospace');
+                ctx.font = cssVar('--fs-sm', '12px') + ' ' + cssVar('--font-mono', 'monospace');
                 ctx.fillText(at.element, it.P[0] + r + 2, it.P[1] - r * 0.2);
             }
         }
@@ -567,27 +567,27 @@ function mix(hex, other, t) {
 /* ============================================================== the markup */
 const CSS = `
 .wy-an { margin-top: 18px; }
-.wy-an h3 { font-size: 13px; margin: 16px 0 6px 0; }
+.wy-an h3 { font-size: var(--fs-lg,14px); margin: 16px 0 6px 0; }
 .wy-an .wy-head { display:flex; justify-content:space-between; align-items:baseline;
-  gap:12px; flex-wrap:wrap; font-size:11px; color:var(--fg-3,#7a7f86);
+  gap:12px; flex-wrap:wrap; font-size:var(--fs-sm,12px); color:var(--fg-3,#7a7f86);
   font-family:var(--font-mono,monospace); }
 .wy-an .wy-controls { display:flex; gap:14px; align-items:center; flex-wrap:wrap;
-  font-size:11px; color:var(--fg-2,#4a4e54); margin:8px 0; }
+  font-size:var(--fs-sm,12px); color:var(--fg-2,#4a4e54); margin:8px 0; }
 .wy-an .wy-controls label { display:flex; gap:5px; align-items:center; }
-.wy-an .wy-controls input[type=number] { width:64px; padding:2px 4px; font-size:11px;
+.wy-an .wy-controls input[type=number] { width:64px; padding:2px 4px; font-size:var(--fs-sm,12px);
   font-family:var(--font-mono,monospace); }
 .wy-plot-wrap { position:relative; border:1px solid var(--rule,#c4c7cb);
   border-radius:var(--r-3,4px); background:var(--bg-stage,#fff); overflow:hidden; }
 .wy-plot { display:block; width:100%; height:680px; cursor:grab; touch-action:none; }
 .wy-plot.dragging { cursor:grabbing; }
-.wy-plot-hint { position:absolute; left:8px; bottom:6px; font-size:10px;
+.wy-plot-hint { position:absolute; left:8px; bottom:6px; font-size:var(--fs-sm,12px);
   color:var(--fg-4,#a0a4ab); font-family:var(--font-mono,monospace); pointer-events:none; }
 .wy-plot-btns { position:absolute; right:6px; top:6px; display:flex; gap:4px; }
-.wy-plot-btns button { font-size:10px; padding:2px 6px; }
-.wy-an table.wy-tab { width:100%; border-collapse:collapse; font-size:11.5px;
+.wy-plot-btns button { font-size:var(--fs-sm,12px); padding:2px 6px; }
+.wy-an table.wy-tab { width:100%; border-collapse:collapse; font-size:var(--fs-sm,12px);
   font-family:var(--font-mono,monospace); }
 .wy-an table.wy-tab th { text-align:right; font-weight:500; color:var(--fg-3,#7a7f86);
-  border-bottom:1px solid var(--rule,#c4c7cb); padding:4px 6px; font-size:10px;
+  border-bottom:1px solid var(--rule,#c4c7cb); padding:4px 6px; font-size:var(--fs-sm,12px);
   text-transform:uppercase; letter-spacing:0.04em; }
 .wy-an table.wy-tab td { text-align:right; padding:3px 6px;
   border-bottom:1px solid var(--rule-soft,#d8dadd); }
@@ -596,11 +596,11 @@ const CSS = `
 .wy-an tr.wy-site:hover { background:var(--bg-hover,rgba(0,0,0,0.045)); }
 .wy-an tr.wy-site.sel { background:var(--accent-tint,rgba(74,127,181,0.14)); }
 .wy-an tr.wy-site.off td { opacity:0.4; }
-.wy-eye { border:none; background:none; cursor:pointer; font-size:12px; padding:0 2px;
+.wy-eye { border:none; background:none; cursor:pointer; font-size:var(--fs-sm,12px); padding:0 2px;
   color:var(--fg-3,#7a7f86); }
 .wy-contacts { max-height:190px; overflow:auto; border:1px solid var(--rule,#c4c7cb);
   border-radius:var(--r-3,4px); padding:8px 10px; font-family:var(--font-mono,monospace);
-  font-size:11.5px; }
+  font-size:var(--fs-sm,12px); }
 .wy-contacts .wy-ctitle { color:var(--fg-3,#7a7f86); margin-bottom:6px; }
 .wy-contacts .wy-crow { display:grid; grid-template-columns:2.5em 6em 1fr; gap:8px;
   padding:1px 0; }
@@ -609,7 +609,7 @@ const CSS = `
 .wy-v-borderline { color:var(--warning,#b88318); }
 .wy-v-check { color:var(--danger,#b03a3a); }
 .wy-v-none { color:var(--fg-3,#7a7f86); }
-.wy-note { font-size:11px; color:var(--fg-3,#7a7f86); margin:6px 0 0 0; line-height:1.5; }
+.wy-note { font-size:var(--fs-sm,12px); color:var(--fg-3,#7a7f86); margin:6px 0 0 0; line-height:1.5; }
 `;
 
 function ensureCSS() {

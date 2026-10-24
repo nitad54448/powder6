@@ -82,7 +82,7 @@
   <button type="button" id="theme-toggle" class="theme-switch" role="switch" aria-checked="false"><span class="track" aria-hidden="true"><i></i></span><span>Dark</span></button>
 </header>
 
-<main class="work dual-panels" id="work">
+<main class="work dual-panels" id="work" tabindex="-1">
   <!-- ================================================================ Results -->
   <section class="stage results-panel" aria-label="Results">
     <nav id="result-tabs" class="tabs panel-tabs" role="tablist" aria-label="Result views">
@@ -305,7 +305,7 @@
             <p class="hint">Set values and refinement flags in each dataset tab. Use its Copy controls for an explicit batch change, then fit the selection. Individual fits keep separate fitted values for each dataset. Global fits tie only parameters marked shared; use local cells when the lattice varies between patterns.</p>
             <div class="buttons">
               <button type="button" data-dataset-action="all">Select all</button><button type="button" data-dataset-action="none">Clear selection</button>
-              <button type="button" data-dataset-action="parameters">Refinement parameters</button><button type="button" data-dataset-action="individual">Fit selected individually</button>
+              <button type="button" data-dataset-action="individual">Fit selected individually</button>
               <span class="hint" id="dataset-summary"></span>
             </div>
             <div class="table-wrap ds-table" id="dataset-table"></div>

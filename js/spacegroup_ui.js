@@ -300,7 +300,7 @@ if (state.selected) {
                     + row('Centrosymmetric', rec.centrosymmetric ? 'yes' : 'no')
                     + '</dl>'
                     + '<div style="margin-top:12px;">'
-                    +   '<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--system-secondary-label);margin-bottom:4px;">Reflection conditions</div>'
+                    +   '<div style="font-size:var(--fs-sm,12px);text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-3);margin-bottom:4px;">Reflection conditions</div>'
                     +   condHtml
                     + '</div>'
                     + '</div>';
@@ -312,7 +312,7 @@ if (state.selected) {
             function renderConditions(conds) {
                 const keys = conds ? Object.keys(conds) : [];
                 if (keys.length === 0) {
-                    return '<div style="font-size:12px;color:var(--system-secondary-label);">No reflection conditions (every hkl is allowed).</div>';
+                    return '<div style="font-size:var(--fs-sm,12px);color:var(--ink-3);">No reflection conditions (every hkl is allowed).</div>';
                 }
                 let html = '<table class="sg-explain-cond-table"><thead><tr><th>Family</th><th>Rule</th></tr></thead><tbody>';
                 keys.forEach(fam => {

@@ -6,7 +6,7 @@
  *  'settings', 'theme', 'tab', 'tables', 'shared'.
  */
 var RV = window.RV || (window.RV = {});
-RV.version = '2.22.5 (24 oct 2026)';
+RV.version = '2.22.6 (24 oct 2026)';
 
 RV.bus = (function () {
   'use strict';
@@ -96,7 +96,8 @@ RV.ui = (function () {
     dlg.innerHTML = '';
     dlg.className = o.size === 'xl' ? 'xl' : (o.wide ? 'wide' : '');
     var box = h('div', { class: 'dlg' });
-    box.appendChild(h('h2', { text: o.title || '' }));
+    box.appendChild(h('h2', { id:'dialog-title', text: o.title || 'Powder 6' }));
+    dlg.setAttribute('aria-labelledby','dialog-title');
     var body = h('div', { class: 'body' });
     if (typeof o.body === 'string') body.innerHTML = o.body; else if (o.body) body.appendChild(o.body);
     box.appendChild(body);

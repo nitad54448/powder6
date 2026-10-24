@@ -56,7 +56,7 @@
     check(RV.workspace.dataset().id===second.id && S.sel.size===1 && S.sel.has(ds.id),'Dataset tab changed the fit selection');
     change(q('.prow[data-name="bkg0"] .pv'),'27');await frame();
     check(second.p.bkg0===27 && ds.p.bkg0===20,'Unselected dataset tab edited the wrong values');
-    check(q('#ds-info').textContent.includes(second.name),'Properties do not follow the dataset tab');
+    check(q('#dataset-editor-name').textContent===second.name,'Accordion heading does not follow the inspected dataset');
     const originalLambda=second.inst.lambda1,otherLambda=ds.inst.lambda1;
     const instrument=RV.cmd.instrument();await frame();change(q('#dlg [data-key="lambda1"]'),'1.2');q('#dlg .primary').click();await instrument;await frame();
     check(second.inst.lambda1===1.2 && ds.inst.lambda1===otherLambda && S.sel.size===1,'Instrument dialog changed another dataset or fit selection');
@@ -71,8 +71,8 @@
     const instrumentBefore=JSON.stringify([ds.inst,ds.p,ds.fit]),phaseProfile=S.phases[0].profileType;change(q('[data-instrument-profile]'),'simple_pvoigt');await frame();check(second.inst.resolutionType==='simple_pvoigt' && S.phases[0].profileType===phaseProfile && q('.prow[data-name="p1.size"]') && q('.prow[data-name="p1.strain"]') && q('.prow[data-name="inst.eta"]'),'Pseudo-Voigt lost sample size/strain or did not change its instrument fields');check(JSON.stringify([ds.inst,ds.p,ds.fit])===instrumentBefore,'Instrument family changed another dataset');St.setInstrument([second],{resolutionType:'gsas_cw'});await frame();record('one instrument profile selector per dataset; sample size and strain remain independent');
     q('[data-fit-group="resolution"]').click();await frame();
     check(second.fit['inst.U'] && !ds.fit['inst.U'],'Dataset group control changed another dataset');
-    q('#dataset-tabs').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Home',bubbles:true,cancelable:true}));await frame();
-    check(doc.activeElement===q('[data-dataset-tab="'+S.datasets[0].id+'"]') && S.sel.size===1,'Dataset keyboard navigation changed selection');
+    q('[data-dataset-accordion="'+ds.id+'"] summary').click();await frame();
+    check(doc.activeElement===q('#dataset-editor > summary') && RV.workspace.dataset().id===ds.id && S.sel.size===1,'Dataset accordion activation lost focus or changed selection');
     S.busy=true;RV.bus.emit('busy',true);q('[data-dataset-tab="'+second.id+'"]').click();await frame();
     check(RV.workspace.dataset().id===second.id && q('.prow[data-name="bkg0"] .pv').disabled && q('.prow[data-name="bkg0"] .pf').disabled,'Busy dataset inspection enabled editing');
     S.busy=false;RV.bus.emit('busy',false);await frame();
@@ -189,7 +189,7 @@
     }
     record('FIT runs the selected Le Bail, WPPF or Rietveld method without an additional inspector');
     St.setCalculation('lebail');const total=250-S.datasets.length;for(let i=0;i<total;i++)S.datasets.push(St.makeDataset({...raw,name:'Series '+String(i+1).padStart(3,'0'),phases:[]}));St.selectAll();RV.bus.emit('datasets');St.setSetting('plotMode','overview');q('#tab-pattern').click();await frame();check(S.sel.size===250 && RV.plots._plots.pat.series.filter(s=>s.ds).length===250,'Overview omitted fit datasets');check(RV.plots._plots.pat.series.every(s=>s.x.length<=701),'Overview not bounded');change(q('#inspect-dataset'),String(S.datasets[100].id));change(q('#plot-mode'),'focus');await frame();check(S.sel.size===250 && RV.plots.plotted().length===1 && RV.plots.plotted()[0].id===S.datasets[100].id,'Large-series focus changed targets');record('250-dataset overview and focused inspection preserve fit membership');
-    q('#tab-datasets').click();await frame();check(all('[data-dataset-tab]').length===250 && all('[data-dataset-tab][aria-selected="true"]').length===1,'Large series lost its dataset tabs');check(q('#dataset-tabs').scrollWidth>q('#dataset-tabs').clientWidth && S.sel.size===250,'Large dataset tabs do not scroll or changed selection');record('250 coloured dataset tabs remain scrollable with one active editor');
+    q('#tab-datasets').click();await frame();check(all('[data-dataset-tab]').length===250 && all('[data-dataset-tab][aria-selected="true"]').length===1,'Large series lost its dataset tabs');check(all('#dataset-accordions > details').length===250 && S.sel.size===250,'Large series lost its dataset accordion headings or changed selection');record('250 coloured dataset accordions retain one active editor');
     check(!errors.length,'Browser errors: '+errors.join('\n'));record('no browser errors across the new workflow');
     St.selectIds(S.datasets.slice(0,2).map(d=>d.id));St.setSetting('plotMode','overlay');St.setCalculation('rietveld');RV.layout.showResult('rietveld');q('#tab-method').click();await frame();
     window.browserTestResult={ok:true,results};

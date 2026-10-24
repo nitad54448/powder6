@@ -1,10 +1,11 @@
 /* No dependencies. Starts a local server and a temporary headless Chromium.
- * Usage: node tests/run-webgpu.cjs [path-to-chrome-or-edge] [test-page]
+ * Usage: node tests/run-webgpu.cjs [path-to-chrome-or-edge] [test-page] [screenshot-path]
  */
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),os=require('node:os');
 const {spawn}=require('node:child_process');
 const root=path.resolve(__dirname,'..');
 const testPage=process.argv[3] || 'tests/webgpu-pt.html';
+const screenshotPath=process.argv[4] || process.env.POWDER6_SCREENSHOT;
 const browser=process.argv[2] || ['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p=>fs.existsSync(p));
 if(!browser)throw new Error('Pass a Chromium executable path.');
 const server=http.createServer((req,res)=>{
@@ -32,7 +33,7 @@ let proc,ws,dir;
     const status=await send('Runtime.evaluate',{expression:'document.getElementById("results")?.textContent || document.body?.innerText || "loading"',returnByValue:true},sessionId);
     if(status.result.value!==lastProgress){lastProgress=status.result.value;try{const rows=JSON.parse(lastProgress);console.log(rows.length+' checks: '+rows[rows.length-1].name);}catch{console.log(lastProgress);}}
     const r=await send('Runtime.evaluate',{expression:'window.browserTestResult || window.gpuTestResult || null',returnByValue:true},sessionId);
-    if(r.result.value){console.log(JSON.stringify(r.result.value,null,2));if(!r.result.value.ok)process.exitCode=1;if(process.env.POWDER6_SCREENSHOT){await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false},sessionId);await send('Runtime.evaluate',{expression:'document.getElementById("results").style.display="none";Object.assign(document.getElementById("app").style,{position:"fixed",inset:"0",width:"100vw",height:"100vh"})'},sessionId);await new Promise(resolve=>setTimeout(resolve,300));const capture=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false},sessionId);fs.writeFileSync(process.env.POWDER6_SCREENSHOT,Buffer.from(capture.data,'base64'));}return;}
+    if(r.result.value){console.log(JSON.stringify(r.result.value,null,2));if(!r.result.value.ok)process.exitCode=1;if(screenshotPath){await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false},sessionId);await send('Runtime.evaluate',{expression:'document.getElementById("results").style.display="none";Object.assign(document.getElementById("app").style,{position:"fixed",inset:"0",width:"100vw",height:"100vh"})'},sessionId);await new Promise(resolve=>setTimeout(resolve,300));const capture=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false},sessionId);fs.writeFileSync(screenshotPath,Buffer.from(capture.data,'base64'));}return;}
     await new Promise(resolve=>setTimeout(resolve,500));
   }
   const state=await send('Runtime.evaluate',{expression:'document.getElementById("results").textContent',returnByValue:true},sessionId);

@@ -50,8 +50,8 @@ RV.layout=(function(){
   }
   function syncStructure(){
     if(!$('#structure-run-select'))return;
-    document.querySelectorAll('[data-structure-result]').forEach(function(b){var on=b.dataset.structureResult===structure;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;});
-    ['sgt','cf','wy'].forEach(function(k){$('#structure-result-'+k).hidden=k!==structure;});
+    document.querySelectorAll('[data-structure-result]').forEach(function(b){var on=b.dataset.structureResult===structure;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;b.id='structure-tab-'+b.dataset.structureResult;b.setAttribute('aria-controls','structure-result-'+b.dataset.structureResult);});
+    ['sgt','cf','wy'].forEach(function(k){var panel=$('#structure-result-'+k);panel.hidden=k!==structure;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby','structure-tab-'+k);});
     $('#structure-runbar').hidden=structure==='sgt';
     var list=structure==='sgt'?[]:records('wppf',structure),picker=$('#structure-run-select');
     if(structureRuns[structure] && !list.some(function(r){return r.id===structureRuns[structure];}))delete structureRuns[structure];
