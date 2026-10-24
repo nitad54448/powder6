@@ -188,7 +188,7 @@
           <tr><td>Background, regions</td><td>Ctrl+click places a background anchor at both cursor coordinates (on an anchor: removes it) and makes the background a spline. Right-drag an anchor to move it; Escape cancels the move. Filled magenta anchors are refinable; hollow grey anchors are fixed. A yellow vertical line marks the anchor being edited in its Datasets tab. Ctrl+Shift+drag marks an excluded region; Ctrl+Shift+click in one removes it. Placement and exclusions use the first selected dataset; dragging edits the anchor under the cursor.</td></tr>
           <tr><td>Parameter</td><td>mouse wheel or arrow keys change the value; Shift for larger steps, Alt for smaller ones</td></tr>
           <tr><td>Dataset parameters</td><td>Coloured tabs or ← → next to the dataset name inspect another dataset without changing the fit selection. A group header folds the group; its checkbox changes refinement flags only in the active dataset. In Global mode a padlock shares the parameter (closed) or not (open); right-click on it for the datasets that share it.</td></tr>
-          <tr><td>Phases list</td><td>click or use ↑ ↓ to select the active phase; double-click or press Enter to open it in the Phases tab. Assign phases to datasets with Datasets → Phases… or Refine → Phases of the datasets…</td></tr>
+          <tr><td>Phases list</td><td>click or use ↑ ↓ to select the active phase, whose definition the Phases tab shows. Assign phases to datasets with Datasets → Phases… or Refine → Phases of the datasets…</td></tr>
           <tr><td>Dataset list</td><td>Checkboxes select fit and plot datasets; click a selected dataset to inspect it. Ctrl+A selects all; Shift+click selects a range; Ctrl+click adds one; Delete removes datasets, F2 or double-click renames, drag reorders.</td></tr>
           <tr><td>Anywhere</td><td>F9 fit, Ctrl+S save the project, Ctrl+Z undo</td></tr>
         </tbody></table>
@@ -324,7 +324,7 @@
           <section class="side-phases" id="sp-phases">
             <div class="side-h"><span id="ph-count" class="sub"></span></div>
             <div id="ph-list" class="ds-list" tabindex="0" role="listbox" aria-label="Phases"></div>
-            <p class="hint">Select a phase; double-click to inspect its shared definition in Phases. Edit dataset-specific phase values and assignments in Datasets.</p>
+            <p class="hint">Select a phase to edit its shared definition here. Dataset-specific phase values and assignments are edited in Datasets.</p>
           </section>
         </details>
         <div class="phase-body" id="phase-body"></div>
@@ -349,11 +349,11 @@
             <section class="fitbar solve-fit" id="sp-fit" role="group" aria-label="Fit">
               <p class="fit-target" id="fit-target"></p>
               <div class="fit-line">
-                <span class="fit-lbl">Mode</span>
+                <span class="fit-lbl" id="fit-mode-lbl">Mode</span>
                 <div class="seg" id="fit-mode" role="group" aria-label="Fit mode">
                   <button type="button" data-fitmode="single" aria-pressed="true" title="Each selected dataset gets its own refinement">Individual</button><button type="button" data-fitmode="global" aria-pressed="false" title="One refinement of all selected datasets with shared parameters">Global</button>
                 </div>
-                <span class="fit-sep" aria-hidden="true"></span>
+                <span class="fit-sep" id="fit-mode-sep" aria-hidden="true"></span>
                 <span class="fit-kv"><span class="fit-lbl">Algorithm</span> <b id="fit-algorithm"></b></span>
                 <span class="fit-kv" title="LM iterations per stage; edit in Settings"><span class="fit-lbl">Max iterations</span> <b id="fit-max-iter"></b></span>
                 <span class="fit-kv" title="Relative change of χ², twice in a row; edit in Settings"><span class="fit-lbl">Min χ² change</span> <b id="fit-tol"></b></span>

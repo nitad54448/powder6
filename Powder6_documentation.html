@@ -256,7 +256,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 </table></div>
 <p>Le Bail and WPPF intensities are not named parameters; they come back with every fit, with uncertainties. Parameters that are fixed by a constraint (a cell edge equal to another, a coordinate fixed by site symmetry, a dependent occupancy) are not parameters at all: they are computed from the independent ones. See <a href="#constraints">Constraints</a>.</p>
 <h4>Individual and global fits</h4>
-<p><b>Individual</b> fits each selected dataset on its own, in parallel, starting from each dataset's current values for the active method. <b>Global</b> fits all selected datasets in one least-squares problem. In Global mode each refined parameter has a padlock: closed means <em>shared</em> (one value for all datasets that hold it), open means <em>local</em> (one per dataset). A dot on the padlock means shared by some of the selected datasets only. <b>Refine → Sharing in the global fit</b> edits this as a table. Scales and backgrounds stay local. If a shared refined parameter has different current values, choose a dataset value or enter a shared starting value before the global fit; cancelling leaves the model unchanged.</p>
+<p>The <b>Mode</b> selector appears only when two or more datasets are selected (with one dataset there is nothing to choose). <b>Individual</b> fits each selected dataset on its own, in parallel, starting from each dataset's current values for the active method. <b>Global</b> fits all selected datasets in one least-squares problem. In Global mode each refined parameter has a padlock: closed means <em>shared</em> (one value for all datasets that hold it), open means <em>local</em> (one per dataset). A dot on the padlock means shared by some of the selected datasets only. <b>Refine → Sharing in the global fit</b> edits this as a table. Scales and backgrounds stay local. If a shared refined parameter has different current values, choose a dataset value or enter a shared starting value before the global fit; cancelling leaves the model unchanged.</p>
 </section>
 
 <section id="datasets">
@@ -889,7 +889,7 @@ O  O      2.40          # keep the tetrahedra from interpenetrating</code></pre>
 <tr><td>Parameter value</td><td>Mouse wheel or arrow keys change it; <kbd>Shift</kbd> for larger steps, <kbd>Alt</kbd> for smaller.</td></tr>
 <tr><td>Parameters panel</td><td>← → beside the dataset name show the previous or next dataset. A group header folds the group; its box ticks the whole group. In Global mode a padlock shares a parameter; right-click it for more.</td></tr>
 <tr><td>Dataset list</td><td><kbd>Ctrl</kbd>+<kbd>A</kbd> all · <kbd>Shift</kbd>+click a range · <kbd>Ctrl</kbd>+click one more · <kbd>Delete</kbd> · <kbd>F2</kbd> or double-click renames · drag reorders.</td></tr>
-<tr><td>Phase list</td><td>Click or use ↑ ↓ to select the active phase; double-click or press <kbd>Enter</kbd> to open it in the Phases tab. Assign phases to datasets with <b>Datasets → Phases…</b> or <b>Refine → Phases of the datasets…</b>.</td></tr>
+<tr><td>Phase list</td><td>Click or use ↑ ↓ to select the active phase, whose definition the Phases tab shows. Assign phases to datasets with <b>Datasets → Phases…</b> or <b>Refine → Phases of the datasets…</b>.</td></tr>
 <tr><td>Side panel edge</td><td>Drag to resize; double-click to reset.</td></tr>
 </table></div>
 </section>
@@ -1018,8 +1018,9 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
 
 <section id="corrections">
 <h2>Recent changes</h2>
-<p>Version 2.17.0, 24 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
+<p>Version 2.18.0, 24 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 <ul>
+  <li>The help of the Wyckoff, charge-flipping and Settings fields is in tooltips (hover a label or a box), so every label stays level with its box; the Mode selector appears only with two or more datasets selected.</li>
   <li>ADDSYM scans up to 1 Å and points to the tolerance at which a higher symmetry appears; the Structure pane starts with its three methods closed and its notes aligned.</li>
   <li>Wyckoff distance constraints can give a coordination shell a shape (tetrahedron, octahedron, square, triangle, linear, or tet, oct, sq, tri, lin), restraining its angles with an adjustable Shape weight.</li>
   <li>The Commands and Results headings and the plot help line are gone; the plot's mouse controls are in the tooltip of a round “i” at the right of its toolbar. Every session starts as a Cu X-ray tube.</li>

@@ -136,12 +136,10 @@ RV.panels = (function () {
   function initPhases() {
     phList = $('#ph-list');
     phList.addEventListener('click', function (e) {var remove=e.target.closest('[data-remove-phase]');if(remove){e.stopPropagation();if(!S.busy)RV.cmd.deletePhase(remove.dataset.removePhase);return;}if (e.target.closest('select, input')) return; var row = e.target.closest('.ph'); if (row) St.selectPhase(row.getAttribute('data-key')); });
-    phList.addEventListener('dblclick', function (e) { if (e.target.closest('select, input, button')) return; var row = e.target.closest('.ph'); if (row) { St.selectPhase(row.getAttribute('data-key')); RV.app.showTab('phases'); } });
     phList.addEventListener('keydown', function (e) {
       if (e.target.closest('select, input, button')) return;
       var i = S.phases.indexOf(St.currentPhase());
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && S.phases.length) { e.preventDefault(); St.selectPhase(S.phases[Math.max(0, Math.min(S.phases.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))].key); }
-      else if (e.key === 'Enter') { e.preventDefault(); RV.app.showTab('phases'); }
     });
     ['phases', 'phaseStyle', 'phaseSel', 'tables', 'busy', 'selection', 'datasets'].forEach(function (ev) { RV.bus.on(ev, renderPhases); });
     renderPhases();
@@ -544,6 +542,8 @@ RV.panels = (function () {
   }
   function syncFitMode() {
     var canGlobal = S.sel.size >= 2;
+    // with one dataset there is no choice to make: the selector, its separator and its explanation are hidden
+    ['#fit-mode-lbl', '#fit-mode', '#fit-mode-sep', '#fit-mode-hint'].forEach(function (id) { var el = $(id); if (el) el.hidden = !canGlobal; });
     // Selection controls whether a global fit is available; rendering must
     // not overwrite the saved method preference while a project is loading.
     var g = canGlobal && fitMode() === 'global';
@@ -615,7 +615,9 @@ RV.panels = (function () {
         if (f.type === 'select') ctl = '<select id="' + id + '" data-set="' + f.key + '">' + f.options.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === v ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>';
         else ctl = '<input id="' + id + '" data-set="' + f.key + '" value="' + esc(v) + '" inputmode="decimal" spellcheck="false" autocomplete="off">';
         var visibility = f.pt ? ' data-pt-setting' : '';
-        return '<label for="' + id + '"' + visibility + '>' + esc(f.label) + '</label><div' + visibility + '>' + ctl + (f.hint ? '<small>' + esc(f.hint) + '</small>' : '') + '</div>';
+        var tip = f.hint ? ' title="' + esc(f.hint) + '"' : '';
+        ctl = ctl.replace(/^<(select|input) /, '<$1' + tip + ' ');
+        return '<label for="' + id + '"' + visibility + tip + '>' + esc(f.label) + '</label><div' + visibility + tip + '>' + ctl + '</div>';
       }).join('') + '</div></fieldset>';
     }).join('');
   }

@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.18.0 — 24 October 2026
+
+1. The **Mode** selector (Individual / Global), its separator and its explanation are hidden while one dataset is selected, as Global is not available then; they appear with two or more.
+2. The help text of the fields of the Wyckoff search, the charge-flipping form and Settings is now a tooltip on the label and on the box (the long distance-constraint syntax included), not a line under the box, so a label is always level with its box. Labels that have a tooltip show the help cursor.
+3. Phases: the note over the phase list no longer promises that a double-click inspects the phase in Phases (the list is already in that tab, so the double-click and the Enter key did nothing more than a click); both are removed.
+
 ## 2.17.0 — 24 October 2026
 
 1. ADDSYM finds the symmetry of a structure refined in P1. A converged P1 Rietveld refinement of PbSO4 (24 free atoms, from a start 0.1 Å off) was recognised as Pnma only at 0.75 Å, beyond the 0.5 Å the scan stopped at, so the report said there was no other symmetry. The scan now runs 0.05, 0.1, 0.2, 0.3, 0.5, 0.75 and 1 Å. When the entered tolerance finds nothing higher but a larger one does, the report names the group, the tolerance and the largest atom move, and a **Use … Å** button sets the tolerance. The hint explains that atoms refined from powder data scatter, and a symmetry operation can need about twice that scatter.

@@ -1026,13 +1026,15 @@ RV.solve = (function () {
 
   // ---------------------------------------------------------------- rendering
   var dirty = true;
+  // the help of a form field is its tooltip (on the label and on the control), so every label stays level with its box
+  function tip(hint) { return hint ? ' title="' + esc(String(hint).replace(/<[^>]*>/g, '')) + '"' : ''; }
   function field(id, label, value, hint, attrs) {
-    return '<label for="' + id + '">' + label + '</label><div><input id="' + id + '" ' + attrs + ' value="' + esc(value) + '" autocomplete="off" spellcheck="false">' + (hint ? '<small>' + hint + '</small>' : '') + '</div>';
+    return '<label for="' + id + '"' + tip(hint) + '>' + label + '</label><div><input id="' + id + '" ' + attrs + tip(hint) + ' value="' + esc(value) + '" autocomplete="off" spellcheck="false"></div>';
   }
   function select(id, label, value, options, hint, attrs) {
-    return '<label for="' + id + '">' + label + '</label><div><select id="' + id + '" ' + attrs + '>' + options.map(function (o) {
+    return '<label for="' + id + '"' + tip(hint) + '>' + label + '</label><div><select id="' + id + '" ' + attrs + tip(hint) + '>' + options.map(function (o) {
       return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(value) ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
-    }).join('') + '</select>' + (hint ? '<small>' + hint + '</small>' : '') + '</div>';
+    }).join('') + '</select></div>';
   }
   function render() {
     clearEmptyComposition();
@@ -1052,6 +1054,8 @@ RV.solve = (function () {
         (withAtoms ? block(k + '-atoms', '<span data-res-title="atoms">Atoms</span>', '<div data-res-part="atoms"></div>', false, null, 'sub') : '') +
         block(k + '-ints', '<span data-res-title="refl">Intensities</span>', '<div data-res-part="refl"></div>', false, null, 'sub');
     }
+    var RHO_HELP = 'With Z on Auto, every Z with a density in this window is searched.';
+    var CONSTRAINT_HELP = 'One per line: A B N dmin/dmax (N neighbours of B around each A), A B - dmin/ for a floor. End a counted line with a shape to restrain its angles too: tetrahedron, octahedron, square, triangle, linear, or tet, oct, sq, tri, lin, e.g. S O 4 1.40/1.60 tet. Up to ' + WL.maxRules + ' rules and ' + WL.maxCoordSlots + ' neighbours in all.';
     // the formula unit is one value, shown in both methods that use it, each saying what it does with it
     var FORMULA_USE = {
       cf: 'Charge flipping uses the formula unit and Z only to name its peaks: the strongest scatterer goes on the highest peaks, each element on count × Z atoms per cell. The map itself does not depend on them. The Wyckoff search below uses the same values.',
@@ -1123,16 +1127,16 @@ RV.solve = (function () {
           '<div class="form-grid sv-form">' +
             field('sv-wy-maxSites', 'Sites per element, at most', o.wy.maxSites, 'Blank: Auto; up to ' + WL.maxSitesPerElement + '.', 'class="num" data-wy="maxSites" placeholder="Auto" inputmode="numeric"') +
             field('sv-wy-maxRepeat', 'Atoms per position, at most', o.wy.maxRepeat, 'Independent atoms on one Wyckoff position at different coordinates; blank: Auto.', 'class="num" data-wy="maxRepeat" placeholder="Auto" inputmode="numeric"') +
-            '<label for="sv-wy-rhoMin">Density (g/cm³)</label><div><span class="sv-range"><input id="sv-wy-rhoMin" class="num" data-wy="rhoMin" value="' + esc(o.wy.rhoMin) + '" inputmode="numeric" aria-label="Lowest density"> to ' +
-              '<input id="sv-wy-rhoMax" class="num" data-wy="rhoMax" value="' + esc(o.wy.rhoMax) + '" inputmode="numeric" aria-label="Highest density"></span><small>With Z on Auto, every Z with a density in this window is searched.</small></div>' +
+            '<label for="sv-wy-rhoMin"' + tip(RHO_HELP) + '>Density (g/cm³)</label><div><span class="sv-range"' + tip(RHO_HELP) + '><input id="sv-wy-rhoMin" class="num" data-wy="rhoMin" value="' + esc(o.wy.rhoMin) + '" inputmode="numeric" aria-label="Lowest density"> to ' +
+              '<input id="sv-wy-rhoMax" class="num" data-wy="rhoMax" value="' + esc(o.wy.rhoMax) + '" inputmode="numeric" aria-label="Highest density"></span></div>' +
             field('sv-wy-maxZ', 'Values of Z, at most', o.wy.maxZ, '1–' + WL.maxZSearches + '. The least plausible are left out first.', 'class="num" data-wy="maxZ" inputmode="numeric"') +
             field('sv-wy-particles', 'Particles', o.wy.particles, 'Trial structures held at once ('+WL.particles[0]+'–'+gpuBudget.maxParticles+'). Default is 33% of the conservative hardware budget.', 'class="num" data-wy="particles" inputmode="numeric"') +
             field('sv-wy-iterations', 'Iterations', o.wy.iterations, WL.iterations[0] + '–' + WL.iterations[1] + '. When the assignments need more than ' + WL.fullWaves + ' waves, each is first screened for ' + Math.round(100 * WL.screenFraction) + ' % of them.', 'class="num" data-wy="iterations" inputmode="numeric"') +
             field('sv-wy-restarts', 'Restarts', o.wy.restarts, WL.restarts[0] + '–' + WL.restarts[1] + '.', 'class="num" data-wy="restarts" inputmode="numeric"') +
             field('sv-wy-minContact', 'Shortest contact (Å)', o.wy.minContact, 'A structure with two unlike atoms closer than this is rejected.', 'class="num" data-wy="minContact" inputmode="decimal"') +
             field('sv-wy-shapeWeight', 'Shape weight', o.wy.shapeWeight, 'How strongly the angles of shaped shells (tet, oct…) count, as a multiple of the bond penalty: 0 off, 1 default, up to ' + WL.shapeWeight[1] + '.', 'class="num" data-wy="shapeWeight" inputmode="decimal"') +
-            '<label for="sv-wy-constraints">Distance constraints</label><div><textarea id="sv-wy-constraints" data-wy="constraints" rows="3" spellcheck="false" placeholder="S O 4 1.40/1.60 tet&#10;Pb O 8 2.40/3.10&#10;O O - 2.30/">' + esc(o.wy.constraints) + '</textarea>' +
-              '<small>One per line: <code>A B N dmin/dmax</code> (N neighbours of B around each A), <code>A B - dmin/</code> for a floor. End a counted line with a shape to restrain its angles too: tetrahedron, octahedron, square, triangle, linear, or tet, oct, sq, tri, lin, e.g. <code>S O 4 1.40/1.60 tet</code>. Up to ' + WL.maxRules + ' rules and ' + WL.maxCoordSlots + ' neighbours in all.</small><div class="sv-cstat" id="sv-wy-cstat"></div></div>' +
+            '<label for="sv-wy-constraints"' + tip(CONSTRAINT_HELP) + '>Distance constraints</label><div><textarea id="sv-wy-constraints"' + tip(CONSTRAINT_HELP) + ' data-wy="constraints" rows="3" spellcheck="false" placeholder="S O 4 1.40/1.60 tet&#10;Pb O 8 2.40/3.10&#10;O O - 2.30/">' + esc(o.wy.constraints) + '</textarea>' +
+              '<div class="sv-cstat" id="sv-wy-cstat"></div></div>' +
           '</div>' +
           '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-wy-run" data-sv="wy-run">Run the Wyckoff search</button></p>' +
           '<div class="progress sv-prog" id="sv-wy-prog" hidden><div class="track"><i></i></div><span></span></div>' +
