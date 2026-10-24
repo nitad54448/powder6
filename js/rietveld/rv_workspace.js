@@ -29,6 +29,16 @@ RV.workspace=(function(){
   }
   function datasetEditor(){
     var host=$('#dataset-values'),d=dataset(),nav=$('#dataset-tabs'),detail=$('#dataset-detail');
+    var editor=$('#dataset-editor'),accordions=$('#dataset-accordions');
+    if(!accordions){accordions=document.createElement('div');accordions.id='dataset-accordions';editor.before(accordions);accordions.appendChild(editor);}
+    accordions.querySelectorAll('[data-dataset-accordion]').forEach(function(el){el.remove();});
+    var shown=St.selected();if(d && !shown.some(function(item){return item.id===d.id;}))shown=shown.concat([d]);
+    shown.forEach(function(item){
+      if(d && item.id===d.id){accordions.appendChild(editor);return;}
+      var shell=document.createElement('details');shell.className='acc dataset-accordion dataset-card';shell.dataset.datasetAccordion=item.id;
+      var summary=document.createElement('summary'),name=document.createElement('span');name.className='acc-t';name.textContent=item.name;name.style.color=RV.plots.colorVar(item);summary.appendChild(name);shell.appendChild(summary);
+      summary.addEventListener('click',function(e){e.preventDefault();inspectDataset(item.id);editor.open=true;render();});accordions.appendChild(shell);
+    });
     var tabs=S.datasets.map(function(item){var on=d && item.id===d.id;return '<button type="button" role="tab" id="dataset-tab-'+item.id+'" data-dataset-tab="'+item.id+'" aria-controls="dataset-detail" aria-selected="'+!!on+'" tabindex="'+(on?'0':'-1')+'" style="--dataset-color:'+RV.plots.colorVar(item)+'" title="'+esc(item.name)+(S.sel.has(item.id)?' · Included in fit and plots':' · Not selected for fit or plots')+'"><i class="sw" aria-hidden="true"></i><span>'+esc(item.name)+'</span></button>';}).join('');
     if(nav.innerHTML!==tabs)nav.innerHTML=tabs;
     detail.hidden=!d;if(!d){host.innerHTML='';return;}

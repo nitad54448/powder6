@@ -2,6 +2,10 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.22.5 — 24 October 2026
+
+1. **Selected dataset accordions.** Show a coloured accordion heading for every selected dataset instead of only the active one. Opening a heading selects that dataset for inspection and places the parameter editor under it, without changing the fit selection.
+
 ## 2.22.4 — 24 October 2026
 
 1. **Dataset list controls.** Hide the Fit / plot datasets selector and Delete selected button with fewer than nine datasets, matching the Find field. Individual selection checkboxes and row remove buttons remain available.
