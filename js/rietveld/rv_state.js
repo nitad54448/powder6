@@ -31,13 +31,14 @@ RV.state = (function () {
                  Cr: [2.28976, 2.293663, 0.5], Mo: [0.7093, 0.71359, 0.5], Ag: [0.5594075, 0.563798, 0.5] };
   function defaultInst() {
     return { anode: 'Cu', lambda1: 1.540598, lambda2: 1.544426, ratio: 0.5, radiation: 'xray', pol: 'tube', monoTth: 26.6, polFrac: 0.95,
-             radiusMM:0, resolutionType:'tch_aniso', bkgType: 'cheb', bkgN: 6, bkgX: [], excl: [] };
+             radiusMM:0, resolutionType:'tch_aniso', bkgType: 'cheb', bkgN: 6, bkgX: [], excl: [], exclOff: [] };
   }
   // arrays of an instrument copied, so a restore point or a copy never shares them
   function instCopy(i) {
     var o = Object.assign({}, i);
     o.bkgX = Array.isArray(i.bkgX) ? i.bkgX.slice() : [];
     o.excl = Array.isArray(i.excl) ? i.excl.map(function (r) { return [r[0], r[1]]; }) : [];
+    o.exclOff = Array.isArray(i.exclOff) ? i.exclOff.map(function (r) { return [r[0], r[1]]; }) : [];
     return o;
   }
   // an instrument read from a project or a file: the fields checked, the arrays cleaned
@@ -50,6 +51,9 @@ RV.state = (function () {
       .filter(function (x, k, a) { return k === 0 || x - a[k - 1] > 1e-6; });
     o.excl = mergeRegions((Array.isArray(o.excl) ? o.excl : []).filter(function (r) { return Array.isArray(r) && r.length === 2 && Number.isFinite(+r[0]) && Number.isFinite(+r[1]); })
       .map(function (r) { return [Math.min(+r[0], +r[1]), Math.max(+r[0], +r[1])]; }));
+    // zones kept but not applied (the Apply tick of an excluded region): the fit never sees them
+    o.exclOff = (Array.isArray(o.exclOff) ? o.exclOff : []).filter(function (r) { return Array.isArray(r) && r.length === 2 && Number.isFinite(+r[0]) && Number.isFinite(+r[1]) && +r[0] !== +r[1]; })
+      .map(function (r) { return [Math.min(+r[0], +r[1]), Math.max(+r[0], +r[1])]; }).sort(function (a, b) { return a[0] - b[0]; });
     if (!(Number.isInteger(o.bkgN) && o.bkgN >= 0 && o.bkgN <= 24)) o.bkgN = 6;
     return o;
   }
@@ -114,7 +118,7 @@ RV.state = (function () {
     var st = defaults();
     if (src && typeof src === 'object') Object.keys(src).forEach(function (k) { if (validSetting(k, src[k])) st[k] = src[k]; });
     st.inst = cleanInst(st.inst);
-    st.inst.bkgX = []; st.inst.excl = [];
+    st.inst.bkgX = []; st.inst.excl = []; st.inst.exclOff = [];
     return st;
   }
 
@@ -537,7 +541,7 @@ RV.state = (function () {
   }
   function makeDataset(raw) {
     var tth = ArrayBuffer.isView(raw.tth)?raw.tth:Float64Array.from(raw.tth), y = ArrayBuffer.isView(raw.y)?raw.y:Float64Array.from(raw.y), n = tth.length;
-    var inst = cleanInst(Object.assign({}, S.settings.inst, { bkgN: S.settings.bkgN, bkgX: [], excl: [] }, raw.inst || {}));
+    var inst = cleanInst(Object.assign({}, S.settings.inst, { bkgN: S.settings.bkgN, bkgX: [], excl: [], exclOff: [] }, raw.inst || {}));
     if (!(inst.tthMin < inst.tthMax)) { inst.tthMin = tth[0]; inst.tthMax = tth[n - 1]; }
     var ds = { id: S.nextId++, dataKey:raw.dataKey || 'data-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2), name: raw.name || 'data', tth: tth, y: y, sig: raw.sig ? (ArrayBuffer.isView(raw.sig)?raw.sig:Float64Array.from(raw.sig)) : null, weights: raw.weights ? (ArrayBuffer.isView(raw.weights)?raw.weights:Float64Array.from(raw.weights)) : null, inst: inst,
                p: raw.p ? Object.assign({}, raw.p) : {}, fit: raw.fit ? Object.assign({}, raw.fit) : {}, esd: raw.esd ? Object.assign({}, raw.esd) : {},
@@ -628,8 +632,8 @@ RV.state = (function () {
       invalidate(ds);
     });
     var keep = Object.assign({}, inst);
-    delete keep.tthMin; delete keep.tthMax; delete keep.bkgX; delete keep.excl;
-    setSetting('inst', Object.assign(cleanInst(S.settings.inst), keep, { bkgX: [], excl: [] }));
+    delete keep.tthMin; delete keep.tthMax; delete keep.bkgX; delete keep.excl; delete keep.exclOff;
+    setSetting('inst', Object.assign(cleanInst(S.settings.inst), keep, { bkgX: [], excl: [], exclOff: [] }));
     if (inst.bkgN != null) setSetting('bkgN', inst.bkgN);
     RV.bus.emit('data'); RV.bus.emit('params', {});
   }
@@ -1153,7 +1157,7 @@ RV.state = (function () {
   function simulate(o) {
     var n = Math.max(2, Math.round((o.tthMax - o.tthMin) / o.step) + 1), tth = new Float64Array(n);
     for (var i = 0; i < n; i++) tth[i] = +(o.tthMin + i * o.step).toFixed(6);
-    var inst = Object.assign(instCopy(o.inst || S.settings.inst), { tthMin: tth[0], tthMax: tth[n - 1], bkgType: 'cheb', bkgN: 1, bkgX: [], excl: [] });
+    var inst = Object.assign(instCopy(o.inst || S.settings.inst), { tthMin: tth[0], tthMax: tth[n - 1], bkgType: 'cheb', bkgN: 1, bkgX: [], excl: [], exclOff: [] });
     var from = first(), keys = Array.isArray(o.phases) ? o.phases : (from ? from.phases : S.phases.map(function(p){return p.key;}));
     keys = keys.filter(function(k){return canRietveld(phaseByKey(k));});
     if(!keys.length) throw new Error('Select at least one phase with atoms to simulate.');

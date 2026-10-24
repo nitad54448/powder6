@@ -115,7 +115,6 @@ RV.panels = (function () {
     dsList.addEventListener('dragend', function () { dragId = null; dsList.querySelectorAll('.drop').forEach(function (r) { r.classList.remove('drop'); }); });
     $('#ds-inst').addEventListener('click', function () { RV.cmd.instrument(); });
     $('#ds-bkg').addEventListener('click', function () { RV.cmd.background(); });
-    $('#pane-datasets').addEventListener('click', function (e) {if(e.target.closest('#ds-excl'))RV.cmd.excludeRegions();});
     RV.bus.on('datasets', renderDatasets);
     RV.bus.on('selection', updateSel);
     RV.bus.on('datasetFocus', renderInfo);
@@ -167,7 +166,7 @@ RV.panels = (function () {
     if (ds.inst.bkgType === 'spline') ds.inst.bkgX.forEach(function (x, k) { rows.push({ name: 'bga' + k, label: 'bkg ' + (+x.toFixed(2)) + '°', unit: '', tip: 'Background at the anchor 2θ = ' + x + '° (spline through ' + ds.inst.bkgX.length + ' anchors)' }); });
     else for (var k = 0; k < ds.inst.bkgN; k++) rows.push({ name: 'bkg' + k, label: 'bkg ' + k, unit: '', tip: 'Background, coefficient of the Chebyshev polynomial T' + k + ' over the fitted range' });
     out.push({ key: 'ds', title: 'Background', sub: ds.name, rows: rows });
-    out.push({key:'exclusions',title:'Excluded regions',sub:plural(ds.inst.excl.length,'region'),rows:[]});
+    out.push({key:'exclusions',title:'Excluded regions',sub:plural(ds.inst.excl.length+ds.inst.exclOff.length,'zone')+(ds.inst.exclOff.length?' ('+ds.inst.exclOff.length+' not applied)':''),rows:[]});
     S.phases.forEach(function (ph, pi) {
       if (!St.hasPhase(ds, ph)) return;
       var kk = ph.key + '.', col = RV.plots.phaseVar(pi), rv = ph.method === 'rietveld';
@@ -229,20 +228,37 @@ RV.panels = (function () {
       var header='<div class="pgroup" data-group="' + esc(g.key) + '"><button type="button" class="pg-tog" aria-expanded="' + !closed + '">' +
         (g.color ? '<i class="sw" style="background:' + g.color + '"></i>' : '') + '<span class="pg-t">' + esc(g.title) + '</span><span class="pg-s" title="' + esc(g.sub) + '">' + esc(g.sub) + '</span></button>' +
         (g.key==='exclusions'?'':'<input type="checkbox" class="pg-fit"' + dis + ' aria-label="Fit all of ' + esc(g.title + ', ' + g.sub) + '">')+'</div>';
-      if(g.key==='exclusions')return header+'<div class="pg-rows" id="dataset-exclusions"'+(closed?' hidden':'')+'><p class="hint">'+(ds.inst.excl.length?esc(ds.inst.excl.map(function(r){return ui.fmt(r[0],6)+'–'+ui.fmt(r[1],6)+'°';}).join(', ')):'No excluded regions for this dataset.')+'</p><p class="buttons"><button type="button" id="ds-excl"'+dis+'>Exclude…</button></p></div>';
+      if(g.key==='exclusions')return header+'<div class="pg-rows" id="dataset-exclusions"'+(closed?' hidden':'')+'>'+zoneRows(ds,dis)+'<p class="buttons"><button type="button" id="ds-excl"'+dis+'>Add zone</button></p></div>';
       var type=ds.inst.resolutionType || 'tch_aniso';if(type==='gsas_cw')type='tch_aniso';
       var instrument=g.key==='resolution'?'<label class="instrument-profile">Profile <select data-instrument-profile data-dataset-id="'+ds.id+'"'+dis+'>'+C.INSTRUMENT_PROFILE_TYPES.map(function(t){return '<option value="'+t+'"'+(t===type?' selected':'')+'>'+esc(C.PROFILE_LABELS[t])+'</option>';}).join('')+'</select></label>':'';
-      return header+'<div class="pg-rows"' + (closed ? ' hidden' : '') + '>'+instrument + (anchors ? '<p class="hint">X is 2θ in degrees and stays fixed during refinement. Y is background intensity; tick its checkbox to refine it.</p>' : '') + g.rows.map(function (p) {
+      return header+'<div class="pg-rows"' + (closed ? ' hidden' : '') + '>'+instrument + (anchors ? '<p class="hint">X is 2θ in degrees and stays fixed during refinement. Y is background intensity; tick its checkbox to refine it. × removes an anchor.</p><div class="anchor-head" aria-hidden="true"><span>Anchor</span><span>2θ (°)</span><span>Intensity</span><span></span><span></span><span class="hd-pl"></span><span>Fit</span></div>' : '') + g.rows.map(function (p) {
           var k=anchors?+p.name.slice(3):-1;
           return '<div class="prow' + (p.dep ? ' dep' : '') + (anchors ? ' anchor-row' : '') + '" data-name="' + esc(p.name) + '"><span class="pn" title="' + esc(p.tip) + '">' + (anchors?'Anchor '+(k+1):esc(p.label)) + '</span>' +
-            (anchors?'<label class="anchor-coordinate"><span>X · 2θ (°)</span><input class="anchor-x" data-anchor-x="'+k+'" value="'+esc(fmtVal(ds.inst.bkgX[k]))+'" aria-label="Anchor '+(k+1)+' X (2θ, degrees)"'+dis+'></label><label class="anchor-coordinate"><span>Y · Intensity</span>':'') +
-            '<input class="pv" data-dataset-id="'+ds.id+'" aria-label="' + (anchors?'Anchor '+(k+1)+' Y (intensity)':esc(p.name)) + '" spellcheck="false" autocomplete="off"' + (p.dep ? ' disabled' : dis) + '>' + (anchors?'</label>':'') +
-            '<span class="pu" title="' + esc(p.unit) + '">' + esc(p.unit) + '</span><span class="ps"></span>' +
+            (anchors?'<input class="anchor-x" data-anchor-x="'+k+'" value="'+esc(fmtVal(ds.inst.bkgX[k]))+'" spellcheck="false" autocomplete="off" aria-label="Anchor '+(k+1)+' X (2θ, degrees)"'+dis+'>':'') +
+            '<input class="pv" data-dataset-id="'+ds.id+'" aria-label="' + (anchors?'Anchor '+(k+1)+' Y (intensity)':esc(p.name)) + '" spellcheck="false" autocomplete="off"' + (p.dep ? ' disabled' : dis) + '>' +
+            (anchors ? '' : '<span class="pu" title="' + esc(p.unit) + '">' + esc(p.unit) + '</span>') + '<span class="ps"></span>' +
+            (anchors ? '<button type="button" class="pr" data-anchor-remove="' + k + '" title="Remove anchor ' + (k + 1) + '" aria-label="Remove anchor ' + (k + 1) + '"' + dis + '>×</button>' : '') +
             (p.dep ? '<span class="pl" hidden></span><span class="pf-none"></span>' : '<button type="button" class="pl" aria-label="Shared or local ' + esc(p.name) + '"></button><input class="pf" type="checkbox" title="Fit ' + esc(p.name) + '" aria-label="Fit ' + esc(p.name) + '"' + dis + '>') +
             '</div>';
         }).join('') + '</div>';
     }).join('');
     renderValues();
+  }
+  // Datasets → Excluded regions: one row per zone (from, to, a tick to apply it, a button to remove it), applied ones and kept-aside ones in angle order
+  function zoneRows(ds, dis) {
+    var zones = ds.inst.excl.map(function (r, i) { return { r: r, kind: 'on', i: i }; }).concat(ds.inst.exclOff.map(function (r, i) { return { r: r, kind: 'off', i: i }; }))
+      .sort(function (a, b) { return a.r[0] - b.r[0] || a.r[1] - b.r[1]; });
+    if (!zones.length) return '<p class="hint">No excluded zone in this dataset. Add zone, or Ctrl+Shift+drag on the pattern.</p>';
+    return '<p class="hint">2θ zones left out of the fit. Untick Apply to fit without a zone and keep it in the list; × removes it.</p>' +
+      '<div class="zone-head" aria-hidden="true"><span>Zone</span><span>From 2θ (°)</span><span>To 2θ (°)</span><span></span><span>Apply</span></div>' +
+      zones.map(function (z, n) {
+        var id = 'Zone ' + (n + 1), on = z.kind === 'on';
+        return '<div class="zone-row' + (on ? '' : ' off') + '" data-zone="' + z.kind + ':' + z.i + '"><span class="pn">' + id + '</span>' +
+          '<input class="zone-box" data-zone-lo value="' + esc(fmtVal(z.r[0])) + '" spellcheck="false" autocomplete="off" aria-label="' + id + ' from 2θ (degrees)"' + dis + '>' +
+          '<input class="zone-box" data-zone-hi value="' + esc(fmtVal(z.r[1])) + '" spellcheck="false" autocomplete="off" aria-label="' + id + ' to 2θ (degrees)"' + dis + '>' +
+          '<button type="button" class="pr" data-zone-remove title="Remove ' + id + '" aria-label="Remove ' + id + '"' + dis + '>×</button>' +
+          '<input type="checkbox" class="zone-apply" data-zone-apply' + (on ? ' checked' : '') + ' title="' + (on ? 'Applied: left out of the fit. Untick to fit with this zone.' : 'Not applied: the fit uses these points. Tick to leave the zone out.') + '" aria-label="Apply ' + id + '"' + dis + '></div>';
+      }).join('');
   }
   function dsNames(list) { var t = list.slice(0, 4).map(function (d) { return d.name; }).join(', '); return list.length > 4 ? t + ' and ' + (list.length - 4) + ' more' : t; }
   function limitText(n, v) { var L = St.limitsOf(n, v); return ui.fmt(St.toDisplay(n,L[0]), 4) + ' to ' + ui.fmt(St.toDisplay(n,L[1]), 4) + (St.isSizeParam(n) ? ' nm' : ''); }
@@ -643,13 +659,13 @@ RV.panels = (function () {
     var host = $('#limits'), ds = editorDataset();
     if (!ds) { host.innerHTML = '<p class="hint">No dataset yet.</p>'; return; }
     var names = St.namesFor(ds).filter(St.isVariable);
-    host.innerHTML = '<table class="grid compact"><thead><tr><th>Parameter</th><th>Value in ' + esc(ds.name) + '</th><th>Min</th><th>Max</th>' +
-      '<th title="Global fit: one value for all datasets (ticked) or one value per dataset">Shared in a global fit</th><th></th></tr></thead><tbody>' +
+    host.innerHTML = '<table class="grid compact limits-table"><colgroup><col style="width:26%"><col style="width:22%"><col style="width:16%"><col style="width:16%"><col style="width:11%"><col style="width:9%"></colgroup><thead><tr><th>Parameter</th><th title="Value in ' + esc(ds.name) + '">Value</th><th>Min</th><th>Max</th>' +
+      '<th title="Global fit: one value for all datasets (ticked) or one value per dataset">Shared</th><th></th></tr></thead><tbody>' +
       names.map(function (n) {
         var L = St.limitsOf(n, ds.p[n]), own = !!S.limits[n], can = St.shareable(n);
         return '<tr data-name="' + esc(n) + '"><td><code>' + esc(n) + (St.isSizeParam(n) ? ' (nm)' : '') + '</code></td><td>' + fmtParam(n,ds.p[n]) + '</td>' +
           '<td><input data-lim="0" value="' + fmtVal(St.toDisplay(n,L[0])) + '" inputmode="decimal"></td><td><input data-lim="1" value="' + fmtVal(St.toDisplay(n,L[1])) + '" inputmode="decimal"></td>' +
-          '<td>' + (can ? '<input type="checkbox" data-shared' + (St.isShared(n) ? ' checked' : '') + '>' : '<small>per dataset</small>') + '</td>' +
+          '<td>' + (can ? '<input type="checkbox" data-shared' + (St.isShared(n) ? ' checked' : '') + '>' : '<small title="Always one value per dataset">—</small>') + '</td>' +
           '<td>' + (own ? '<button type="button" class="link" data-lim-reset>default</button>' : '') + '</td></tr>';
       }).join('') + '</tbody></table>';
   }

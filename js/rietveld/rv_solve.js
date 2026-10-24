@@ -116,7 +116,7 @@ RV.solve = (function () {
     try { if(navigator.gpu)adapter=await Promise.race([navigator.gpu.requestAdapter(),new Promise(function(r){timer=setTimeout(function(){r(null);},3000);})]); }catch(e){}finally{if(timer)clearTimeout(timer);}
     gpuBudget.checked=true;gpuBudget.available=!!adapter;
     if(adapter)Object.assign(gpuBudget,budgetFor(adapter.limits));
-    gpuBudget.note=adapter ? 'WebGPU: up to '+gpuBudget.maxParticles+' particles in this conservative budget; default '+Math.max(64,Math.floor(gpuBudget.maxParticles/3))+' (33%). GPU cores are not exposed. CF runs random starts sequentially; its grid limit is '+gpuBudget.maxGrid+'³. Workers monitor timeouts and device loss.' : 'WebGPU unavailable: Wyckoff needs WebGPU. CF can use its CPU fallback, with a conservative 64³ grid limit.';
+    gpuBudget.note=adapter ? 'WebGPU: up to '+gpuBudget.maxParticles+' particles in this conservative budget; default '+Math.max(64,Math.floor(gpuBudget.maxParticles/3))+' (33%). GPU cores are not exposed. CF runs random starts sequentially; its grid limit is '+gpuBudget.maxGrid+'³. Workers monitor timeouts and device loss.' : 'Charge flipping falls back to the CPU, with a conservative 64³ grid limit.';
     if(SV.opts && !S.busy) {
       if(SV.opts.wy.particlesAuto)SV.opts.wy.particles=Math.max(64,Math.floor(gpuBudget.maxParticles/3));
       SV.opts.wy.particles=Math.min(gpuBudget.maxParticles,SV.opts.wy.particles);
@@ -1070,7 +1070,8 @@ RV.solve = (function () {
       return block(k + '-struct', '3D structure', '<div class="sv-st-head" id="sv-' + k + '-st-head"></div><div class="sv-struct sv-struct-host" id="sv-' + k + '-st" data-src="' + k + '"></div>', false, null, 'sub');
     }
     host.innerHTML =
-      '<p class="hint">'+esc(gpuBudget.note)+'</p>' +
+      '<p class="hint">Set up extraction, space-group tests, atomic-model symmetry, charge flipping and Wyckoff searches here. Inspect search output in Results → Structure. '+esc(gpuBudget.note)+'</p>' +
+      (gpuBudget.checked && !gpuBudget.available ? '<p class="hint sv-warn">WebGPU was not found: the Wyckoff search cannot run here. Turn on hardware (graphics) acceleration in the browser settings, restart the browser and reload this page; see Troubleshooting in the documentation.</p>' : '') +
       // the intensities everything below starts from; the source row only when there is a choice of phase
       '<div class="sv-bar">' +
         '<div class="sv-row" id="sv-extract-source"><span class="sv-lbl">Phase</span><div class="phase-chips" id="sv-phases"></div>' +
@@ -1078,7 +1079,7 @@ RV.solve = (function () {
           '<button type="button" class="primary" id="sv-extract" data-sv="extract" title="The WPPF intensities of the phase in this dataset at its current values, with their uncertainties">Extract intensities</button>' +
           '<span id="sv-switch"></span><span class="tool-gap"></span>' +
           '</div>' +
-        '<div class="hint sv-status" id="sv-fit-status"></div><div class="sv-int" id="sv-int"></div>' +
+        '<div class="sv-int" id="sv-int"></div>' +
       '</div>' +
       block('wppf-sgt', 'Space group',
         block('sgt-test', 'Test · powder intensities',
@@ -1092,7 +1093,7 @@ RV.solve = (function () {
           '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-addsym" data-sv="find-symmetry" title="Find higher symmetry of the selected atomic model">Find higher symmetry…</button></p>',true,null,'sub'), false) +
       block('wppf-cf', 'Charge flipping',
           formulaRow('cf') +
-          '<p class="hint">Charge flipping (Oszlányi and Sütő 2004) on the extracted intensities, in the worker of powder5: GPU where there is one. The peaks of the map, put on the origin of the space group and reduced to the asymmetric unit, become sites; the formula unit names them.</p>' +
+          '<p class="hint">Charge flipping (Oszlányi and Sütő 2004) on the extracted intensities, on the GPU where there is one, otherwise on the CPU. The peaks of the map, put on the origin of the space group and reduced to the asymmetric unit, become sites; the formula unit names them.</p>' +
           '<p><label class="chk"><input type="checkbox" id="sv-cf-adaptive" data-cf="adaptive"'+(o.cf.adaptive?' checked':'')+'> Adapt search to data quality</label></p>' +
           '<div class="form-grid sv-form">' +
             select('sv-cf-grid', 'Grid', o.cf.grid, [['auto', 'Auto'], ['32', '32³'], ['64', '64³'], ['128', '128³']], 'Points per axis; Auto: the smallest power of two that holds every reflection.', 'data-cf="grid"') +
@@ -1117,7 +1118,7 @@ RV.solve = (function () {
           '<label class="chk"><input type="checkbox" id="sv-density-cell"'+(o.cf.densityCell?' checked':'')+'> Unit cell</label>' +
           '<label class="chk"><input type="checkbox" id="sv-density-sites"'+(o.cf.densitySites?' checked':'')+'> Sites</label>' +
           '<button type="button" data-sv="density-reset">Reset view</button><button type="button" data-sv="density-png">Save PNG</button><button type="button" data-sv="density-map">Save map</button></div>' +
-          '<canvas id="sv-density-canvas" aria-label="Charge-flipping electron-density isosurface. Drag to rotate and wheel to zoom."></canvas><p class="hint" id="sv-density-note"></p></section>', false, null, 'sub') +
+          '<canvas id="sv-density-canvas" class="density-canvas" aria-label="Charge-flipping electron-density isosurface. Drag to rotate and wheel to zoom."></canvas><p class="hint" id="sv-density-note"></p></section>', false, null, 'sub') +
         block('cf-sites', 'Sites', '<div id="sv-cf-sites"></div>', true, 'id="sv-cf-sites-n"', 'sub') +
         structBlock('cf') +
         resultBlocks('cf', false), false, 'id="sv-cf-sum"') +
@@ -1161,13 +1162,13 @@ RV.solve = (function () {
     var ph = phase(), sw = $('#sv-switch'), held = S.datasets.filter(function (d) { return !ph || St.hasPhase(d, ph); });
     sel.innerHTML = held.length ? held.map(function (d) { return '<option value="' + d.id + '"' + (d.id === SV.dsId ? ' selected' : '') + '>' + esc(d.name) + '</option>'; }).join('') : '<option value="">' + (S.datasets.length ? 'not in any dataset' : 'no dataset') + '</option>';
     sw.innerHTML = ph && ph.method !== 'wppf' ? '<button type="button" data-sv="to-wppf" title="Fit ' + esc(ph.name) + ' by WPPF: its intensities become free variables of the fit">Fit ' + esc(ph.name) + ' by WPPF</button>' : '';
-    var why = extractWhy(ph, dataset()), status = $('#sv-fit-status');
-    ui.able($('#sv-extract'), why);
-    if (status) status.innerHTML = (S.phases.length===1 ? '<p>Single phase: the intensities are extracted automatically after fitting, from the first selected dataset.</p>' : '') + '<p>' + esc(why || ('WPPF fit: ' + dataset().stats.msg + '. ' +
-      (/^converged/.test(dataset().stats.msg || '') ? 'Ready to extract intensities.' : 'Check the fit and convergence before using extracted intensities.'))) + '</p>';
+    // the state of the fit is the tooltip of the button, or the reason it is greyed
+    var why = extractWhy(ph, dataset()), ex = $('#sv-extract'), ds0 = dataset();
+    ex.dataset.tip = 'The WPPF intensities of the phase in this dataset at its current values, with their uncertainties.' + (!why && ds0 && ds0.stats ? ' WPPF fit: ' + ds0.stats.msg + '. ' + (/^converged/.test(ds0.stats.msg || '') ? 'Ready to extract intensities.' : 'Check the fit and convergence before using extracted intensities.') : '');
+    ui.able(ex, why);
     var els = parseFormula(SV.opts.formula), dl = $('#sv-el-list');
     if (dl) dl.innerHTML = (els || []).map(function (c) { return '<option value="' + c.el + '">'; }).join('');
-    syncSgtCount();renderCfPlan();syncAble();
+    syncSgtCount();renderCfPlan();syncAble();syncBar();
   }
   // what the buttons of the methods need, as the reason they are greyed
   function syncAble() {
@@ -1182,6 +1183,8 @@ RV.solve = (function () {
     var select=$('#sv-sym-phase'),ph=select && St.phaseByKey(select.value);
     ui.able($('#sv-addsym'),S.busy?'Calculation running.':!ph?'Select a phase.':!ph.atoms.length?'This phase has no atoms; ADDSYM needs an atomic model.':'');
   }
+  // the bar over the methods is the phase, dataset and Extract row, shown when there are several phases (a single phase is extracted by itself)
+  function syncBar() { var bar = $('.sv-bar'), row = $('#sv-extract-source'); if (bar && row) bar.hidden = row.hidden; }
   function renderInt() {
     var el = $('#sv-int');
     if (!el) return;
@@ -1189,6 +1192,7 @@ RV.solve = (function () {
     if (!I || I.phaseKey !== SV.phaseKey) {
       el.innerHTML = '<p class="hint">' + (!ph ? '' : ph.method !== 'wppf' ? esc(ph.name) + ' is fitted by ' + esc(C.METHOD_LABELS[ph.method]) + '. Structure solution starts from the intensities of a WPPF phase: switch Method to WPPF, fit (zero, cell and peak shape ticked), then extract them.'
         : 'Fit ' + esc(ph.name) + ' by WPPF (zero, cell and peak shape ticked), then extract its intensities: the space-group test, charge flipping and the Wyckoff search start from them.' + (I ? ' The last extraction is of ' + esc(I.phaseName) + '.' : '')) + '</p>';
+      syncBar();
       return;
     }
     var det = I.det, n0 = det.filter(function (r) { return r.bound; }).length, nOv = det.filter(function (r) { return r.group >= 0; }).length, strong = det.filter(function (r) { return r.sigma > 0 && r.area > 3 * r.sigma; }).length;
@@ -1196,6 +1200,7 @@ RV.solve = (function () {
     el.innerHTML = '<p><b>' + plural(det.length, 'intensity') + '</b> of ' + esc(I.phaseName) + ' (' + esc(I.sg.symbol) + ') in ' + esc(I.dsName) + ', 2θ ' + f(lo, 2) + '–' + f(hi, 2) + '°: ' + strong + ' above 3σ, ' + n0 + ' held at zero, ' + nOv + ' in exact overlaps. ' +
       'R<sub>wp</sub> ' + pct(I.Rwp) + ', χ² ' + ui.fmt(I.chi2, 4) + '; σ ' + (I.nVar ? 'with the ' + plural(I.nVar, 'ticked parameter') + ' integrated out (full Pawley matrix)' : 'conditional on the values (nothing was ticked)') + '. ' +
       '<span class="sub">Extracted ' + esc(I.stamp) + (I.pre ? ', precision block of the ' + I.pre.n + ' lowest-angle' : '') + '.</span></p>' + (why ? '<p class="sv-warn">' + esc(why) + '</p>' : '');
+    syncBar();
   }
   function renderDensity() {
     document.querySelectorAll('#solve .sv-dens').forEach(function (el) { var h = densityHint(el.getAttribute('data-k') === 'cf' ? 'cf' : 'wy'); el.textContent = h.text; el.classList.toggle('sv-warn', !!h.warn); });

@@ -1070,3 +1070,24 @@ test('method plot caches notice edits to inactive parameters and replacement obs
   a.state.setCalculation('wppf');a.ds.dataKey='replacement';a.ds.y=Float64Array.from(a.ds.y,y=>y+10);
   a.state.setCalculation('rietveld');assert.notEqual(a.state.calcFor(a.ds),changed);
 });
+test('excluded zones that are not applied are kept in projects and restore points, and the fit never sees them', () => {
+  const a = model(), ds = a.S.datasets[0];
+  a.state.setInstrument([ds], { excl: [[20, 22]], exclOff: [[40, 41], [30, 31], [30, 30]] });
+  assert.deepEqual(plain(ds.inst.excl), [[20, 22]]);
+  assert.deepEqual(plain(ds.inst.exclOff), [[30, 31], [40, 41]], 'sorted, a zone of no width dropped');
+  assert.equal(a.state.excluded(ds.inst, 30.5), false, 'a zone not applied excludes nothing');
+  assert.equal(a.state.excluded(ds.inst, 21), true);
+  a.state.setInstrument([ds], { excl: [[20, 22], [21.5, 23]] });
+  assert.deepEqual(plain(ds.inst.excl), [[20, 23]], 'applied zones are merged, the others are not');
+  const copy = a.state.instCopy(ds.inst);
+  copy.exclOff[0][0] = 99;
+  assert.equal(ds.inst.exclOff[0][0], 30, 'a copy never shares the zones');
+  a.state.commitProject(a.state.prepareProject(JSON.parse(a.state.projectJSON([]))));
+  const back = a.S.datasets[0];
+  assert.deepEqual(plain(back.inst.exclOff), [[30, 31], [40, 41]]);
+  assert.deepEqual(plain(back.inst.excl), [[20, 23]]);
+  const old = JSON.parse(a.state.projectJSON([]));
+  delete old.datasets[0].inst.exclOff;
+  a.state.commitProject(a.state.prepareProject(old));
+  assert.deepEqual(plain(a.S.datasets[0].inst.exclOff), [], 'a project of an earlier version has no zones kept aside');
+});

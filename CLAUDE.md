@@ -20,6 +20,7 @@ Tests (no install needed; Node 24 and Chrome or Edge):
 
 - **Every change bumps the version and adds a CHANGELOG section**, unasked: `RV.version` in `js/rietveld/rv_ui.js` (semver: feature or behaviour change = MINOR, fix = PATCH), a new top section in `CHANGELOG.md`, and the version line in `Powder6_documentation.html` ("Recent changes"). README/documentation text that a change makes stale is updated in the same commit.
 - Files are CRLF (`.gitattributes` normalises); Git's LF-to-CRLF warnings are expected. Use `sed`/Python with `newline=''` carefully so line endings stay uniform.
+- CSS (`powder6.css`): every font size, radius and control height is one of the tokens of `:root` (`--fs-*`, `--radius*`, `--ctl-h*`), colours are variables (no hex in rules, no `!important` except the global `[hidden]`), and a new rule goes in its section, next to the rules it adapts, not at the end of the file. Spacing is the scale `--sp-1…5` (4, 8, 12, 16, 24 px) and `--inset` (the side margin of a panel), tabs are `--tab-h` high, shadows are `--shadow-1`, `--shadow-pop` and `--shadow-3`; style by class, not by `#id` (an id is for the script). Boxes of one look (cards, accordions) share one rule. Panel layouts use flexible columns (`minmax`, `fr`), not fixed pixel widths, because the command panel is resizable.
 - Code style is dense ES5-style (`var`, `function`) in `js/rietveld/`, long single-line statements are normal; match the surrounding file.
 - Commit messages are the version number as subject (e.g. `2.15.0`) with a short body.
 

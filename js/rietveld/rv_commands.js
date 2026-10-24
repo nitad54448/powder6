@@ -839,6 +839,57 @@ RV.cmd = (function () {
     St.setInstrument(list, { excl: v });
     ui.toast(v.length ? 'Excluded in ' + plural(list.length, 'dataset') + ': ' + v.map(function (r) { return fmt6(r[0]) + '–' + fmt6(r[1]) + '°'; }).join(', ') + '.' : 'No excluded region in ' + plural(list.length, 'dataset') + '.', 'ok');
   }
+  // The zones of Datasets → Excluded regions, for the active dataset. Each is a row: from, to, an Apply tick and a remove button.
+  // A zone that is not applied stays in the list (inst.exclOff) but takes no part in the fit, to compare fits with and without it.
+  function zoneTarget() {
+    var ds = RV.workspace && RV.workspace.dataset();
+    if (!ds) return null;
+    if (S.busy) { ui.toast('A fit is running. Wait for it to finish or press Stop.', 'warn'); return null; }
+    return ds;
+  }
+  function zoneLists(ds) { var c = function (r) { return [r[0], r[1]]; }; return { on: ds.inst.excl.map(c), off: ds.inst.exclOff.map(c) }; }
+  function putZones(ds, z, label, message) {
+    snapshot(label + ' of ' + ds.name);
+    St.setInstrument([ds], { excl: z.on, exclOff: z.off });
+    if (message) ui.toast(message, 'info');
+  }
+  async function addZone() {
+    var ds = zoneTarget();
+    if (!ds) return;
+    var v = await ui.prompt('Add an excluded zone', [
+      { key: 'lo', label: 'From 2θ (°)', type: 'number', value: '' },
+      { key: 'hi', label: 'To 2θ (°)', type: 'number', value: '' }], 'Add zone',
+      'A 2θ zone of ' + ui.esc(ds.name) + ' left out of the fit (the pattern is still calculated there). On the pattern, Ctrl+Shift+drag marks a zone too.',
+      { check: function (r) { return r.lo === r.hi ? 'The start and the end angle must differ.' : ''; } });
+    if (!v) return;
+    ds = zoneTarget();
+    if (!ds) return;
+    var z = zoneLists(ds), lo = Math.min(v.lo, v.hi), hi = Math.max(v.lo, v.hi);
+    z.on.push([lo, hi]);
+    putZones(ds, z, 'excluded zone', 'Zone ' + fmt6(lo) + '–' + fmt6(hi) + '° excluded in ' + ds.name + '.');
+  }
+  // kind 'on' (applied) or 'off' (kept, not applied); returns false when the angles are refused
+  function editZone(ds, kind, index, lo, hi) {
+    var z = zoneLists(ds), list = z[kind];
+    if (!list || !list[index] || S.busy) return false;
+    if (!(Number.isFinite(lo) && Number.isFinite(hi))) { ui.toast('Enter a number for each end of the zone.', 'warn'); return false; }
+    if (lo === hi) { ui.toast('The start and the end angle of a zone must differ.', 'warn'); return false; }
+    list[index] = [Math.min(lo, hi), Math.max(lo, hi)];
+    putZones(ds, z, 'excluded zone', '');
+    return true;
+  }
+  function applyZone(ds, kind, index, on) {
+    var z = zoneLists(ds), from = z[kind], to = on ? z.on : z.off;
+    if (!from || !from[index] || S.busy || (kind === 'on') === on) return;
+    to.push(from.splice(index, 1)[0]);
+    putZones(ds, z, on ? 'zone applied' : 'zone not applied', '');
+  }
+  function removeZone(ds, kind, index) {
+    var z = zoneLists(ds), list = z[kind];
+    if (!list || !list[index] || S.busy) return;
+    var gone = list.splice(index, 1)[0];
+    putZones(ds, z, 'excluded zone', 'Zone ' + fmt6(gone[0]) + '–' + fmt6(gone[1]) + '° removed from ' + ds.name + '.');
+  }
   // Ctrl+click on the pattern: an anchor of the spline background of the first selected dataset, or off the one under the cursor
   function markAt(x, y, px, py) {
     var ds = St.first();
@@ -871,6 +922,16 @@ RV.cmd = (function () {
     var index = ds.inst.bkgX.indexOf(x);
     if (index >= 0) St.setParam('bga'+index, y, [ds]);
     ui.toast('Background anchor at ' + fmt6(x) + '°, height ' + fmt(y) + ', placed in ' + ds.name + '.', 'info');
+  }
+  // the x button of an anchor row in Datasets: the same removal as Ctrl+click on the anchor
+  function removeAnchor(ds, index) {
+    if (!ds || ds.inst.bkgType !== 'spline' || !(index >= 0 && index < ds.inst.bkgX.length)) return;
+    if (S.busy) { ui.toast('A fit is running. Wait for it to finish or press Stop.', 'warn'); return; }
+    if (ds.inst.bkgX.length <= 2) { ui.toast('A spline background keeps at least two anchors; Background… turns it back into polynomials.', 'warn'); return; }
+    snapshot('background anchor of ' + ds.name);
+    var gone = ds.inst.bkgX[index], xs = ds.inst.bkgX.filter(function (_, k) { return k !== index; });
+    St.setInstrument([ds], { bkgX: xs });
+    ui.toast('Background anchor at ' + fmt6(gone) + '° removed from ' + ds.name + ' (' + plural(xs.length, 'anchor') + ' left).', 'info');
   }
   // Ctrl+Shift+drag: an excluded region of the first selected dataset; Ctrl+Shift+click in one removes it
   function regionAt(x0, x1) {
@@ -1533,7 +1594,7 @@ RV.cmd = (function () {
   }
 
   return { init: init, readFiles: readFiles, readStructure: readStructure, newPhase: newPhase, addAtom: addAtom, deletePhase: deletePhase, setMethod: setMethod,
-           readData: readData0, orientation: orientation, resolution: resolution, setInstrumentProfile:setInstrumentProfile, instrument: instrument, background: background, excludeRegions: excludeRegions, markAt: markAt, regionAt: regionAt, simulate: simulate,
+           readData: readData0, orientation: orientation, resolution: resolution, setInstrumentProfile:setInstrumentProfile, instrument: instrument, background: background, excludeRegions: excludeRegions, markAt: markAt, removeAnchor: removeAnchor, addZone: addZone, editZone: editZone, applyZone: applyZone, removeZone: removeZone, regionAt: regionAt, simulate: simulate,
            loadPreset: loadPreset, savePreset: savePreset, loadDefaultPresets: loadDefaultPresets, extract: extract,
            deleteDatasets: deleteDatasets, estimate: estimate, cloneTo: cloneTo, tickSteps: tickSteps, fitGroupState: fitGroupState, setFitGroup: setFitGroup,
            fit: fit, fitSelected: fitSelected, globalFit: globalFit, stop: stop, undo: undo, saveProject: saveProject, openProject: openProject,

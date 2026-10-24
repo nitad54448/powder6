@@ -240,7 +240,7 @@
             <button type="button" id="ds-phases" class="mini" title="Add or remove phases for each dataset">Phases…</button><button type="button" id="ds-resolution" class="mini">Resolution…</button><button type="button" id="ds-inst" class="mini" title="Wavelength, polarisation and fitted range of the selected datasets">Instrument…</button><button type="button" id="ds-bkg" class="mini" title="Background of the selected datasets: Chebyshev terms or a spline through anchors">Background…</button>
             <button type="button" data-workflow="orientation">Preferred orientation…</button><button type="button" data-workflow="scales">Refine scales only</button>
           </div>
-          <details class="fit-selection" id="fit-selection">
+          <details class="acc fit-selection" id="fit-selection">
             <summary>Datasets for fitting and plotting <span id="fit-selection-count"></span></summary>
             <section class="side-data" id="sp-datasets">
               <div class="dataset-scope"></div>
@@ -282,8 +282,7 @@
               <details class="object-group">
                 <summary>Parameter limits and sharing</summary>
                 <div id="dataset-limits-host">
-                  <section class="block">
-                    <h2>Parameter limits and shared parameters</h2>
+                  <section>
                     <p class="hint">A refinement keeps every parameter between its limits (type inf for none). Ticked “shared”, a parameter gets one value for all the datasets of a global fit that hold its phase (Sharing in the global fit, Refine menu, keeps some of them apart); unticked, one value per dataset. Scales and background stay local. Zero, displacement and transparency default to local and can be shared explicitly.</p>
                     <div id="limits"></div>
                     <p class="buttons"><button type="button" id="lim-reset">All limits and shared flags to their defaults</button></p>
@@ -293,7 +292,7 @@
               </details>
               <details class="object-group">
                 <summary>Constraints and links</summary>
-                <div id="dataset-constraints-host"><div class="acc-body" id="dataset-atomic-constraints"></div></div>
+                <div id="dataset-constraints-host"><div class="acc-body ac-host" id="dataset-atomic-constraints"></div></div>
               </details>
             </section>
           </section>
@@ -305,7 +304,7 @@
               <button type="button" data-dataset-action="parameters">Refinement parameters</button><button type="button" data-dataset-action="individual">Fit selected individually</button>
               <span class="hint" id="dataset-summary"></span>
             </div>
-            <div class="table-wrap" id="dataset-table"></div>
+            <div class="table-wrap ds-table" id="dataset-table"></div>
           </section>
         </div>
       </div>
@@ -367,7 +366,6 @@
 
       <!-- Structure: built by js/rietveld/rv_solve.js (extraction, space group, charge flipping, Wyckoff search) -->
       <section id="pane-structure" class="pane structure-pane" role="tabpanel" aria-labelledby="tab-structure">
-        <p class="hint">Set up extraction, space-group tests, atomic-model symmetry, charge flipping and Wyckoff searches here. Inspect search output in Results → Structure.</p>
         <div id="wppf-tools"><div class="solve" id="solve"></div></div>
       </section>
 
@@ -392,11 +390,11 @@
 </footer>
 
 <!-- the one running panel: every calculation (fits, extraction, space-group test, charge flipping, Wyckoff search) shows here, with its only Stop -->
-<div id="busy-guard" hidden>
+<div id="busy-guard" class="busy-guard" hidden>
   <div class="busy-card" role="status" aria-live="polite">
     <div class="busy-main">
       <span class="busy-spin" aria-hidden="true"></span>
-      <div class="busy-text"><b id="busy-label">Calculation running…</b><span id="busy-detail"></span></div>
+      <div class="busy-text"><b id="busy-label" class="busy-label">Calculation running…</b><span id="busy-detail" class="busy-detail"></span></div>
       <button type="button" id="busy-cancel" class="danger stop-btn" title="Stop the calculation (Esc)"><span aria-hidden="true">■</span> Stop <kbd>Esc</kbd></button>
     </div>
     <div class="busy-track indet" id="busy-track"><i></i></div>
@@ -430,9 +428,9 @@
       <div class="sg-modal-right" id="sg-explain"><div class="sg-explain-empty">Pick a row from the list, or narrow it down with the filters and the search fields. Filters combine with AND.</div></div>
     </div>
     <div class="sg-modal-footer">
-      <button type="button" class="sg-btn" id="sg-btn-cancel">Cancel</button>
-      <button type="button" class="sg-btn" id="sg-btn-reset">Reset</button>
-      <button type="button" class="sg-btn sg-btn-primary" id="sg-btn-apply" disabled>Apply</button>
+      <button type="button" id="sg-btn-cancel">Cancel</button>
+      <button type="button" id="sg-btn-reset">Reset</button>
+      <button type="button" class="primary" id="sg-btn-apply" disabled>Apply</button>
     </div>
   </div>
 </div>
