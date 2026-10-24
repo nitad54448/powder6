@@ -2,6 +2,11 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.22.2 — 24 October 2026
+
+1. **File menu cleanup.** Removed the duplicate Report (PDF) entry; PDF reports remain available from the Report button in the top bar.
+2. **Instrument profiles and File menu cleanup.** Instrument-profile reading and saving remain in the dataset's Profile dialog; the duplicate File entries and their separator have been removed, along with the sample-broadening Load and Save entries. The dialog is titled Instrument profile and uses Read instrument profile / Save instrument profile; the Datasets button is labelled Profile to save space.
+
 ## 2.22.1 — 24 October 2026
 
 1. **Calculation method accessibility.** The Le Bail, WPPF and Rietveld selector in Commands → Method is now a radio group instead of tabs referring to the separate Results panel. Its appearance is unchanged; all four arrow keys move focus and select the next or previous method, wrapping at either end. The selected result run remains independent.

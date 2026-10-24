@@ -553,7 +553,7 @@ RV.cmd = (function () {
     if (doc.format !== PRESET_FORMAT) throw new Error('Expected a Powder 6 instrument calibration or peak-shape preset, not format ' + JSON.stringify(doc.format === undefined ? null : doc.format) + ' (expected ' + PRESET_FORMAT + ').');
     if (doc.version !== 2) throw new Error('Peak-shape preset version ' + doc.version + ' is not supported (expected 2).');
     if (!doc.parameters || !validType(doc.profileType)) throw new Error('The peak-shape preset has no parameters or an unknown profile type (' + doc.profileType + ').');
-    if (doc.separatedProfile === true || doc.profileType === 'gsas_cw') throw new Error('This is a sample-broadening preset. Load it from the active dataset; use Save calibration for instrument parameters.');
+    if (doc.separatedProfile === true || doc.profileType === 'gsas_cw') throw new Error('This is a sample-broadening preset. Load it from the active dataset; use Save instrument profile for instrument parameters.');
     var type = doc.profileType, P = doc.parameters, notes = [];
     values = {};
     function read(name, optional) {
@@ -600,9 +600,9 @@ RV.cmd = (function () {
       fields.push({key:p[0],label:p[0]+(/^(U|V|W)(_[LR])?$/.test(p[0])?' /cdeg²':/^(X|Y|Z)(_[LR])?$/.test(p[0])?' /cdeg':''),type:'number',value:Number.isFinite(d.p['inst.'+p[0]])?d.p['inst.'+p[0]]:p[1]});
     });
     if(RV.workspace)fields.unshift(RV.workspace.targetField());
-    var v = await ui.prompt('Instrument resolution · '+d.name,fields,'Apply resolution',
+    var v = await ui.prompt('Instrument profile · '+d.name,fields,'Apply resolution',
       'Instrument calibration belongs to each dataset. Sample size and strain remain separate in its phase contributions. Choose refinement flags in the dataset tab.',{
-      before:'<p class="buttons"><button type="button" data-res-cal="load">Load calibration JSON…</button><button type="button" data-res-cal="save">Save calibration JSON…</button></p><p class="hint" data-res-status role="status">Load a calibration to detect its profile and coefficients automatically, or edit the current coefficients. Save calibration writes the coefficients shown here. Apply resolution updates the chosen datasets.</p><p class="hint" data-res-profile></p>',
+      before:'<p class="buttons"><button type="button" data-res-cal="load">Read instrument profile…</button><button type="button" data-res-cal="save">Save instrument profile…</button></p><p class="hint" data-res-status role="status">Load a calibration to detect its profile and coefficients automatically, or edit the current coefficients. Save instrument profile writes the coefficients shown here. Apply resolution updates the chosen datasets.</p><p class="hint" data-res-profile></p>',
       after:'<p class="hint" data-res-targets></p>',
       onOpen:function(body){
         function status(message) { body.querySelector('[data-res-status]').textContent = message; }
@@ -635,7 +635,7 @@ RV.cmd = (function () {
             if(button.dataset.resCal==='save'){
               var values={};C.instrumentProfileParams(activeType).forEach(function(p){values[p[0]]=ui.parseNum(body.querySelector('[data-key="'+p[0]+'"]').value);});
               var output=calibrationOf(Object.assign({},loadedDocument || {},{format:'powder6-instrument-resolution',version:2,profile:'constant-wavelength',profileType:activeType,values:values}));
-              var saved=await ui.saveTextFile('instrument_resolution_'+ui.fileStamp()+'.json',JSON.stringify(output,null,2),'application/json',{title:'Save resolution file',description:'Instrument resolution JSON',pickerId:'powder6-resolution'});
+              var saved=await ui.saveTextFile('instrument_resolution_'+ui.fileStamp()+'.json',JSON.stringify(output,null,2),'application/json',{title:'Save instrument profile file',description:'Instrument resolution JSON',pickerId:'powder6-resolution'});
               if(saved)status((saved.downloaded?'Download started: ':'Saved: ')+saved.name+'. Profile: '+C.PROFILE_LABELS[activeType]+'.');
               return;
             }
@@ -1565,13 +1565,11 @@ RV.cmd = (function () {
   // ---------------------------------------------------------------- menus
   function init() {
     var M = {
-      file: [['Read patterns…', readData0, 'read'], ['Read CIF…', readStructure, 'phase'], ['Load calibration or sample-broadening preset…', loadPreset, 'havePhase'], null,
+      file: [['Read patterns…', readData0, 'read'], ['Read CIF…', readStructure, 'phase'], null,
              ['Read project…', openProjectFile, 'read'], ['Save project', saveProject, 'saveProject'], null,
-             ['Report (PDF)…', function () { RV.pdf.report(); }, 'report'],
              ['Save results of selected…', function () { RV.results.save('save'); }, 'selection'],
              ['Save reflections and intensities of selected…', function () { RV.results.save('refl'); }, 'selection'],
              ['Save calculated patterns of selected…', function () { RV.results.save('calc'); }, 'selection'], null,
-             ['Save sample broadening of the current phase…', savePreset, 'havePhaseAny'], null,
              ['Export to GSAS-II…', function () { RV.gsas2.exportSelected(); }, 'selection']],
       data: [['Undo the last command', undo, 'undo'], null,
              ['Instrument and range of selected…', instrument, 'edit'], ['Background of selected…', background, 'edit'], ['Excluded regions of selected…', excludeRegions, 'edit'], null,
