@@ -2,6 +2,10 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.24.3 — 24 October 2026
+
+1. **Distinct application header.** Give the Powder 6 command bar a muted blue background in light mode and a slate-blue background in dark mode, with a stronger bottom rule and subtle shadow. The title uses the accent colour to match its diffraction icon. Panel toolbars retain their neutral surface.
+
 ## 2.24.2 — 24 October 2026
 
 1. **Help theme switch.** Replace the help's plain theme button with a Light/Dark slider in a sticky top-right toolbar, matching the main program's toggle. Both labels remain visible and the selected mode is emphasized. The contents and anchor scrolling account for the toolbar; it is hidden when printing.
