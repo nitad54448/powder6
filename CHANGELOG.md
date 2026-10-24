@@ -2,6 +2,14 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.24.5 — 24 October 2026
+
+1. **Automatic WPPF intensity preparation.** Remove the manual Extract intensities button. Structure selects the phase/dataset source and automatically prepares its uncertainty and correlation information after WPPF fitting, including multiphase datasets. Cache prepared sources by dataset and phase, and show availability or the fit prerequisite. Failed preparations do not retry continuously.
+
+## 2.24.4 — 24 October 2026
+
+1. **Structure preparation.** Move phase/dataset selection and extraction into an Extract intensities accordion. Show the extraction prerequisite beside the button, and explain that ADDSYM does not need intensities. Keep manual extraction available for single-phase datasets as well as automatic extraction after WPPF fitting.
+
 ## 2.24.3 — 24 October 2026
 
 1. **Distinct application header.** Give the Powder 6 command bar a muted blue background in light mode and a slate-blue background in dark mode, with a stronger bottom rule and subtle shadow. The title uses the accent colour to match its diffraction icon. Panel toolbars retain their neutral surface.

@@ -59,7 +59,7 @@ RV.solve = (function () {
   function sgtCount(range){range=range || sgtRange();return SV.opts.sgtAuto || !SV.opts.sgtN?range.max:Math.min(SV.opts.sgtN,range.max);}
   function sgtCountIssue(){
     var range=sgtRange(),input=$('#sv-sgtn');
-    if(!range.available)return 'Extract intensities for this dataset and phase first.';
+    if(!range.available)return 'Fit this dataset by WPPF; intensities are prepared automatically.';
     if(range.max<4)return 'Need at least 4 determined intensities; '+range.available+' available.';
     var raw=input?input.value.trim():String(sgtCount(range)),n=/^\d+$/.test(raw)?Number(raw):NaN;
     return Number.isSafeInteger(n) && n>=4 && n<=range.max?'':'Enter a whole number from 4 to '+range.max+'.';
@@ -68,7 +68,7 @@ RV.solve = (function () {
     var input=$('#sv-sgtn');if(!input)return;var range=sgtRange();
     input.min='4';input.max=String(range.max);input.value=range.max?String(sgtCount(range)):'';input.disabled=S.busy || range.max<4;
     input.setCustomValidity('');input.removeAttribute('aria-invalid');
-    $('#sv-sgtn-note').textContent=range.available?range.available+' determined intensities available; lowest-angle reflections are used.'+(range.available>C.MAX_PRECISION_REFLECTIONS?' At most '+C.MAX_PRECISION_REFLECTIONS+' per test.':''):'Extract intensities to set the available range.';
+    $('#sv-sgtn-note').textContent=range.available?range.available+' determined intensities available; lowest-angle reflections are used.'+(range.available>C.MAX_PRECISION_REFLECTIONS?' At most '+C.MAX_PRECISION_REFLECTIONS+' per test.':''):'Fit by WPPF; the intensity range is prepared automatically.';
   }
   var solutionSelection={},solutionViews={},inspectingSolution=false;
   function active(){return RV.app && (RV.app.commandTab()==='structure' || RV.app.resultTab()==='structure-results');}
@@ -285,6 +285,27 @@ RV.solve = (function () {
   }
 
   // ---------------------------------------------------------------- the phase and the dataset
+  var preparationPending=false, preparationAttempts={};
+  function intensityValues(ds) {return JSON.stringify([ds.p,ds.inst,ds.fit]);}
+  function prepared(ds,ph) {
+    if(!ds || !ph)return null;
+    var c=SV.extractions[ds.id+':'+ph.key] || SV.extractions[ds.id];
+    return c && c.stats===ds.stats && (!c.values || c.values===intensityValues(ds)) && c.I.phaseKey===ph.key && !c.I.stale?c.I:null;
+  }
+  function prepareSelected() {
+    var ds=dataset(),ph=phase();
+    if(preparationPending || !active() || extractWhy(ph,ds) || prepared(ds,ph))return;
+    var key=ds.id+':'+ph.key, token=intensityValues(ds),last=preparationAttempts[key];
+    if(last && last.stats===ds.stats && last.token===token)return;
+    preparationPending=true;
+    setTimeout(async function(){
+      try {
+        if(dataset()!==ds || phase()!==ph || extractWhy(ph,ds) || prepared(ds,ph))return;
+        preparationAttempts[key]={stats:ds.stats,token:token};
+        await extract({ds:ds,ph:ph,quiet:true});
+      } finally {preparationPending=false;if(active())renderBar();}
+    },20);
+  }
   function phase() { return St.phaseByKey(SV.phaseKey); }
   function dataset() { return St.byId(SV.dsId); }
   function pickDefaults() {
@@ -295,8 +316,7 @@ RV.solve = (function () {
     }
     if(S.phases.length===1){
       var first=St.first();SV.phaseKey=S.phases[0].key;SV.dsId=first ? first.id : null;
-      var cached=first && SV.extractions[first.id];
-      SV.ints=first && St.hasPhase(first,S.phases[0]) && cached && cached.stats===first.stats ? cached.I : null;
+      SV.ints=first && St.hasPhase(first,S.phases[0])?prepared(first,S.phases[0]):null;
       return;
     }
     // a dataset that holds the phase: the first selected one, else the first of the list
@@ -305,7 +325,7 @@ RV.solve = (function () {
       var d = [St.first()].concat(St.selected(), S.datasets).filter(ok)[0];
       SV.dsId = d ? d.id : null;
     }
-    if(!SV.ints || SV.ints.phaseKey!==SV.phaseKey || SV.ints.dsId!==SV.dsId){var selected=dataset(),cached=selected && SV.extractions[selected.id];SV.ints=cached && cached.stats===selected.stats && cached.I.phaseKey===SV.phaseKey?cached.I:null;}
+    if(!SV.ints || SV.ints.stale || SV.ints.phaseKey!==SV.phaseKey || SV.ints.dsId!==SV.dsId)SV.ints=prepared(dataset(),phase());
   }
   function polOf(inst) {
     if (inst.radiation === 'neutron' || inst.pol === 'none') return { mode: 'none' };
@@ -388,7 +408,7 @@ RV.solve = (function () {
       symops: got.error ? null : got.symops, symErr: got.error || '', stale: false
     };
     ds.ints = res.intensities[0];
-    SV.extractions[ds.id]={I:SV.ints,stats:ds.stats};
+    SV.extractions[ds.id]=SV.extractions[ds.id+':'+ph.key]={I:SV.ints,stats:ds.stats,values:intensityValues(ds)};
     RV.bus.emit('stats');
     var n0 = det.filter(function (r) { return r.bound; }).length, strong = det.filter(function (r) { return r.sigma > 0 && r.area > 3 * r.sigma; }).length;
     if(!options.quiet) ui.toast('Extracted ' + plural(det.length, 'intensity') + ' of ' + ph.name + ' in ' + ds.name + ': ' + strong + ' above 3σ, ' + n0 + ' held at zero; σ ' +
@@ -434,8 +454,8 @@ RV.solve = (function () {
     if (!I) return '';
     var ph = St.phaseByKey(I.phaseKey);
     if (!ph) return 'The phase ' + I.phaseName + ' of this extraction is gone.';
-    if (ph.sg.hall !== I.sg.hall) return 'The space group of ' + ph.name + ' changed since this extraction (' + I.sg.symbol + ' then, ' + ph.sg.symbol + ' now): fit and extract again.';
-    if (I.stale) return 'The values changed since this extraction: extract again for the intensities at the new values.';
+    if (ph.sg.hall !== I.sg.hall) return 'The space group of ' + ph.name + ' changed since this extraction (' + I.sg.symbol + ' then, ' + ph.sg.symbol + ' now): fit by WPPF again.';
+    if (I.stale) return 'The values changed since this extraction: refit by WPPF to update the intensities.';
     return '';
   }
 
@@ -445,7 +465,7 @@ RV.solve = (function () {
     var issue=sgtCountIssue();if(issue){ui.toast(issue,'warn');return;}
     var requested=Number($('#sv-sgtn').value);
     var I = SV.ints;
-    if (!I) { ui.toast('Extract the intensities first.', 'warn'); return; }
+    if (!I) { ui.toast('Fit by WPPF first; intensities are prepared automatically.', 'warn'); return; }
     if (!I.pre || !I.pre.n) { ui.toast('The extraction holds no precision block (no WPPF intensity was determined).', 'warn'); return; }
     if(I.pre.n!==requested){
       var ds=St.byId(I.dsId),ph=St.phaseByKey(I.phaseKey),sourceIssue=staleNote() || extractWhy(ph,ds);
@@ -479,7 +499,7 @@ RV.solve = (function () {
     if (sg.hall === ph.sg.hall) { ui.toast(ph.name + ' is already in ' + St.sgText(sg) + '.', 'info'); return; }
     RV.history.take('space group of ' + ph.name);
     St.setPhaseSG(ph, sg);
-    ui.toast('Space group of ' + ph.name + ': ' + sg.symbol + ' (' + sg.number + '). Fit again by WPPF and extract the intensities in this group before solving the structure.', 'ok');
+    ui.toast('Space group of ' + ph.name + ': ' + sg.symbol + ' (' + sg.number + '). Fit again by WPPF in this group before solving the structure.', 'ok');
   }
 
   // ---------------------------------------------------------------- 3a. charge flipping
@@ -513,7 +533,7 @@ RV.solve = (function () {
     var host=$('#sv-cf-quality');if(!host)return;var adaptive=SV.opts.cf.adaptive===true;
     $('#sv-cf-adaptive').checked=adaptive;
     ['threshold','symLambda','weakFraction','weakGrouping','overlapTol'].forEach(function(k){var input=$('#sv-cf-'+k),box=input.parentElement;box.hidden=adaptive;box.previousElementSibling.hidden=adaptive;});
-    if(!SV.ints){host.textContent='Extract WPPF intensities to assess the data and preview adaptive settings.';return;}
+    if(!SV.ints){host.textContent='Fit by WPPF to assess its intensities and preview adaptive settings.';return;}
     var assessment=cfAssessment(SV.ints),q=assessment.quality;
     host.innerHTML='<p class="hint">'+esc(cfQualityText(q))+'</p>'+
       (!q.uncertaintiesReliable?'<p class="hint">Too few reliable resolved intensities, or uncertainties are missing or conditional; signal-to-noise guidance is limited.</p>':'')+
@@ -540,7 +560,7 @@ RV.solve = (function () {
   function runCf() {
     if (S.busy || SV.cfRun || SV.wyRun) return;
     var I = SV.ints;
-    if (!I) { ui.toast('Extract the intensities first.', 'warn'); return; }
+    if (!I) { ui.toast('Fit by WPPF first; intensities are prepared automatically.', 'warn'); return; }
     var o = cfOptions();
     if (o.error) { ui.toast('Charge flipping: ' + o.error, 'warn'); return; }
     var search=null;
@@ -749,7 +769,7 @@ RV.solve = (function () {
   function runWy() {
     if (S.busy || SV.wyRun || SV.cfRun) return;
     var I = SV.ints, formula = String(SV.opts.formula || '').trim();
-    if (!I) { ui.toast('Extract the intensities first.', 'warn'); return; }
+    if (!I) { ui.toast('Fit by WPPF first; intensities are prepared automatically.', 'warn'); return; }
     if (!formula) { ui.toast('The Wyckoff search needs the formula unit in Commands → Structure.', 'warn'); return; }
     var comp = parseFormula(formula);
     if (!comp) { ui.toast(formula + ' is not a formula this program can read.', 'warn'); return; }
@@ -985,9 +1005,9 @@ RV.solve = (function () {
   // ---------------------------------------------------------------- SHELX .hkl of the extracted intensities
   function hklWhy() {
     if(S.busy)return 'Wait for the current calculation to finish.';
-    if(S.calculation!=='wppf')return 'Select WPPF to export extracted intensities.';
+    if(S.calculation!=='wppf')return 'Select WPPF to export reflection intensities.';
     pickDefaults();
-    if(!SV.ints)return 'Fit by WPPF and extract the intensities first.';
+    if(!SV.ints)return 'Fit by WPPF first; intensities are prepared automatically.';
     var why=staleNote();if(why)return why;
     if(!St.selected().some(function(d){return d.id===SV.ints.dsId;}))return 'Select the dataset of the extracted intensities.';
     return '';
@@ -995,7 +1015,7 @@ RV.solve = (function () {
   function saveHkl(source) {
     var why=source?'':hklWhy();if(why){ui.toast(why,'warn');return;}
     var I = source || SV.ints;
-    if (!I) { ui.toast('Extract the intensities first.', 'warn'); return; }
+    if (!I) { ui.toast('Fit by WPPF first; intensities are prepared automatically.', 'warn'); return; }
     var rows = I.det.map(function (r) { var w = r.m * r.lp; return { h: r.h, k: r.k, l: r.l, F2: Math.max(0, r.area) / w, s: r.sigma / w }; }).filter(function (r) { return Number.isFinite(r.F2) && r.s > 0; });
     var mx = rows.reduce(function (m, r) { return Math.max(m, r.F2); }, 0), k = mx > 0 ? 99999 / mx : 1;
     function i4(v) { var s = String(v); return '    '.slice(s.length) + s; }
@@ -1084,15 +1104,15 @@ RV.solve = (function () {
     host.innerHTML =
       '<p class="hint">Set up extraction, space-group tests, atomic-model symmetry, charge flipping and Wyckoff searches here. Inspect search output in Results → Structure. '+esc(gpuBudget.note)+'</p>' +
       (gpuBudget.checked && !gpuBudget.available ? '<p class="hint sv-warn">WebGPU was not found: the Wyckoff search cannot run here. Turn on hardware (graphics) acceleration in the browser settings, restart the browser and reload this page; see Troubleshooting in the documentation.</p>' : '') +
-      // the intensities everything below starts from; the source row only when there is a choice of phase
-      '<div class="sv-bar">' +
+      // Intensity-based tools share this preparation step; ADDSYM is independent.
+      block('wppf-source', 'WPPF intensities',
+        '<p class="hint">WPPF determines reflection intensities during fitting. Select their source here; uncertainties and correlations are prepared automatically for the powder space-group test, charge flipping and Wyckoff search. ADDSYM uses an atomic model independently.</p>' +
         '<div class="sv-row" id="sv-extract-source"><span class="sv-lbl">Phase</span><div class="phase-chips" id="sv-phases"></div>' +
           '<label class="sv-lbl" for="sv-ds">in</label><select id="sv-ds" aria-label="Dataset"></select>' +
-          '<button type="button" class="primary" id="sv-extract" data-sv="extract" title="The WPPF intensities of the phase in this dataset at its current values, with their uncertainties">Extract intensities</button>' +
           '<span id="sv-switch"></span><span class="tool-gap"></span>' +
           '</div>' +
-        '<div class="sv-int" id="sv-int"></div>' +
-      '</div>' +
+        '<p class="hint" id="sv-extract-note" role="status"></p>' +
+        '<div class="sv-int" id="sv-int"></div>', true) +
       block('wppf-sgt', 'Space group',
         block('sgt-test', 'Test · powder intensities',
         '<p class="hint">The probability of each set of systematic absences of the Laue class, from the WPPF intensities and their full correlation (Markvardsen, David, Johnson and Shankland 2001). For a complete test, fit in the space group of the Laue class with no absences (P2/m, Pmmm, P4/mmm, Pm-3m …): a reflection the WPPF fit did not contain was never measured.</p>' +
@@ -1170,41 +1190,40 @@ RV.solve = (function () {
       return '<button type="button" class="chip" data-svph="' + ph.key + '" aria-pressed="' + (ph.key === SV.phaseKey) + '" title="' + esc(ph.name + ', ' + St.sgText(ph.sg) + ', ' + C.METHOD_LABELS[ph.method]) + '">' +
              '<i class="sw" style="background:' + RV.plots.phaseVar(i) + '"></i>' + esc(ph.name) + (ph.method === 'wppf' ? '' : ' <small>' + esc(C.METHOD_LABELS[ph.method]) + '</small>') + '</button>';
     }).join('');
-    var source=$('#sv-extract-source');if(source)source.hidden=S.phases.length===1;
     var ph = phase(), sw = $('#sv-switch'), held = S.datasets.filter(function (d) { return !ph || St.hasPhase(d, ph); });
     sel.innerHTML = held.length ? held.map(function (d) { return '<option value="' + d.id + '"' + (d.id === SV.dsId ? ' selected' : '') + '>' + esc(d.name) + '</option>'; }).join('') : '<option value="">' + (S.datasets.length ? 'not in any dataset' : 'no dataset') + '</option>';
     sw.innerHTML = ph && ph.method !== 'wppf' ? '<button type="button" data-sv="to-wppf" title="Fit ' + esc(ph.name) + ' by WPPF: its intensities become free variables of the fit">Fit ' + esc(ph.name) + ' by WPPF</button>' : '';
     // the state of the fit is the tooltip of the button, or the reason it is greyed
-    var why = extractWhy(ph, dataset()), ex = $('#sv-extract'), ds0 = dataset();
-    ex.dataset.tip = 'The WPPF intensities of the phase in this dataset at its current values, with their uncertainties.' + (!why && ds0 && ds0.stats ? ' WPPF fit: ' + ds0.stats.msg + '. ' + (/^converged/.test(ds0.stats.msg || '') ? 'Ready to extract intensities.' : 'Check the fit and convergence before using extracted intensities.') : '');
-    ui.able(ex, why);
+    var ds0=dataset(),I=prepared(ds0,ph),why=extractWhy(ph,ds0);
+    if(I)SV.ints=I;
+    var attempt=ds0 && ph && preparationAttempts[ds0.id+':'+ph.key];
+    $('#sv-extract-note').textContent=I?'WPPF intensities available for '+ph.name+' in '+ds0.name+'.':
+      why || (preparationPending?'Preparing intensity uncertainties and correlations...':attempt?'Intensity preparation did not complete. Check the Log; refit this dataset to try again.':'Preparing WPPF intensities automatically...');
+    prepareSelected();
     var els = parseFormula(SV.opts.formula), dl = $('#sv-el-list');
     if (dl) dl.innerHTML = (els || []).map(function (c) { return '<option value="' + c.el + '">'; }).join('');
-    syncSgtCount();renderCfPlan();syncAble();syncBar();
+    syncSgtCount();renderCfPlan();syncAble();
   }
   // what the buttons of the methods need, as the reason they are greyed
   function syncAble() {
-    var I = SV.ints, none = 'Extract the intensities first.';
+    var I = SV.ints, none = 'Fit this dataset by WPPF; its intensities are prepared automatically.';
 
     ui.able(document.querySelector('#solve [data-sv="sgt"]'), S.busy?'Calculation running.':sgtCountIssue() || (!I || !I.pre || !I.pre.n?'The extraction holds no precision block.':''));
     ui.able($('#sv-cf-run'), S.busy?'Calculation running.':!I?none:cfOptions().error || '');
-    ui.able($('#sv-wy-run'), !I ? none : !parseFormula(SV.opts.formula) ? 'Give the formula unit in Commands → Structure.' : '');
+    ui.able($('#sv-wy-run'), S.busy?'Calculation running.':!I ? none : !parseFormula(SV.opts.formula) ? 'Give the formula unit in Commands → Structure.' : '');
     syncSymmetry();
   }
   function syncSymmetry(){
     var select=$('#sv-sym-phase'),ph=select && St.phaseByKey(select.value);
     ui.able($('#sv-addsym'),S.busy?'Calculation running.':!ph?'Select a phase.':!ph.atoms.length?'This phase has no atoms; ADDSYM needs an atomic model.':'');
   }
-  // the bar over the methods is the phase, dataset and Extract row, shown when there are several phases (a single phase is extracted by itself)
-  function syncBar() { var bar = $('.sv-bar'), row = $('#sv-extract-source'); if (bar && row) bar.hidden = row.hidden; }
   function renderInt() {
     var el = $('#sv-int');
     if (!el) return;
     var I = SV.ints, ph = phase();
     if (!I || I.phaseKey !== SV.phaseKey) {
-      el.innerHTML = '<p class="hint">' + (!ph ? '' : ph.method !== 'wppf' ? esc(ph.name) + ' is fitted by ' + esc(C.METHOD_LABELS[ph.method]) + '. Structure solution starts from the intensities of a WPPF phase: switch Method to WPPF, fit (zero, cell and peak shape ticked), then extract them.'
-        : 'Fit ' + esc(ph.name) + ' by WPPF (zero, cell and peak shape ticked), then extract its intensities: the space-group test, charge flipping and the Wyckoff search start from them.' + (I ? ' The last extraction is of ' + esc(I.phaseName) + '.' : '')) + '</p>';
-      syncBar();
+      el.innerHTML = '<p class="hint">' + (!ph ? '' : ph.method !== 'wppf' ? esc(ph.name) + ' is fitted by ' + esc(C.METHOD_LABELS[ph.method]) + '. Structure solution starts from the intensities of a WPPF phase: switch Method to WPPF, fit (zero, cell and peak shape ticked), their uncertainties are prepared automatically.'
+        : 'Fit ' + esc(ph.name) + ' by WPPF (zero, cell and peak shape ticked), its intensities are then available: the space-group test, charge flipping and the Wyckoff search start from them.' + (I ? ' The last extraction is of ' + esc(I.phaseName) + '.' : '')) + '</p>';
       return;
     }
     var det = I.det, n0 = det.filter(function (r) { return r.bound; }).length, nOv = det.filter(function (r) { return r.group >= 0; }).length, strong = det.filter(function (r) { return r.sigma > 0 && r.area > 3 * r.sigma; }).length;
@@ -1212,7 +1231,6 @@ RV.solve = (function () {
     el.innerHTML = '<p><b>' + plural(det.length, 'intensity') + '</b> of ' + esc(I.phaseName) + ' (' + esc(I.sg.symbol) + ') in ' + esc(I.dsName) + ', 2θ ' + f(lo, 2) + '–' + f(hi, 2) + '°: ' + strong + ' above 3σ, ' + n0 + ' held at zero, ' + nOv + ' in exact overlaps. ' +
       'R<sub>wp</sub> ' + pct(I.Rwp) + ', χ² ' + ui.fmt(I.chi2, 4) + '; σ ' + (I.nVar ? 'with the ' + plural(I.nVar, 'ticked parameter') + ' integrated out (full Pawley matrix)' : 'conditional on the values (nothing was ticked)') + '. ' +
       '<span class="sub">Extracted ' + esc(I.stamp) + (I.pre ? ', precision block of the ' + I.pre.n + ' lowest-angle' : '') + '.</span></p>' + (why ? '<p class="sv-warn">' + esc(why) + '</p>' : '');
-    syncBar();
   }
   function renderDensity() {
     document.querySelectorAll('#solve .sv-dens').forEach(function (el) { var h = densityHint(el.getAttribute('data-k') === 'cf' ? 'cf' : 'wy'); el.textContent = h.text; el.classList.toggle('sv-warn', !!h.warn); });
@@ -1227,7 +1245,7 @@ RV.solve = (function () {
     var el = $('#sv-sgt-out');
     if (!el) return;
     var T = SV.sgt;
-    if (!T) { el.innerHTML = SV.ints ? '' : '<p class="hint">Extract the intensities first.</p>'; return; }
+    if (!T) { el.innerHTML = SV.ints ? '' : '<p class="hint">Fit by WPPF; intensity uncertainties are prepared automatically.</p>'; return; }
     if (T.error) { el.innerHTML = '<p class="sv-warn">' + esc(T.error) + '</p>'; return; }
     var rows = T.rows.slice(0, 16), fitLab = RV.sgtest.label(T.fitRec), open = T.openRec, older = !SV.ints || SV.ints.stamp !== T.stamp;
     el.innerHTML = '<p>' + plural(T.n, 'intensity') + ' of ' + esc(T.phaseName) + ' in ' + esc(T.dsName) + (T.truncatedTo ? ' (the ' + T.truncatedTo + ' lowest-angle)' : '') + ', Laue class ' + esc(T.laue) + ': ' + plural(T.rows.length, 'set') + ' of absences among the settings. ' +
@@ -1280,7 +1298,7 @@ RV.solve = (function () {
     if (!el) return;
     var R = SV.cf, sitesEl = $('#sv-cf-sites'), sum = $('#sv-cf-sum'), nEl = $('#sv-cf-sites-n');
     function noMap(msg) { var dh=$('#sv-cf-density'),dn=$('#sv-cf-density-none');if(dh)dh.hidden=true;if(dn)dn.hidden=false; if(typeof Density3D !== 'undefined') Density3D.dispose(); el.innerHTML = msg; if (sitesEl) sitesEl.innerHTML = '<p class="hint">No charge-flipping sites yet.</p>'; if (sum) sum.textContent = ''; if (nEl) nEl.textContent = ''; }
-    if (!R) { noMap(SV.ints ? '' : '<p class="hint">Extract the intensities first.</p>'); return; }
+    if (!R) { noMap(SV.ints ? '' : '<p class="hint">Fit by WPPF; intensity uncertainties are prepared automatically.</p>'); return; }
     if (R.error) { noMap('<p class="sv-warn">' + esc(R.error) + '</p>'); return; }
     var b = R.best, st = R.structure, rep = b.reflections || {};
     el.innerHTML = '<h3>Map' + (R.stopped ? ' <span class="sv-warn">stopped</span>' : '') + '</h3>' +
@@ -1363,7 +1381,7 @@ RV.solve = (function () {
     if (!el) return;
     var R = SV.wy;
     function none(msg) { el.innerHTML = msg; if (sitesEl) sitesEl.innerHTML = '<p class="hint">No Wyckoff solution yet.</p>'; if (sum) sum.textContent = ''; }
-    if (!R) { none(SV.ints ? '<p class="hint">Run the Wyckoff search.</p>' : '<p class="hint">Extract the intensities first.</p>'); return; }
+    if (!R) { none(SV.ints ? '<p class="hint">Run the Wyckoff search.</p>' : '<p class="hint">Fit by WPPF; intensity uncertainties are prepared automatically.</p>'); return; }
     if (R.error) { none('<p class="sv-warn">' + esc(R.error) + '</p>'); return; }
     var sol = R.sols[R.pick] || R.sols[0], ref = sol.refinement || {};
     if (sum) sum.textContent = (prettyAssign(sol.assignment) || '?') + (Number.isFinite(sol.z) ? ', Z = ' + sol.z : '') + ', wR(F²) ' + pct(ref.R);
@@ -1432,7 +1450,6 @@ RV.solve = (function () {
     if ((b = t.closest('[data-sgset]'))) { var p = b.getAttribute('data-sgset').split('|'); useSetting(+p[0], p.slice(1).join('|')); return; }
     if (!(b = t.closest('[data-sv]'))) return;
     switch (b.getAttribute('data-sv')) {
-      case 'extract': extract(); break;
       case 'to-wppf': { var ph = phase(); if (ph) RV.cmd.setMethod(ph, 'wppf'); break; }
       case 'sgt': runSgt(); break;
       case 'find-symmetry': {var select=$('#sv-sym-phase'),ph=select && St.phaseByKey(select.value);if(ph && !S.busy)RV.phasesTab.findSymmetry(ph);break;}
@@ -1552,7 +1569,7 @@ RV.solve = (function () {
   }
   function restoreArchive(value,options){
     // Project boundaries must also clear caches keyed by IDs reused by the new project.
-    SV.extractions={};SV.sgt=null;SV.cf=null;SV.wy=null;SV.ints=null;
+    SV.extractions={};preparationAttempts={};SV.sgt=null;SV.cf=null;SV.wy=null;SV.ints=null;
     SV.dsId=null;SV.phaseKey=null;SV.shown=null;
     solutionSelection={};solutionViews={};inspectingSolution=false;
     value=value || {};
@@ -1587,7 +1604,7 @@ RV.solve = (function () {
     RV.bus.on('calculation',function(){if(RV.app.resultTab()!=='structure-results' && typeof Density3D!=='undefined')Density3D.dispose();else setTimeout(function(){renderDensityMap();renderStOut();},0);});
     RV.bus.on('tab',function(){if(RV.app.resultTab()!=='structure-results' && typeof Density3D!=='undefined')Density3D.dispose();else renderDensityMap();});
     RV.bus.on('theme',function(){if(typeof Density3D!=='undefined')Density3D.applyTheme();});
-    RV.bus.on('tab', function () { if(active() && dirty)render();else if(active())renderStOut(); });
+    RV.bus.on('tab', function () { if(active() && dirty)render();else if(active()){renderBar();renderInt();renderStOut();} });
     RV.bus.on('acc', onAcc);
     RV.bus.on('phases', function () { if (SV.ints) SV.ints.stale = true; refresh(); });
     RV.bus.on('params', function () { if (SV.ints) SV.ints.stale = true; if (active()) { renderBar(); renderInt(); renderDensity(); } else dirty = true; });

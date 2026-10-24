@@ -1,6 +1,6 @@
 # Powder 6
 
-Version **2.24.3**, 24 October 2026. See [corrections](CHANGELOG.md).
+Version **2.24.5**, 24 October 2026. See [corrections](CHANGELOG.md).
 
 Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by **Rietveld**, **Le Bail** or **WPPF**, fitted individually or in one global fit, with **structure solution** from the extracted intensities. Everything runs locally; nothing is uploaded.
 
@@ -62,7 +62,7 @@ Supporting files loaded locally. Without them the program still starts, but lose
 2. Add phases: **Phases → Read CIF…**, or **New phase…** from a space group and cell.
 3. In **Commands → Method**, choose Le Bail or WPPF. In **Datasets**, choose a coloured dataset tab and set its values, refinement flags, bounds, sharing and links. Phase definitions and starting models are in **Phases**; numerical conditions are in **Settings**.
 4. With atoms in the phase, switch it to Rietveld and refine positions, B and occupancies.
-5. For an unknown structure: WPPF fit → **Commands → Structure** to extract intensities, test the space group and run charge flipping or a Wyckoff search → inspect **Results → Structure** → transfer atoms to the phase and fit by Rietveld.
+5. For an unknown structure: WPPF fit → **Commands → Structure** to select the WPPF intensity source (uncertainties are prepared automatically), test the space group and run charge flipping or a Wyckoff search → inspect **Results → Structure** → transfer atoms to the phase and fit by Rietveld.
 6. Press **FIT** or F9 from any view. Inspect the **Le Bail**, **WPPF** or **Rietveld** results tab and choose a completed run. **Use as start** restores that run into the working setup; **Keep** protects it. Save a compressed `.project` file from File (Ctrl+S): after the options, a Save As dialog lets you choose the name and folder; browsers without one download it to their download folder, and the message names the file.
 
 On the pattern, Ctrl+click places a background anchor at the cursor's angle and height; right-drag an anchor to move it. Ctrl+Shift+drag still marks exclusions. Filled magenta anchors are refinable, hollow grey anchors are fixed, and editing an anchor shows a yellow vertical guide. Edit exact X/Y coordinates and the Y refinement flag together in the dataset tab's **Background** group. Plots has separate **Anchors**, **Backgnd**, **Phases**, **Refl** and **Subtract** controls. Anchors is greyed out when no plotted dataset uses spline anchors, in a multi-dataset Overview, or during background subtraction; its checked preference is preserved. Chebyshev backgrounds use coefficients rather than anchor points; changing the fitted range re-expresses those coefficients to preserve the curve at retained angles. Each dataset has independent **Sample** and **Resolution** refinement checkboxes. Each method retains its own background and fitted results; Le Bail and WPPF results display the retained Rietveld atomic model as unused.

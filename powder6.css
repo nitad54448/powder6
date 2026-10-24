@@ -384,7 +384,7 @@ table.grid.compact td, table.grid.compact th { padding: 2px var(--sp-2); }
 .limits-table td:first-child code { font-size: var(--fs-sm); overflow-wrap: anywhere; }
 table.grid.limits-table input:not([type=checkbox], [type=radio]) { min-width: 0; max-width: none; padding: 2px var(--sp-1); font-size: var(--fs-sm); }
 /* the panel box: cards, accordions and the bar of the Structure pane */
-.solve-fit, .dataset-card, .cf-density, .history-run, .solve .sv-bar, .acc { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--radius); }
+.solve-fit, .dataset-card, .cf-density, .history-run, .acc { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--radius); }
 .buttons { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .hint, .note { color: var(--ink-3); font-size: var(--fs-sm); line-height: 1.45; margin: var(--sp-2) 0; }
 .note { color: var(--ink-2); margin: 0; }
@@ -736,7 +736,6 @@ table.grid.pm input:disabled { opacity: .45; }
 .acc .acc-body > .res-head + .block { margin-top: 12px; }
 .solve { padding: 0 0 40px; }
 .solve > .hint:first-child { margin: 0 0 10px; font-size: var(--fs-sm); }
-.solve .sv-bar { margin: var(--sp-3) 0; padding: var(--sp-3) var(--sp-4); }
 .sv-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; min-height: var(--ctl-h-lg); }
 .sv-row + .sv-row { margin-top: 6px; }
 .sv-lbl { color: var(--ink-2); white-space: nowrap; }
