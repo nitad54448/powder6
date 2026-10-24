@@ -2,6 +2,10 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.22.7 — 24 October 2026
+
+1. **Selection and batch fit mode.** Show Individual / Global when at least two datasets are selected, synchronized with Commands / Method. The Fit selected datasets button respects that mode instead of forcing individual fits. Updated the instructions to refer to dataset accordions.
+
 ## 2.22.6 — 24 October 2026
 
 Removed the redundant Refinement parameters button from Selection and batch; it only reopened the Datasets view without revealing or scrolling to the editor.

@@ -11,6 +11,7 @@
     w.addEventListener('error',e=>errors.push(e.message));
     const frame=()=>new Promise(r=>w.requestAnimationFrame(()=>w.requestAnimationFrame(r)));
     function key(el,value){el.focus();el.dispatchEvent(new w.KeyboardEvent('keydown',{key:value,bubbles:true,cancelable:true}));}
+    St.addPhase(St.makePhase({name:'Reference phase',sg:St.resolveSG(1),cell:{a:5,b:5,c:5,alpha:90,beta:90,gamma:90},atoms:[]}));
     const datasets=St.insertDatasets(['Reference standard','Sample at 300 K'].map(name=>St.makeDataset({name,tth:[10,20,30],y:[10,40,20]})),{estimate:false,selectAll:true});
     RV.app.showTab('datasets');await frame();
     check(all('#dataset-accordions > details').length===2,'Selected datasets must each have a heading');
@@ -19,6 +20,14 @@
     check(q('#dataset-detail').getAttribute('aria-labelledby')==='dataset-editor-name','Dataset editor has no visible accessible heading');
     check(q('#dataset-tabs').hidden && !q('#dataset-values h1'),'Repeated dataset headings returned');
     record('Selected dataset accordions activate the correct editor without duplicate titles');
+    check(!q('[data-fitmode-visibility]').hidden,'Batch mode is hidden for two selected datasets');
+    q('[aria-label="Batch fit mode"] [data-fitmode="global"]').click();await frame();
+    check(RV.app.fitMode()==='global' && all('[data-fitmode="global"]').every(b=>b.getAttribute('aria-pressed')==='true'),'Batch global mode is not synchronized');
+    const originalFit=RV.cmd.fit;let fitMode=null;RV.cmd.fit=()=>{fitMode=RV.app.fitMode();};
+    q('[data-acc="dataset-batch"] [data-workflow="fit"]').click();RV.cmd.fit=originalFit;check(fitMode==='global','Batch fit bypassed the selected mode');
+    St.selectIds([datasets[0].id]);await frame();check(q('[data-fitmode-visibility]').hidden,'Batch mode should hide for one selected dataset');
+    St.selectAll();q('[aria-label="Batch fit mode"] [data-fitmode="single"]').click();await frame();
+    record('Batch fit mode synchronizes with Method, controls fitting, and hides for one dataset');
     for(const theme of ['light','dark']){
       doc.documentElement.dataset.theme=theme;RV.theme.refresh();await frame();
       const style=w.getComputedStyle(q('[data-remove-dataset]')),rect=q('[data-remove-dataset]').getBoundingClientRect();

@@ -561,6 +561,7 @@ RV.panels = (function () {
   }
   function syncFitMode() {
     var canGlobal = S.sel.size >= 2;
+    document.querySelectorAll('[data-fitmode-visibility]').forEach(function(el){el.hidden=!canGlobal;});
     // with one dataset there is no choice to make: the selector, its separator and its explanation are hidden
     ['#fit-mode-lbl', '#fit-mode', '#fit-mode-sep', '#fit-mode-hint'].forEach(function (id) { var el = $(id); if (el) el.hidden = !canGlobal; });
     // Selection controls whether a global fit is available; rendering must
