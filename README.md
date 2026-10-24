@@ -1,6 +1,6 @@
 # Powder 6
 
-Version **2.24.8**, 24 October 2026. See [corrections](CHANGELOG.md).
+Version **2.26.1**, 24 October 2026. See [corrections](CHANGELOG.md).
 
 Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by **Rietveld**, **Le Bail** or **WPPF**, fitted individually or in one global fit, with **structure solution** from the extracted intensities. Everything runs locally; nothing is uploaded.
 
@@ -15,6 +15,8 @@ Full documentation: [`Powder6_documentation.html`](Powder6_documentation.html): 
 - Chebyshev or spline background, excluded regions, instrument calibration separate from sample broadening.
 - Profile diagnostics for negative Gaussian variance, dependent refinement variables and missing uncertainties; explanations remain with saved results. See [ill-conditioned profile refinements](Powder6_documentation.html#profile-conditioning).
 - Space-group test, charge flipping (WebGPU with CPU fallback) and a Wyckoff-site search (WebGPU), handing the atoms back for a Rietveld fit.
+- Fourier maps (difference, observed, 2Fo−Fc) of a phase from its WPPF intensities and the atoms of its model, with a peak list that adds atoms to the phase.
+- Soft distance and angle restraints in Rietveld, in the rule language of the Wyckoff search, with a guide that writes them from a PDB, XYZ or Z-matrix molecule.
 - Readers for xy/csv/txt, PANalytical `.xrdml`, Bruker `.brml`/`.uxd`, Rigaku `.ras`/`.rasx`, Philips `.udf`/`.rd`/`.sd`, GSAS `.xra`/`.esd`, Jade `.mdi`, pdCIF, and project files.
 - Results as text, CIF, pdCIF, SHELX HKLF 4 and a PDF report; command line, edit undo, and persistent calculation History with Set/Keep.
 - Structure → Space group has **Test** for systematic absences of the extracted powder intensities and **ADDSYM** for symmetry of an atomic model. Find higher symmetry… calls the public, locally bundled Moyo 0.21.0 WebAssembly API in a worker. The starting model, a dataset’s Rietveld model, or after a Le Bail or WPPF fit the dataset’s refined cell with its atoms can be selected. See [atomic-model symmetry](#atomic-model-symmetry) and the [bundled Moyo code](#bundled-moyo-code).
@@ -142,6 +144,7 @@ The worker receives lattice vectors, positions and type identifiers; it receives
 - Workspace checks: open `tests/workspace.html`, or pass it as the test-page argument to the same browser runner. Exercises independent panels and swapping, real fits, previous-run inspection/export, explicit restoration, structure output selection, History Set/Keep, resolution/atom-transfer targets, compressed reopening and 250 dataset tabs.
 - Symmetry checks: use `tests/project-symmetry.html` for the public WASM engine, representative space groups and project state; `tests/addsym-pbso4.html` for known Pnma PbSO₄ coordinates supplied as a P1 dataset’s fitted values, source selection, WPPF/Rietveld cells, conversion and undo; and `tests/convert-files.html` for conversion previews and project files. These fixtures verify the integration and transformations; they do not run an actual PbSO₄ refinement. Pass each page to the same browser runner.
 - Wyckoff search: `tests/wyckoff-search.html` runs the real GPU search on a simulated P-1 PbO₂ after a WPPF fit, with enough assignments to be screened and more than eight distance rules, and checks the two stages, the progress and the live best structure. It needs WebGPU.
+- Restraints and Fourier maps: `tests/restraints.html` (editor, molecule guide, restrained fit) and `tests/fourier.html` (a difference map finding an atom the model lacks), with the same runner; the Node suites cover the rule parser, the restraint geometry, the molecule files and the map.
 - CF transfer checks: use `tests/cf-transfer.html` with the same runner. Exercises deferred formula naming, selected-site transfer, manual element types, cancellation and archived-result preservation.
 - Adaptive CF: `node --test tests/cf-adaptive.test.cjs` checks quality response, common overlap grouping, reproducible CPU searches, map translation/inversion and P1 site extraction. Run `tests/cf-adaptive.html` with the browser runner for real WPPF extraction, GPU/CPU CF workers, recorded search metadata, stopping, failed starts and restoration of manual settings.
 

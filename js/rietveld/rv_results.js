@@ -311,6 +311,15 @@ RV.results = (function () {
       L.push('', '### ' + ph.name);
       AtomicConstraints.normalizeAll(ph.constraints).forEach(function (c) { L.push(AtomicConstraints.label(c.kind) + '\t' + AtomicConstraints.text(c)); });
     });
+    var AR = typeof AtomRestraints !== 'undefined' ? AtomRestraints : null, head = false;
+    S.phases.forEach(function (ph) {
+      if (!AR || ph.method !== 'rietveld' || !AR.active(ph.restraints)) return;
+      if (list && !list.some(function (d) { return St.hasPhase(d, ph); })) return;
+      var rs = AR.normalize(ph.restraints);
+      if (!head) { head = true; L.push('## Restraints', 'rules\tsoft distance and angle restraints added to chi2 as extra observations: ((value - nearest bound) / sigma)^2 x weight'); }
+      L.push('', '### ' + ph.name, 'weight\t' + rs.weight + '\tsigma distance\t' + rs.sigmaD + ' A\tsigma angle\t' + rs.sigmaA + ' deg');
+      rs.text.split(/\r?\n/).forEach(function (line) { if (line.trim()) L.push('rule\t' + line.trim()); });
+    });
     return L.length ? L.join('\n') + '\n' : '';
   }
   // One reflection table definition for Save reflections and text/PDF reports.

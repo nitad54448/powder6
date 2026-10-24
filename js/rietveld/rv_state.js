@@ -21,6 +21,8 @@
  *  The active calculation sets one method for all phases. Rietveld needs atoms; Le Bail and WPPF fit the intensities of the
  *  reflections instead, so the scale, the orientation and the atoms of such a phase are kept but not refined.
  */
+// the stored restraints of a phase (js/atom_restraints.js), with defaults for projects that have none
+RV.restraintsOf = function (r) { return typeof AtomRestraints !== 'undefined' ? AtomRestraints.normalize(r) : Object.assign({ on: true, text: '', weight: 1, sigmaD: 0.02, sigmaA: 3 }, r || {}); };
 RV.state = (function () {
   'use strict';
   var LS = 'powder6.', C = RVCore;
@@ -729,7 +731,7 @@ RV.state = (function () {
     var key = 'p' + S.nextPhase++, sg = o.sg, atoms = o.atoms || [];
     var method = S.calculation || 'lebail';
     var ph = { key: key, color: /^#[0-9a-f]{6}$/i.test(o.color || '') ? o.color : null, name: o.name || ('phase ' + key.slice(1)), method: method, sg: { number: sg.number, symbol: sg.symbol, hall: sg.hall, system: sg.system, laue: sg.laue, setting: sg.setting, uniqueAxis: sg.uniqueAxis },
-               ops: sg.ops, wyckoff: sg.wyckoff, profileType: o.profileType || 'gsas_cw', separatedProfile: o.separatedProfile === true || !o.profileType || o.profileType==='gsas_cw', broadening: RVCore.broadeningConfig(o.broadening), poDir: (o.poDir || [0, 0, 1]).slice(), constraints:JSON.parse(JSON.stringify(o.constraints || [])), atoms: [], v: {}, fit: {} };
+               ops: sg.ops, wyckoff: sg.wyckoff, profileType: o.profileType || 'gsas_cw', separatedProfile: o.separatedProfile === true || !o.profileType || o.profileType==='gsas_cw', broadening: RVCore.broadeningConfig(o.broadening), poDir: (o.poDir || [0, 0, 1]).slice(), constraints:JSON.parse(JSON.stringify(o.constraints || [])), restraints:RV.restraintsOf(o.restraints), atoms: [], v: {}, fit: {} };
     var cell = normaliseCell(o.cell || { a: 5 }, sg.system, sg.uniqueAxis) || normaliseCell({ a: 5 }, sg.system, sg.uniqueAxis), k = key + '.';
     C.cellParams(sg.system, sg.uniqueAxis).forEach(function (c) { ph.v[k + c] = cell[c]; ph.fit[k + c] = false; });
     ph.v[k + 'scale'] = 1e-3; ph.fit[k + 'scale'] = true;
@@ -826,6 +828,7 @@ RV.state = (function () {
     if (label === oldLabel) return oldLabel;
     ph.atoms.forEach(function (a) { if (a.label === oldLabel) a.label = label; });
     (ph.constraints || []).forEach(function(c){c.atoms=c.atoms.map(function(a){return a===oldLabel?label:a;});});
+    if(ph.restraints && ph.restraints.text)ph.restraints.text=ph.restraints.text.split(/\r?\n/).map(function(line){return /^\s*#/.test(line)?line:line.replace(/\S+/g,function(t){return t===oldLabel?label:t;});}).join('\n');
     [ph.v, ph.fit, S.shared, S.limits].forEach(function (m) { renameKeys(m, from, to); });
     S.datasets.forEach(function (ds) { [ds.p, ds.fit, ds.esd, ds.mem, ds.apart].forEach(function (m) { renameKeys(m, from, to); });Object.keys(ds.calculations || {}).forEach(function(k){var bank=ds.calculations[k];[bank.p,bank.fit,bank.esd,bank.apart].forEach(function(m){if(m)renameKeys(m,from,to);});bank.stats=null;bank.ints=null;}); });
     phaseChanged(ph);
@@ -1026,7 +1029,7 @@ RV.state = (function () {
   function phaseDefs() {
     return S.phases.map(function (ph) {
       return { key: ph.key, method: ph.method, system: ph.sg.system, uniqueAxis: ph.sg.uniqueAxis, profileType: ph.profileType, separatedProfile: ph.separatedProfile === true, broadening: RVCore.broadeningConfig(ph.broadening), ops: ph.ops, poDir: ph.poDir,
-               constraints:JSON.parse(JSON.stringify(ph.constraints || [])), atoms: ph.atoms.map(function (at) { var f = scatterer(at.type); return { label: at.label, element: elementOf(at.type), ff: { xray: f.xray, neutron: f.neutron }, site: at.site }; }) };
+               constraints:JSON.parse(JSON.stringify(ph.constraints || [])), restraints:RV.restraintsOf(ph.restraints), atoms: ph.atoms.map(function (at) { var f = scatterer(at.type); return { label: at.label, element: elementOf(at.type), ff: { xray: f.xray, neutron: f.neutron }, site: at.site }; }) };
     });
   }
   function datasetDef(ds) {
@@ -1248,7 +1251,7 @@ RV.state = (function () {
     return JSON.stringify({ dataKey:ds.dataKey, weight:S.settings.weight, inst:ds.inst, disabledPhases:S.disabledPhases, parameterLinks:S.parameterLinks,
       linkValues:S.parameterLinks.map(function(l){var source=byId(l.source.datasetId);return source && source.p[l.source.name];}), phases: phasesIn(ds).map(function (p) {
       var signature=[p.key, p.sg.hall, p.sg.symbol, p.profileType, p.separatedProfile === true, p.broadening, p.poDir, p.atoms, p.method];
-      if(p.method==='rietveld' && p.constraints && p.constraints.length)signature.push(p.constraints);return signature;
+      if(p.method==='rietveld' && p.constraints && p.constraints.length)signature.push(p.constraints);if(p.method==='rietveld' && typeof AtomRestraints!=='undefined' && AtomRestraints.active(p.restraints))signature.push(p.restraints);return signature;
     }) });
   }
   function saveCalculation() {
@@ -1329,7 +1332,7 @@ RV.state = (function () {
       absorption: RV.absorption && RV.absorption.exportUser ? RV.absorption.exportUser() : null,
       phases: S.phases.map(function (ph) {
         return { key: ph.key, color: ph.color || null, name: ph.name, method: ph.method, number: ph.sg.number, symbol: ph.sg.symbol, hall: ph.sg.hall, profileType: ph.profileType, separatedProfile: ph.separatedProfile === true, broadening: RVCore.broadeningConfig(ph.broadening), poDir: ph.poDir,
-                 constraints:JSON.parse(JSON.stringify(ph.constraints || [])), provenance:ph.provenance || null, atoms: ph.atoms.map(function (a) { return { label: a.label, type: a.type }; }), v: mapOut(ph.v), fit: ph.fit };
+                 constraints:JSON.parse(JSON.stringify(ph.constraints || [])), restraints:RV.restraintsOf(ph.restraints), provenance:ph.provenance || null, atoms: ph.atoms.map(function (a) { return { label: a.label, type: a.type }; }), v: mapOut(ph.v), fit: ph.fit };
       }),
       datasets: S.datasets.map(function (d) {
         return { id: d.id, dataKey:d.dataKey, color:d.color || null, name: d.name, tth:opts.metadataOnly?undefined:Array.from(d.tth), y:opts.metadataOnly?undefined:Array.from(d.y), sig:!opts.metadataOnly && d.sig ? Array.from(d.sig) : null, weights:!opts.metadataOnly && d.weights ? Array.from(d.weights) : null, inst: instCopy(d.inst),
@@ -1368,7 +1371,7 @@ RV.state = (function () {
       var ph = { key: key, color: /^#[0-9a-f]{6}$/i.test(p.color || '') ? p.color : null, name: String(p.name || key), method: C.METHODS.indexOf(p.method) >= 0 ? p.method : 'rietveld',
                  sg: { number: sg.number, symbol: sg.symbol, hall: sg.hall, system: sg.system, laue: sg.laue, setting: sg.setting, uniqueAxis: sg.uniqueAxis },
                  ops: sg.ops, wyckoff: sg.wyckoff, profileType: C.PROFILE_PARAMS[p.profileType] ? p.profileType : 'simple_pvoigt', separatedProfile: p.separatedProfile === true, broadening: RVCore.broadeningConfig(p.broadening),
-                 constraints:JSON.parse(JSON.stringify(p.constraints || [])), provenance:p.provenance || null, poDir: Array.isArray(p.poDir) && p.poDir.length === 3 ? p.poDir.map(Number) : [0, 0, 1], atoms: [], v: numMap(p.v, 'phase values'), fit: isObj(p.fit) ? Object.assign({}, p.fit) : {} };
+                 constraints:JSON.parse(JSON.stringify(p.constraints || [])), restraints:RV.restraintsOf(p.restraints), provenance:p.provenance || null, poDir: Array.isArray(p.poDir) && p.poDir.length === 3 ? p.poDir.map(Number) : [0, 0, 1], atoms: [], v: numMap(p.v, 'phase values'), fit: isObj(p.fit) ? Object.assign({}, p.fit) : {} };
       var cell = cellOf(ph, ph.v);
       if (!cell) bad('phase ' + ph.name + ': no cell');
       (p.atoms || []).forEach(function (a) {
@@ -1489,7 +1492,7 @@ RV.history = (function () {
       }),
       phases: S.phases.map(function (ph) {
         return { key: ph.key, color: ph.color || null, name: ph.name, method: ph.method, sg: copy(ph.sg), ops: ph.ops, wyckoff: ph.wyckoff, profileType: ph.profileType, separatedProfile: ph.separatedProfile === true, broadening: RVCore.broadeningConfig(ph.broadening), poDir: ph.poDir.slice(),
-                 constraints:JSON.parse(JSON.stringify(ph.constraints || [])), provenance:ph.provenance || null, atoms: ph.atoms.map(function (a) { return { label: a.label, type: a.type, site: a.site }; }), v: copy(ph.v), fit: copy(ph.fit) };
+                 constraints:JSON.parse(JSON.stringify(ph.constraints || [])), restraints:RV.restraintsOf(ph.restraints), provenance:ph.provenance || null, atoms: ph.atoms.map(function (a) { return { label: a.label, type: a.type, site: a.site }; }), v: copy(ph.v), fit: copy(ph.fit) };
       }),
       disabledPhases:S.disabledPhases.slice(),parameterLinks:JSON.parse(JSON.stringify(S.parameterLinks)),fitHistory:RV.fitHistory?RV.fitHistory.undoSnapshot():null,
       calculationSettings: { weight: S.settings.weight, bkgN: S.settings.bkgN, nAnchors: S.settings.nAnchors, inst: RV.state.instCopy(S.settings.inst) },
@@ -1503,7 +1506,7 @@ RV.history = (function () {
     });
     S.phases = st.phases.map(function (p) {
       return { key: p.key, color: p.color || null, name: p.name, method: p.method, sg: copy(p.sg), ops: p.ops, wyckoff: p.wyckoff, profileType: p.profileType, separatedProfile: p.separatedProfile === true, broadening: RVCore.broadeningConfig(p.broadening), poDir: p.poDir.slice(),
-               constraints:JSON.parse(JSON.stringify(p.constraints || [])), provenance:p.provenance || null, atoms: p.atoms.map(function (a) { return { label: a.label, type: a.type, site: a.site }; }), v: copy(p.v), fit: copy(p.fit) };
+               constraints:JSON.parse(JSON.stringify(p.constraints || [])), restraints:RV.restraintsOf(p.restraints), provenance:p.provenance || null, atoms: p.atoms.map(function (a) { return { label: a.label, type: a.type, site: a.site }; }), v: copy(p.v), fit: copy(p.fit) };
     });
     S.disabledPhases=st.disabledPhases || [];S.parameterLinks=st.parameterLinks || [];if(RV.fitHistory)RV.fitHistory.importData(st.fitHistory);
     S.calculation = st.calculation || 'lebail'; S.calculationOptions = JSON.parse(JSON.stringify(st.calculationOptions || {}));

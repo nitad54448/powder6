@@ -27,7 +27,7 @@ function app(withTables = true) {
     } }
   });
   context.window = context;
-  for (const file of ['constants', 'crystal', 'profile', 'wppf_linear', 'atomic_constraints', 'rietveld_core',
+  for (const file of ['constants', 'crystal', 'profile', 'wppf_linear', 'atomic_constraints', 'wyckoff_limits', 'distance_rules', 'atom_restraints', 'rietveld_core',
     'cif_reader', 'data_io', 'parsers', 'cif_structure', 'sg_convert']) {
     vm.runInContext(read('js/' + file + '.js'), context, { filename: file + '.js' });
   }
@@ -1274,4 +1274,98 @@ test('Philips UDF retains sectioned XY support and rejects malformed RawScan ins
   assert.throws(()=>a.run("detectAndParseFile('bad.udf','DataAngleRange,10,11,/\\nScanStepSize,0.1,/\\nRawScan\\n100,bad,200,/')"),/invalid intensity/);
   assert.throws(()=>a.run("detectAndParseFile('bad.udf','RawScan\\n100,200,/')"),/DataAngleRange/);
   assert.throws(()=>a.run("detectAndParseFile('bad.udf','10 100\\n11 200')"),/No \[Data\] section/);
+});
+
+test('distance rules are shared: the Wyckoff parser keeps elements upper case, restraints keep atom labels', () => {
+  const DR = require('../js/distance_rules.js'), WL = require('../js/wyckoff_limits.js').WY_LIMITS;
+  const wy = DR.parse('Fe C 6 1.6/2.2 oct', WL.geometries), re = DR.parse('Fe1 C1 6 1.6/2.2 oct', WL.geometries, { keepCase: true });
+  assert.deepEqual(plain(wy.windows[0]), { a: 'FE', b: 'C', count: 6, countMode: 'exact', dmin: 1.6, dmax: 2.2, geometry: 'octahedral' });
+  assert.equal(re.windows[0].a, 'Fe1'); assert.equal(re.windows[0].b, 'C1');
+  assert.match(DR.parse('Fe C 6 1.6/2.2 cube', WL.geometries).bad[0], /not a shape/);
+});
+
+test('restraints measure distances, counts and angles through the symmetry images', () => {
+  const AR = require('../js/atom_restraints.js'), a = app();
+  a.S.calculation = 'rietveld';
+  // Fm-3m rock salt: Na at 0,0,0 and Cl at 1/2,0,0 in a 5.64 cell
+  const ph = a.state.makePhase({ name: 'NaCl', sg: a.state.resolveSG(225), cell: { a: 5.64 },
+    atoms: [{ label: 'Na1', type: 'Na', x: 0, y: 0, z: 0, B: 1, occ: 1 }, { label: 'Cl1', type: 'Cl', x: 0.5, y: 0, z: 0, B: 1, occ: 1 }] });
+  a.state.addPhase(ph);
+  const def = a.state.phaseDefs()[0], ctx = { cellOf: a.core.cellOf, sitePosition: a.core.sitePosition }, v = ph.v;
+  const rows = AR.rows(def, { text: 'Na1 Cl1 6 2.7/2.9 oct' }, v, ctx);
+  assert.equal(rows.filter(r => r.kind === 'd').length, 6);
+  rows.filter(r => r.kind === 'd').forEach(r => { assert.ok(Math.abs(r.val - 2.82) < 1e-9); assert.equal(r.dev, 0); });
+  const ang = rows.filter(r => r.kind === 'ang'); assert.equal(ang.length, 15);
+  ang.forEach(r => { assert.ok(Math.abs(r.dev) < 1e-6, r.text + ' ' + r.val); });
+  assert.equal(AR.rows(def, { text: 'Na1 Cl1 6 3.0/3.2' }, v, ctx).filter(r => r.dev !== 0).length, 6);
+  assert.equal(AR.rows(def, { text: 'Na1 Na1 - 3.0/' }, v, ctx)[0].dev, 0);
+  assert.match(AR.check(def.atoms, { text: 'Na1 K1 2 1/2' }).errors[0], /"K1" is not an atom label/);
+  assert.equal(AR.check(def.atoms, { text: 'na1 cl1 6 2.7/2.9' }).rules[0].a, 'Na1');
+});
+
+test('a restraint pulls the refined geometry and the fit reports it', () => {
+  const a = model(), AR = require('../js/atom_restraints.js');
+  a.S.phases.length = 0; a.S.datasets.length = 0;
+  const ph = a.state.makePhase({ name: 'AB', sg: a.state.resolveSG(1), cell: { a: 8, b: 8, c: 8 },
+    atoms: [{ label: 'A1', type: 'Si', x: 0, y: 0, z: 0, B: 0.5, occ: 1 }, { label: 'B1', type: 'Si', x: 0.30, y: 0, z: 0, B: 0.5, occ: 1 }] });
+  a.state.addPhase(ph);
+  const ds = a.state.makeDataset({ name: 'd', tth: Array.from({ length: 300 }, (_, i) => 10 + i * 0.25), y: Array(300).fill(100), inst: { bkgN: 1, lambda2: 0, ratio: 0 } });
+  a.S.datasets.push(ds); a.state.selectIds([ds.id]);
+  ds.p[ph.key + '.scale'] = 0.01; ds.p.bkg0 = 10; ds.y = a.core.evaluate(a.state.problemFor([ds]), 0).ycalc;
+  Object.keys(ds.fit).forEach(k => { ds.fit[k] = k === ph.key + '.B1.x'; });
+  const run = restraint => {
+    ph.restraints = restraint; const job = a.state.problemFor([ds]); job.vars = [{ d: 0, name: ph.key + '.B1.x' }];
+    const res = a.core.refine(job); assert.equal(res.ok, true, res.msg); return res;
+  };
+  const plainFit = run(null); assert.ok(Math.abs(plainFit.values[0][ph.key + '.B1.x'] - 0.30) < 1e-4);
+  const held = run({ text: 'A1 B1 - 1.9/2.1', weight: 1e6, sigmaD: 0.02 });
+  const d = held.values[0][ph.key + '.B1.x'] * 8;
+  assert.ok(d < 2.1 + 0.02 && d > 1.9, 'distance ' + d);
+  assert.equal(held.restraints.n, 1); assert.ok(held.restraints.details[0].rows[0].val < 2.15);
+  assert.throws(() => run({ text: 'A1 Zz9 - 1/2' }), /not an atom label/);
+});
+
+test('restraints survive projects, undo and an atom rename', async () => {
+  const a = model(), ph = a.S.phases[0];
+  ph.restraints = { on: true, text: 'Si1 Si1 - 3/', weight: 2, sigmaD: 0.05, sigmaA: 4 };
+  const doc = await a.context.RV.project.unpack(await a.context.RV.project.pack());
+  assert.equal(doc.phases[0].restraints.text, 'Si1 Si1 - 3/'); assert.equal(doc.phases[0].restraints.weight, 2);
+  ph.restraints = null; a.state.commitProject(a.state.prepareProject(doc));
+  assert.deepEqual(plain(a.S.phases[0].restraints), { on: true, text: 'Si1 Si1 - 3/', weight: 2, sigmaD: 0.05, sigmaA: 4 });
+  a.state.renameAtom(a.S.phases[0], 'Si1', 'Si9');
+  assert.equal(a.S.phases[0].restraints.text, 'Si9 Si9 - 3/');
+  // an older project has none
+  delete doc.phases[0].restraints; a.state.commitProject(a.state.prepareProject(doc));
+  assert.equal(a.S.phases[0].restraints.text, ''); assert.equal(a.S.phases[0].restraints.on, true);
+});
+
+test('molecule files become bond and angle rules', () => {
+  const M = require('../js/molecule_rules.js');
+  const water = M.read('O\nH1 1 0.96\nH2 1 0.96 2 104.5\n'), r = M.rules(water.atoms);
+  assert.equal(r.bonds, 2); assert.equal(r.angles, 1); assert.match(r.text, /^O H1 - 0\.930\/0\.990$/m); assert.match(r.text, /^H1 H2 - 1\.458\/1\.578$/m);
+  const pdb = M.read('ATOM      1  C1  MOL A   1       0.000   0.000   0.000  1.00  0.00           C\nATOM      2  C2  MOL A   1       1.400   0.000   0.000  1.00  0.00           C\nEND\n', { name: 'x.pdb' });
+  assert.equal(pdb.format, 'PDB'); assert.equal(M.rules(pdb.atoms).bonds, 1);
+  const only = M.rules(M.read('3\nm\nC 0 0 0\nC 1.4 0 0\nC 2.8 0 0\n').atoms, { only: new Set(['C', 'C_2']) });
+  assert.ok(only.skipped >= 1); assert.throws(() => M.read('C1\nC2 9 1.5'), /unknown reference/);
+});
+
+test('a difference Fourier map finds the atom the model lacks', () => {
+  const FM = require('../js/fourier_map.js'), a = app(), sg = a.state.resolveSG(225), ops = a.core.expandOps ? a.core.expandOps(sg.ops, null) : sg.ops;
+  const ff = el => a.state.scatterer(el), cell = { a: 5.64, b: 5.64, c: 5.64, alpha: 90, beta: 90, gamma: 90 };
+  const na = { label: 'Na1', pos: [0, 0, 0], occ: 1, B: 0.5, ff: ff('Na') }, cl = { label: 'Cl1', pos: [0.5, 0, 0], occ: 1, B: 0.5, ff: ff('Cl') };
+  const rots = FM.rotations(ops), sph = FM.sphere(cell, 0.9), classes = {};
+  sph.forEach(h => { const key = FM.canonical(h[0], h[1], h[2], rots); (classes[key] = classes[key] || []).push(h); });
+  const F = FM.calcF([na, cl], ops, sph, a.core.formFactor, 'xray'), amp2 = {};
+  sph.forEach((h, i) => { amp2[h.join()] = F.re[i] ** 2 + F.im[i] ** 2; });
+  const refl = Object.keys(classes).map((key, g) => { const h = classes[key][0], m = classes[key].length; return { h: h[0], k: h[1], l: h[2], m, lp: 1, area: m * amp2[h.join()], group: g, inRange: true }; });
+  const run = (atoms, type) => FM.build({ cell, ops, atoms, radiation: 'xray', formFactor: a.core.formFactor, refl, type, dmin: 0.9 });
+  const diff = run([na], 'diff'), top = diff.peaks[0];
+  assert.ok(diff.N >= 8 && diff.nObs > 10 && diff.sigma > 0);
+  assert.equal(top.sign, 1); assert.ok(top.sigmas > 3, 'peak ' + top.sigmas);
+  const dist = o => Math.hypot(...[top.x, top.y, top.z].map((v, i) => { const d = v - o[i]; return (d - Math.round(d)) * 5.64; }));
+  assert.ok(Math.min(...FM.orbit(ops, [0.5, 0, 0]).map(dist)) < 0.2, JSON.stringify(top));
+  assert.equal(top.atom, 'Na1'); assert.ok(top.distance > 2.7 && top.distance < 2.9, 'distance to the nearest atom ' + top.distance);
+  // the complete model leaves no difference peak; the observed map shows both atoms
+  assert.ok(run([na, cl], 'diff').sigma < diff.sigma / 20);
+  const obs = run([na], 'obs'); assert.ok(obs.peaks.length >= 1);
 });

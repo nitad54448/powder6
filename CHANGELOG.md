@@ -2,6 +2,23 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.26.1 — 24 October 2026
+
+1. **Set on a structure-solution run.** Restoring a saved charge-flipping or Wyckoff run from History put its intensities back marked out of date (`stale` was saved with the record), so the Structure tab dropped them and the run showed without its extraction. They are now marked current when adopted, and are kept under the phase-and-dataset key as well. `tests/history-stop.html` passes again.
+
+## 2.26.0 — 24 October 2026
+
+1. **Fourier maps.** Commands → Structure has a Fourier map block beside the space-group test, charge flipping and the Wyckoff search, and Results → Structure a Fourier map view. It builds a difference (Fo − Fc), observed (Fo), 2Fo − Fc or calculated map of the selected phase from the WPPF intensities of the selected dataset and the phases of the atoms of its model (the dataset's values or the starting model). The observed intensity of each overlap group is shared among its reflections in proportion to m·Lp·(|Fc|² + ε); one factor puts the amplitudes on the scale of Fc; an FFT on a cubic grid (at most 128³, optional finer grid) gives the map. The isosurface uses the charge-flipping density viewer (level in σ, holes of a difference map, cell, atoms, PNG, JSON). A peak table lists the extrema above 2.5 σ, one per set of equivalent positions, with the nearest atom and its distance; Add atom… puts a positive peak into the phase with the scatterer you name.
+2. New modules `js/fourier_map.js` (structure factors, partition, FFT, peaks; no dependency on the page) and `js/rietveld/rv_fourier.js`; Structure results gain a fourth kind, `fo`, with no run history (maps are recomputed on demand and are not saved in projects).
+3. Tests: a Node test (a difference map of a Na-only NaCl model finds the Cl site 2.8 Å from Na) and the browser page `tests/fourier.html` (real WPPF extraction, the strongest difference peak on the Cl site, the viewer, the atom-less refusal).
+
+## 2.25.0 — 24 October 2026
+
+1. **Rietveld restraints.** A phase can carry soft distance and angle restraints (Phases → Restraints…), written in the distance-rule language of the Wyckoff search (`Fe1 C1 6 1.6/2.2 oct`, `C1 C2 - 1.38/1.42`, `O1 O1 - 2.4/`) with atom labels instead of elements. Values outside their window add ((value − nearest bound)/σ)² × weight to χ² as extra observations, with σ(distance), σ(angle) and a weight set per phase. They enter the normal equations (numerical derivatives of the restraint rows, so uncertainties include them) and the degrees of freedom; Rwp and the other agreement factors stay those of the pattern. The symmetry images of the second atom are searched. Parallel tempering with restraints runs on the CPU. They are saved in projects, restore points and the reports.
+2. **Molecule guide.** Reads a PDB, XYZ or Z-matrix molecule (or pasted text) and writes a rule for every bond and every 1-3 distance (the angles), matching the atoms of the file to the atoms of the phase by name or by order and leaving out atoms the phase does not have. **Suggest from the structure** writes counted rules from the contacts of the current model.
+3. **One rule parser.** The parser of the Wyckoff distance constraints moved unchanged into `js/distance_rules.js`, shared with the restraints. New modules `js/atom_restraints.js`, `js/molecule_rules.js` and `js/rietveld/rv_restraints.js`; the fitting worker loads the first two.
+4. Tests: Node (shared parser, restraint geometry through the symmetry images, a restrained fit, projects/undo/rename, molecule files) and the browser page `tests/restraints.html`.
+
 ## 2.24.8 — 24 October 2026
 
 1. **Philips UDF RawScan.** Read packed intensity rows using DataAngleRange and ScanStepSize, with LabdaAlpha1/2 and RatioAlpha21 metadata. Preserve all complete points and warn when the stated endpoint disagrees or the closing marker is missing. Recognized UDF/RD/SD files no longer fall back to interpreting counts as angle/intensity pairs when parsing fails. Regression coverage includes sfmo_x3_299.udf (9,574 points).

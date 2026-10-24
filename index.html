@@ -30,6 +30,11 @@
 <script defer src="js/sg_convert.js"></script>
 <!-- the fit (also run by js/rietveld_worker.js) and the program -->
 <script defer src="js/atomic_constraints.js"></script>
+<script defer src="js/wyckoff_limits.js"></script>
+<script defer src="js/distance_rules.js"></script>
+<script defer src="js/fourier_map.js"></script>
+<script defer src="js/atom_restraints.js"></script>
+<script defer src="js/molecule_rules.js"></script>
 <script defer src="js/rietveld_core.js"></script>
 <script defer src="js/pt_gpu.js"></script>
 <script defer src="js/rietveld/rv_ui.js"></script>
@@ -44,11 +49,12 @@
 <script defer src="js/rietveld/rv_commands.js"></script>
 <script defer src="js/rietveld/rv_sgtest.js"></script>
 <script defer src="js/cf_adaptive.js"></script>
-<script defer src="js/wyckoff_limits.js"></script>
 <script defer src="js/rietveld/rv_solve.js"></script>
+<script defer src="js/rietveld/rv_fourier.js"></script>
 <script defer src="js/rietveld/rv_pdf.js"></script>
 <script defer src="js/rietveld/rv_gsas2.js"></script>
 <script defer src="js/rietveld/rv_constraints.js"></script>
+<script defer src="js/rietveld/rv_restraints.js"></script>
 <script defer src="js/rietveld/rv_rietveld_structure.js"></script>
 <script defer src="js/rietveld/rv_fit_history.js"></script>
 <script defer src="js/rietveld/rv_project.js"></script>
@@ -209,11 +215,12 @@
     </div>
 
     <section id="pane-structure-results" class="pane structure-results-pane" role="tabpanel" aria-labelledby="tab-structure-results">
-      <nav class="structure-result-tabs" role="tablist" aria-label="Structure results"><button type="button" role="tab" data-structure-result="sgt">Space group</button><button type="button" role="tab" data-structure-result="cf">Charge flipping</button><button type="button" role="tab" data-structure-result="wy">Wyckoff</button></nav>
+      <nav class="structure-result-tabs" role="tablist" aria-label="Structure results"><button type="button" role="tab" data-structure-result="sgt">Space group</button><button type="button" role="tab" data-structure-result="cf">Charge flipping</button><button type="button" role="tab" data-structure-result="wy">Wyckoff</button><button type="button" role="tab" data-structure-result="fo">Fourier map</button></nav>
       <div id="structure-runbar" class="result-runbar"><label>Run <select id="structure-run-select" aria-label="Structure run"></select></label></div>
       <div id="structure-result-sgt" class="structure-result-body"><p class="hint">Set up a structure calculation in Commands → Structure to see its output here.</p></div>
       <div id="structure-result-cf" class="structure-result-body"><p class="hint">Set up a structure calculation in Commands → Structure to see its output here.</p></div>
       <div id="structure-result-wy" class="structure-result-body"><p class="hint">Set up a structure calculation in Commands → Structure to see its output here.</p></div>
+      <div id="structure-result-fo" class="structure-result-body"><p class="hint">Compute a Fourier map in Commands → Structure to see it here.</p></div>
     </section>
   </section>
 
@@ -322,6 +329,7 @@
           <button type="button" data-act="cif">Read CIF…</button>
           <button type="button" data-act="simulate">Simulate…</button>
           <button type="button" data-atomic-constraints>Atomic constraints…</button>
+          <button type="button" data-restraints title="Soft distance and angle restraints between atoms, in the rules of the Wyckoff search; a guide writes them from a molecule file">Restraints…</button>
           <button type="button" id="ph-tab-atom" data-act="atom">Add atom…</button>
         </div>
         <details id="phase-selection" class="fit-selection" hidden>

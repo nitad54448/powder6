@@ -34,6 +34,7 @@ RV.phasesTab = (function () {
     var bar = $('#phase-select'), cur = St.currentPhase();
     ui.able($('#ph-tab-atom'), cur ? '' : 'No phase yet.');
     var cb=document.querySelector('[data-atomic-constraints]');if(cb){ui.able(cb,cur && cur.atoms.length?'':'Select a phase with atoms.');cb.textContent='Atomic constraints…'+(cur && cur.constraints && cur.constraints.length?' ('+cur.constraints.length+')':'');}
+    var rb=document.querySelector('[data-restraints]');if(rb){ui.able(rb,cur && cur.atoms.length>1?'':'Select a phase with at least two atoms.');var rn=cur && RV.restraints?RV.restraints.summary(cur):'';rb.textContent='Restraints…'+(rn?' ('+rn.replace(/ rules?.*/,'')+')':'');}
     if (!bar) return;
     bar.innerHTML = S.phases.map(function (ph, i) {
       return '<option value="' + ph.key + '" style="color:' + RV.plots.phaseColor(i) + '"' + (cur === ph ? ' selected' : '') + '>' + esc(ph.name) + '</option>';
@@ -107,11 +108,15 @@ RV.phasesTab = (function () {
       (ph.atoms.length ? '<section class="pblock constraints-block"><h2>Atomic constraints <span class="sub" id="ph-ac-n"></span></h2>' +
         '<p class="hint">GSAS-II relationships between the atomic parameters of ' + esc(ph.name) + ': hold, equivalence and constraint equation. Rietveld applies them exactly in every dataset' + (ph.method === 'rietveld' ? '' : '; ' + esc(ph.name) + ' is fitted by ' + esc(C.METHOD_LABELS[ph.method]) + ' now, so they are kept but unused') + '. Constrained parameters are marked in Parameters.</p>' +
         '<div id="ph-ac"></div></section>' : '') +
+      (ph.atoms.length > 1 ? '<section class="pblock constraints-block"><h2>Restraints <span class="sub" id="ph-rs-n"></span></h2>' +
+        '<p class="hint">Soft distance and angle restraints between atoms (the rules of the Wyckoff search, on atom labels), added to χ² by Rietveld' + (ph.method === 'rietveld' ? '' : '; ' + esc(ph.name) + ' is fitted by ' + esc(C.METHOD_LABELS[ph.method]) + ' now, so they are kept but unused') + '.</p>' +
+        '<p class="buttons"><button type="button" data-restraints-edit>Edit restraints…</button></p></section>' : '') +
       (ph.atoms.length ? '<details class="acc" data-acc="phase-structure"' + RV.acc.attr('phase-structure') + '><summary><span class="acc-t">Structure</span><span class="acc-s">picture, coordination and distances</span></summary>' +
         '<div class="acc-body"><p class="buttons"><label>Model <select id="ph-struct-src" aria-label="Atomic model shown"></select></label></p><div id="ph-struct"></div></div></details>' : '') +
       '<p class="buttons phase-model-copy"><button type="button" data-act="model-to-datasets" title="Copy the cell and the atoms of this starting model into the datasets that hold the phase">Starting model → datasets…</button>' +
         '<button type="button" data-act="model-from-dataset" title="Make a dataset’s cell and atoms (its fitted values) the starting model of this phase">Dataset → starting model…</button></p>';
     if ($('#ph-ac')) $('#ph-ac').innerHTML='<p class="hint">'+(ph.constraints || []).map(function(c){return esc(AtomicConstraints.text(c));}).join('; ')+'</p><button type="button" data-edit-method>Edit constraints in Datasets →</button>';
+    var rsn = $('#ph-rs-n'); if (rsn && RV.restraints) rsn.textContent = RV.restraints.summary(ph);
     var acn = $('#ph-ac-n'); if (acn) acn.textContent = ph.constraints && ph.constraints.length ? ph.constraints.length + (ph.constraints.length === 1 ? ' relationship' : ' relationships') : '';
     renderBar();
     values();

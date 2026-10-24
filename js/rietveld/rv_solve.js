@@ -87,11 +87,13 @@ RV.solve = (function () {
     SV[k]=value;delete solutionSelection[k];
     var I=value.I,d=I && St.byId(I.dsId),ph=I && St.phaseByKey(I.phaseKey);
     if(!d || !ph || !St.hasPhase(d,ph)){render();return false;}
-    SV.phaseKey=ph.key;SV.dsId=d.id;SV.ints=I;SV.extractions[d.id]={I:I,stats:d.stats};
+    SV.phaseKey=ph.key;SV.dsId=d.id;SV.ints=I;I.stale=false;SV.extractions[d.id]=SV.extractions[d.id+':'+ph.key]={I:I,stats:d.stats};
     render();return true;
   }
   function renderSelectedSolution(k,id){
-    if(k==='sgt'){renderSgtOut();return;}solutionSelection[k]=id || null;
+    if(k==='sgt'){renderSgtOut();return;}
+    if(k==='fo'){if(RV.fourier)RV.fourier.show();return;}
+    solutionSelection[k]=id || null;
     withSolution(k,function(){if(k==='cf')renderCfOut();else renderWyOut();renderStruct(k);});
   }
   function saveOpts() { St.store('solve', withoutComposition(JSON.parse(JSON.stringify(SV.opts)))); }
@@ -184,65 +186,9 @@ RV.solve = (function () {
   function typedZ(value) { var z = parseInt(String(value==null?SV.opts.z:value).trim(), 10); return Number.isFinite(z) && z >= 1 ? Math.min(WL.zMax, z) : null; }
 
   // ---------------------------------------------------------------- distance constraints (powder5.html, unchanged rules)
-  // the shape a line ends with, as a name of WY_LIMITS.geometries: any word of a shape, or the first two letters or
-  // more of one (tet, oct, sq, tri, lin, pl), as long as they belong to one shape only
-  var SHAPE_NAMES = Object.keys(WL.geometries), SHAPE_LIST = SHAPE_NAMES.map(function (n) { return WL.geometries[n].words[0]; }).join(', ');
-  function shapeOf(token) {
-    var t = String(token || '').toLowerCase();
-    if (t.length < 2) return null;
-    var hits = SHAPE_NAMES.filter(function (n) { return WL.geometries[n].words.some(function (w) { return w.indexOf(t) === 0; }); });
-    return hits.length === 1 ? hits[0] : null;
-  }
-  function parseConstraints(text) {
-    var out = [], bad = [], warn = [];
-    String(text || '').split(/\n+/).forEach(function (line, i) {
-      var t = line.trim();
-      if (!t || t.charAt(0) === '#') return;
-      var p = t.split(/[\s,]+/), geometry = null, last = p[p.length - 1].toLowerCase();
-      if (p.length > 3 && shapeOf(last)) { geometry = shapeOf(last); p.pop(); }
-      else if (p.length > 3 && /^[a-z][a-z-]*$/.test(last)) { bad.push('line ' + (i + 1) + ': "' + p[p.length - 1] + '" is not a shape (use ' + SHAPE_LIST + ', or their first letters: tet, oct, sq, tri, lin)'); return; }
-      if (p.length < 3) { bad.push('line ' + (i + 1) + ': need at least "A B N dmin/dmax"'); return; }
-      var a = p[0].toUpperCase(), b = p[1].toUpperCase(), rest = p.slice(2), hasSlash = rest.some(function (tok) { return tok.indexOf('/') >= 0; });
-      var count = null, mode = null, dmin = null, dmax = null;
-      if (!hasSlash) {
-        var nums = rest;
-        if (rest[0] === '-' || rest[0] === '*') {
-          nums = rest.slice(1);
-          if (!nums.length) { bad.push('line ' + (i + 1) + ': "' + a + ' ' + b + ' ' + rest[0] + '" states nothing - add a distance, e.g. "' + a + ' ' + b + ' - 2.0"'); return; }
-        } else if (/^\d+\+?$/.test(rest[0]) && rest.length === 1) {
-          bad.push('line ' + (i + 1) + ': "' + rest[0] + '" on its own is ambiguous - write "' + a + ' ' + b + ' ' + rest[0] + ' dmin/dmax" for a coordination number, or "' + a + ' ' + b + ' ' + rest[0] + '.0" for a distance');
-          return;
-        }
-        dmin = parseFloat(nums[0]);
-        if (!Number.isFinite(dmin)) { bad.push('line ' + (i + 1) + ': "' + nums[0] + '" is not a distance'); return; }
-        if (nums.length > 1) { dmax = parseFloat(nums[1]); if (!Number.isFinite(dmax)) { bad.push('line ' + (i + 1) + ': "' + nums[1] + '" is not a distance'); return; } }
-      } else {
-        var range;
-        if (rest.length >= 2 && rest[0].indexOf('/') < 0) {
-          var c = rest[0];
-          if (c !== '-' && c !== '*') {
-            var m = /^(\d+)(\+?)$/.exec(c);
-            if (!m) { bad.push('line ' + (i + 1) + ': "' + c + '" is not a coordination number (use 4, 4+ or -)'); return; }
-            count = parseInt(m[1], 10); mode = m[2] === '+' ? 'atleast' : 'exact';
-          }
-          range = rest[1];
-        } else range = rest[0];
-        var sides = range.split('/');
-        if (sides.length !== 2) { bad.push('line ' + (i + 1) + ': "' + range + '" should be dmin/dmax'); return; }
-        if (sides[0].trim() !== '') { dmin = parseFloat(sides[0]); if (!Number.isFinite(dmin)) { bad.push('line ' + (i + 1) + ': "' + sides[0] + '" is not a distance'); return; } }
-        if (sides[1].trim() !== '') { dmax = parseFloat(sides[1]); if (!Number.isFinite(dmax)) { bad.push('line ' + (i + 1) + ': "' + sides[1] + '" is not a distance'); return; } }
-      }
-      if (dmin === null && dmax === null && count === null) { bad.push('line ' + (i + 1) + ': nothing to enforce - give a count, a distance, or both'); return; }
-      if (dmin !== null && dmax !== null && dmax < dmin) { bad.push('line ' + (i + 1) + ': dmax (' + dmax + ') is below dmin (' + dmin + ')'); return; }
-      if (geometry) {
-        var shape = WL.geometries[geometry];
-        if (count !== shape.count || dmax === null) { bad.push('line ' + (i + 1) + ': a ' + shape.words[0] + ' needs exactly ' + shape.count + ' neighbours and an upper distance, e.g. "' + a + ' ' + b + ' ' + shape.count + ' 1.40/1.60 ' + shape.words[0] + '"'); return; }
-      }
-      if (count !== null && dmax === null) warn.push('line ' + (i + 1) + ': "' + a + ' ' + b + ' ' + count + (mode === 'atleast' ? '+' : '') + ' ' + (dmin == null ? '' : dmin) + '/" counts every ' + b + ' beyond ' + (dmin == null ? 0 : dmin) + ' Å, which is every ' + b + ' in the cell - add an upper distance to make the count mean something');
-      out.push({ a: a, b: b, count: count, countMode: mode, dmin: dmin, dmax: dmax, geometry: geometry });
-    });
-    return { windows: out, bad: bad, warn: warn };
-  }
+  // the rule language is shared with the Rietveld restraints (js/distance_rules.js); here A and B are elements
+  var SHAPE_NAMES = Object.keys(WL.geometries), SHAPE_LIST = DistanceRules.shapeList(WL.geometries);
+  function parseConstraints(text) { return DistanceRules.parse(text, WL.geometries); }
   function describeConstraint(w) {
     var A = capEl(w.a), B = capEl(w.b), hasMin = Number.isFinite(w.dmin), hasMax = Number.isFinite(w.dmax), d = function (v) { return v.toFixed(2); };
     var range = hasMin && hasMax ? d(w.dmin) + ' to ' + d(w.dmax) + ' Å' : hasMax ? 'up to ' + d(w.dmax) + ' Å' : hasMin ? 'at least ' + d(w.dmin) + ' Å' : null;
@@ -1102,7 +1048,7 @@ RV.solve = (function () {
       return block(k + '-struct', '3D structure', '<div class="sv-st-head" id="sv-' + k + '-st-head"></div><div class="sv-struct sv-struct-host" id="sv-' + k + '-st" data-src="' + k + '"></div>', false, null, 'sub');
     }
     host.innerHTML =
-      '<p class="hint">Set up extraction, space-group tests, atomic-model symmetry, charge flipping and Wyckoff searches here. Inspect search output in Results → Structure. '+esc(gpuBudget.note)+'</p>' +
+      '<p class="hint">Set up extraction, space-group tests, atomic-model symmetry, charge flipping, Wyckoff searches and Fourier maps here. Inspect search output in Results → Structure. '+esc(gpuBudget.note)+'</p>' +
       (gpuBudget.checked && !gpuBudget.available ? '<p class="hint sv-warn">WebGPU was not found: the Wyckoff search cannot run here. Turn on hardware (graphics) acceleration in the browser settings, restart the browser and reload this page; see Troubleshooting in the documentation.</p>' : '') +
       // Intensity-based tools share this preparation step; ADDSYM is independent.
       block('wppf-source', 'WPPF intensities',
@@ -1177,9 +1123,11 @@ RV.solve = (function () {
         block('wy-sites', 'Sites', '<div id="sv-wy-sites"></div>', true, null, 'sub') +
         structBlock('wy') +
         resultBlocks('wy', true), false, 'id="sv-wy-sum"') +
+      (RV.fourier ? RV.fourier.html(block) : '') +
       '<datalist id="sv-el-list"></datalist>';
     if(RV.layout)RV.layout.splitStructure(host);
     renderBar(); renderInt(); renderDensity(); renderSgtOut(); renderCfOut(); renderWyOut(); renderWyStatus(); renderStOut();
+    if (RV.fourier) RV.fourier.render();
     paintProgress('cf'); paintProgress('wy'); syncRun();
     if (RV.results && RV.results.fill) RV.results.fill();
   }

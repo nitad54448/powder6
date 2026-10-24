@@ -12,7 +12,7 @@
 //        { type: 'done', id, result }             RVCore.refine's result
 //
 // Stop is the page terminating the worker: a refinement has no state worth keeping half-way.
-importScripts('constants.js', 'crystal.js', 'profile.js', 'wppf_linear.js', 'atomic_constraints.js', 'rietveld_core.js', 'pt_gpu.js');
+importScripts('constants.js', 'crystal.js', 'profile.js', 'wppf_linear.js', 'atomic_constraints.js', 'wyckoff_limits.js', 'distance_rules.js', 'atom_restraints.js', 'rietveld_core.js', 'pt_gpu.js');
 
 self.onmessage = async function (e) {
     var m = e.data;

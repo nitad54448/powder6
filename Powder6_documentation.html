@@ -100,7 +100,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <div class="layout">
 <nav class="toc" aria-label="Contents">
   <a class="brand" href="#top"><svg viewBox="0 0 26 20" aria-hidden="true"><path d="M1 17.5h5.2l1.6-2.2 1.2 2.2h3.4l1.3-14.2 1.5 14.2h2.6l1.3-6.6 1.1 6.6H25" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Powder 6</a>
-  <p class="ver">Version 2.24.8 · 24 October 2026</p>
+  <p class="ver">Version 2.26.1 · 24 October 2026</p>
   <ol>
     <li><a href="#overview">Overview</a></li>
     <li><a href="#start">Getting started</a>
@@ -113,13 +113,13 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
     <li><a href="#phases">Phases</a>
       <ol><li><a href="#sg">Space group</a></li><li><a href="#refl">Reflections</a></li><li><a href="#atoms">Atoms</a></li><li><a href="#shape">Peak shape</a></li><li><a href="#po">Preferred orientation</a></li></ol></li>
     <li><a href="#constraints">Constraints</a>
-      <ol><li><a href="#c-cell">Cell and crystal system</a></li><li><a href="#c-site">Special positions</a></li><li><a href="#c-atomic">Atomic constraints</a></li><li><a href="#c-limits">Limits and step caps</a></li><li><a href="#c-share">Sharing in global fits</a></li><li><a href="#c-profile">Profile symmetry</a></li><li><a href="#c-solve">Constraints in structure solution</a></li></ol></li>
+      <ol><li><a href="#c-cell">Cell and crystal system</a></li><li><a href="#c-site">Special positions</a></li><li><a href="#c-atomic">Atomic constraints</a></li><li><a href="#c-restraints">Restraints</a></li><li><a href="#c-limits">Limits and step caps</a></li><li><a href="#c-share">Sharing in global fits</a></li><li><a href="#c-profile">Profile symmetry</a></li><li><a href="#c-solve">Constraints in structure solution</a></li></ol></li>
     <li><a href="#fitting">Fitting</a>
       <ol><li><a href="#algos">Algorithms</a></li><li><a href="#weights">Weights</a></li><li><a href="#strategy">Strategy</a></li></ol></li>
     <li><a href="#results">Results and export</a>
       <ol><li><a href="#merit">Agreement factors</a></li><li><a href="#esd">Uncertainties</a></li><li><a href="#chi2">χ² and the weights</a></li><li><a href="#overlap">Overlapping reflections</a></li><li><a href="#export">Export</a></li></ol></li>
     <li><a href="#solve">Structure solution</a>
-      <ol><li><a href="#s-extract">Extract</a></li><li><a href="#s-sg">Space-group test</a></li><li><a href="#s-addsym">Atomic-model symmetry</a></li><li><a href="#s-cf">Charge flipping</a></li><li><a href="#s-wy">Wyckoff search</a></li><li><a href="#s-bv">Contacts and bond valence</a></li></ol></li>
+      <ol><li><a href="#s-extract">Extract</a></li><li><a href="#s-sg">Space-group test</a></li><li><a href="#s-addsym">Atomic-model symmetry</a></li><li><a href="#s-cf">Charge flipping</a></li><li><a href="#s-wy">Wyckoff search</a></li><li><a href="#s-fourier">Fourier maps</a></li><li><a href="#s-bv">Contacts and bond valence</a></li></ol></li>
     <li><a href="#commands">Command line</a></li>
     <li><a href="#keys">Mouse and keys</a></li>
     <li><a href="#settings">Settings</a></li>
@@ -416,6 +416,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <tr><td><a href="#c-cell">Cell metric</a></td><td>Crystal system of the space group</td><td>a, b, c, α, β, γ</td><td>Through the space group</td></tr>
 <tr><td><a href="#c-site">Special positions</a></td><td>Site symmetry of each atom</td><td>x, y, z</td><td>Through the space group and the coordinates</td></tr>
 <tr><td><a href="#c-atomic">Atomic constraints</a></td><td>You (GSAS-II rules)</td><td>x, y, z, occupancy, B</td><td>Yes</td></tr>
+<tr><td><a href="#c-restraints">Restraints</a></td><td>You (distance rules)</td><td>Distances and angles between atoms (soft)</td><td>Yes</td></tr>
 <tr><td><a href="#c-limits">Limits and step caps</a></td><td>Defaults and Settings</td><td>Every parameter</td><td>Limits yes; step caps no</td></tr>
 <tr><td><a href="#c-share">Sharing</a></td><td>You (padlocks)</td><td>Parameters across datasets</td><td>Yes</td></tr>
 <tr><td><a href="#c-profile">Profile symmetry</a></td><td>Laue class</td><td>Stephens S<sub>hkl</sub></td><td>Through the space group</td></tr>
@@ -494,6 +495,24 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
   <li>Occupancy and B are strongly correlated; constrain one of them (or refine them in separate steps) when the data are poor.</li>
   <li>Constraints are linear. A non-linear relationship (such as a fixed bond length) is not available; use the structure-solution distance constraints or fix the coordinates.</li>
 </ul>
+
+<h3 id="c-restraints">Restraints</h3>
+<p>Constraints remove parameters exactly. A <em>restraint</em> is softer: a distance or an angle that should stay near a known value is added to χ² as an extra observation, so the fit is steered toward chemically sensible geometry without fixing anything. Restraints belong to a <em>phase</em> (open <b>Restraints…</b> in Phases), apply to Rietveld calculations only and act in every dataset that holds the phase. In a global fit the phase counts once, shared between its datasets.</p>
+<p>The rules use the <b>same language as the distance constraints of the Wyckoff search</b>, one per line, but A and B are <em>atom labels</em> of the phase (they are unique in a phase; case matters, though a label that differs only in case is accepted when it is unambiguous):</p>
+<div class="tablewrap"><table class="wrapfirst tight">
+<tr><th>Rule</th><th>Meaning</th></tr>
+<tr><td><code>Fe1 C1 6 1.6/2.2 oct</code></td><td>The six nearest C1 around Fe1 lie between 1.6 and 2.2 Å and form an octahedron (all B–A–B angles against 90°/180°). Shapes: <code>lin</code>, <code>tri</code>, <code>tet</code>, <code>sq</code>, <code>oct</code>. A count without <code>+</code> also pushes the next neighbour beyond the upper distance.</td></tr>
+<tr><td><code>C1 C2 - 1.38/1.42</code></td><td>The nearest C2 to C1 is between 1.38 and 1.42 Å (one value on each side, <code>1.40/1.40</code>, is a target).</td></tr>
+<tr><td><code>O1 O1 - 2.4/</code></td><td>No O1 closer than 2.4 Å to another O1 (a floor); <code>/3.0</code> is a ceiling.</td></tr>
+</table></div>
+<p>The symmetry images of B (every operator and neighbouring cell) are searched, so atoms of the asymmetric unit restrain each other through the whole structure. A value inside its window costs nothing; outside it, the cost is ((value − nearest bound)/σ)² × weight, with σ(distance) in Å and σ(angle) in degrees, both set beside the rules (defaults 0.02 Å, 3°, weight 1). The restraint rows enter the normal equations, so the uncertainties of the parameters they touch include them, and the degrees of freedom count them as observations. Rwp, Rp and the other agreement factors use the pattern only.</p>
+<h4>The dialog</h4>
+<ul>
+  <li>The rules are checked as they are typed (unknown labels, bad windows, shapes); a valid text is applied when you leave the box, with Undo. Under it, a table lists the restrained values that are outside their window in the first selected dataset (else the starting model): the value now, the window and the deviation.</li>
+  <li><b>Guide: rules from a molecule.</b> Open a PDB, XYZ or Z-matrix file (or paste it) and press <b>Make rules</b>. Bonds are the pairs closer than 1.2 × the sum of the covalent radii; each bond becomes <code>A B - d−0.03/d+0.03</code>, and each pair of atoms two bonds apart (an angle) a rule on its 1-3 distance with a ±0.06 Å window, so bond lengths and angles are both held. The atoms of the file are matched to the atoms of the phase <em>by name</em> or <em>by order</em>; rules for atoms the phase does not have are left out, so a molecule on a special position needs only its asymmetric unit. Z-matrix lines are <code>label</code>, <code>label ref d</code>, <code>label ref d ref angle</code> and <code>label ref d ref angle ref dihedral</code>, the references being line numbers or labels. <b>Add to the rules</b> or <b>Replace the rules</b> applies the result.</li>
+  <li><b>Suggest from the structure as it is</b> writes one counted rule per atom and neighbour label from the contacts shorter than 1.2 × the covalent radii, widened by the window you give; it freezes the geometry the model has now and is meant to be edited.</li>
+</ul>
+<p>Renaming an atom renames it in the rules; deleting an atom leaves its rules, and the next Rietveld fit stops with a message that names the missing label. Parallel tempering with restraints runs on the CPU (the WebGPU kernel does not know them). Restraints are saved in the project, in restore points and in the text and PDF reports.</p>
 
 <h3 id="c-limits">Limits and step caps</h3>
 <p>Every parameter has a lower and an upper limit, and every iteration has a maximum step per kind of parameter. Limits are set in <b>Settings → Parameter limits</b> (type <code>inf</code> for none); the defaults below apply to any parameter without an entry. A step that would cross a limit is clipped to it, and the gain ratio of Levenberg–Marquardt is evaluated for the step actually taken, so parameters parked at a limit (weak reflections at zero in WPPF) do not throttle the rest. If an entire step is blocked (the model sits in a corner of the limit box with the gradient pointing out of it) the fit stops and says so, rather than raising the damping against a wall. A parameter whose Jacobian column is identically zero is left out of the solve and reported once by name.</p>
@@ -853,6 +872,23 @@ O  O      2.40          # keep the tetrahedra from interpenetrating</code></pre>
 </ul>
 <p>To lift a withheld ranking, extract more reflections (particularly at high angle, where severe overlap leaves σ/I near or above 1 and the weighting correctly discards them) or add distance constraints, which count; or reduce the free-parameter count with a smaller Z or higher-symmetry sites. This is a test of meaningfulness, not of quality: above it a low score is still a real answer, and below it a high one is not.</p>
 
+<h3 id="s-fourier">Fourier maps</h3>
+<p>A Fourier map shows the scattering density of the cell. It is the natural next step after a solution or in the middle of a Rietveld refinement: a <b>difference map</b> (F<sub>obs</sub> − F<sub>calc</sub>) shows where the model lacks density (a missing atom, a wrong element, an under-occupied site) and where it has too much; the <b>observed map</b> (F<sub>obs</sub>) shows the atoms the data support; 2F<sub>obs</sub> − F<sub>calc</sub> and the calculated map are also offered. The block sits in <b>Commands → Structure</b> beside the space-group test, charge flipping and the Wyckoff search, uses the same phase and dataset chosen at the top (so it works for a single phase, in any dataset that holds it), and shows its result in <b>Results → Structure → Fourier map</b>.</p>
+<h4>How the map is made</h4>
+<ol>
+  <li>The reflections come from the WPPF extraction (the same intensities as the other tools; they are prepared automatically). The <em>phases</em> come from the model: the atoms of the phase, with their values in the dataset or in the starting model (<b>Atoms from</b>). So the map shows the model’s own atoms best, and a difference map shows only what the model lacks.</li>
+  <li>A powder line holds several reflections. The observed intensity of each overlap group of the extraction is shared among its reflections in proportion to m·Lp·(|F<sub>calc</sub>|² + ε), the partition of the Rietveld method; ε is a small share of the mean |F<sub>calc</sub>|², so a reflection that the model forbids can still come out non-zero. One scale factor puts the observed amplitudes on the scale of F<sub>calc</sub>. Reflections the extraction does not have keep their calculated amplitude, so they do not enter a difference map.</li>
+  <li>The coefficients on the whole reciprocal sphere to the chosen <b>resolution</b> d (blank: the smallest d extracted) are summed by an FFT on a cubic grid (a power of two, at most 128³; <b>Finer grid</b> doubles the points per axis). F(000) is left out, so the map is relative to its mean; σ is its standard deviation.</li>
+</ol>
+<h4>Reading the result</h4>
+<ul>
+  <li>The isosurface is drawn at a level in σ (the density viewer of charge flipping: drag to rotate, wheel to zoom). For a difference map, <b>Holes (negative)</b> draws the negative surface instead. Atoms of the model are drawn in the map.</li>
+  <li>The peak table lists the extrema above 2.5 σ, one per set of symmetry-equivalent positions (<em>Copies</em>), with the nearest atom and its distance. Heights are in e/Å³ for X-rays and fm/Å³ for neutrons, approximate because of the single scale factor.</li>
+  <li><b>Add atom…</b> on a positive peak puts it into the phase: you name the scatterer, since a peak cannot, and the site is found from the position. Compute the map again to see what is left. A positive difference peak within about 1 Å of an atom usually means a wrong element or displacement, not a new atom.</li>
+  <li><b>Save map</b> writes the grid as JSON (the format of the charge-flipping density); <b>Save PNG</b> the view.</li>
+</ul>
+<p>Limits: phases from the model mean a bad model gives a biased map; severe overlap shares intensity by the model, which smooths a difference map towards the model; anomalous dispersion is not included in the phases. Maps are recomputed on demand and are not stored in projects.</p>
+
 <h3 id="s-bv">5. Contacts and bond valence</h3>
 <p>Each solution has a structure plot (cell, atoms with covalent-radius bonds; Cordero et al. 2008), a contact table and a bond-valence analysis. The wR says the fit converged; this table says whether the result is chemistry.</p>
 <ul>
@@ -1019,6 +1055,8 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
 <tr><td>Everything is slow with many datasets</td><td>Individual fits run in parallel workers; global fits are one large problem. Lower <b>Datasets drawn at most</b> for drawing speed.</td></tr>
 <tr><td>χ² is far below 1 but the fit looks good</td><td>The intensities are probably not counts (normalised, averaged or smoothed data), so the Poisson weights are on the wrong scale. Parameters, R<sub>wp</sub> and the uncertainties are unaffected; read R<sub>wp</sub> and the difference curve. See <a href="#chi2">χ² and the weights</a>.</td></tr>
 <tr><td>A constraint is refused: “already in another relationship”, “fixed or dependent by site symmetry”, “cannot be met within the parameter limits”</td><td>A parameter can be in one relationship only; only free directions of a site can be constrained; a sum that the limits cannot reach (occupancies limited to 0–1 summing to 3) is refused. See <a href="#c-atomic">Atomic constraints</a>.</td></tr>
+<tr><td>“Restraints of …: “X” is not an atom label”</td><td>A restraint rule names an atom the phase does not have (deleted or renamed outside the dialog). Fix the rule or switch the restraints off under Restraints…; labels are case-sensitive.</td></tr>
+<tr><td>The difference map has no peaks, or only noise</td><td>The model may already account for the data at this resolution; lower the resolution d, tick <b>Finer grid</b>, or check that the extraction has enough reflections at high angle. A very strong overlap hands the intensity to the model, which hides what it lacks; a map from a poor model is biased towards it.</td></tr>
 <tr><td>“Constraint sharing conflict”</td><td>In a global fit, the terms of one constraint equation have different shared/local flags. Make them all shared or all local.</td></tr>
 <tr><td>The space-group test finds no difference between groups</td><td>The WPPF fit was run in a group that already forbids the reflections. Refit in the condition-free group of the Laue class. See <a href="#s-sg">Space-group test</a>.</td></tr>
 <tr><td>Find higher symmetry returns P1 for both parameter sources</td><td>Inspect the actual coordinates and cell for each source, the full-cell atom count, stored atom types and occupancies. The result describes the supplied model at the selected tolerances; diagnosing an unexpected group requires that model’s input. See <a href="#s-addsym">Atomic-model symmetry</a>.</td></tr>
@@ -1033,6 +1071,9 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
 
 <section id="corrections">
 <h2>Recent changes</h2>
+<p>Set on a saved Wyckoff or charge-flipping run restores the intensities it was made from again (they were marked out of date when restored).</p>
+<p>Fourier maps in Structure: difference, observed and 2F<sub>o</sub> − F<sub>c</sub> maps of a phase from its WPPF intensities and the atoms of its model, drawn with the density viewer, with a peak list that adds atoms to the phase.</p>
+<p>Rietveld restraints: soft distance and angle rules between atoms of a phase, written in the rule language of the Wyckoff search, with a guide that writes the rules from a PDB, XYZ or Z-matrix molecule and a suggestion from the current structure.</p>
 <p>Philips UDF RawScan intensity blocks use the stated starting angle and increment, retain wavelength metadata, and warn about inconsistent endpoints without dropping measured points.</p>
 <p>GSAS patterns with fewer points than declared in their BANK header load the available complete points with a warning; missing measurements are not padded.</p>
 <p>Observed patterns can be viewed without a phase. Reading patterns opens Plots; if a remembered background-subtraction setting cannot be applied, raw intensities are shown with an explanation.</p>
@@ -1041,7 +1082,7 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
 <p>The Datasets accordion now contains selection, Individual / Global mode and Fit selected datasets. Edit beside each dataset changes its name and colour; automatic theme colours can be restored. The separate Selection and batch section and duplicate table have been removed.</p>
 <p>Dataset and phase palettes use more distinct early hues. Active and fixed background anchors, axes and background curves have stronger contrast in both themes.</p>
 <p>Wyckoff MCMC now mixes single free-site proposals (75%) with collective proposals (25%). Each site retains its full symmetry orbit. Command action headers and result selectors use a consistent theme-aware background.</p>
-<p>Version 2.24.8, 24 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
+<p>Version 2.26.1, 24 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 <ul>
   <li>Le Bail keeps to Maximum iterations for the whole fit (it ran up to twice as many). Phases has Starting model → datasets… and Dataset → starting model… to carry the cell and atoms between the phase and its datasets, and a Structure block with the picture and distances of the starting model or a dataset’s model. Find higher symmetry converts at once with Convert. The Wyckoff search writes a summary to the Log (the whole log is in History). File → Read project….</li>
   <li>Charge flipping imposes the space-group phase relation with the sign of its own Fourier convention, so the map obeys the group as written (it obeyed the inverted group before, and only the hand search put it right). Datasets take anomalous f′, f″ per element for the Rietveld structure factors. The SL/HL asymmetry is included in the peak area; transparency estimates carry the physical (negative) sign; the WPPF intensity solve no longer breaks down on nearly coincident or range-truncated reflections (it used to return zeros silently), and a failure is reported; the displacement moves at most about 0.1° per iteration.</li>

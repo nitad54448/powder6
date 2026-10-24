@@ -1628,6 +1628,9 @@ function* refineSteps(problem, opts) {
         var algorithm = problem.algorithm || 'lm', ptInfo = null, progressTotal = 0;
         if (!only && algorithm !== 'lm' && algorithm !== 'pt') throw new Error('unknown refinement algorithm: ' + algorithm);
         var values = problem.values.map(function (v) { return Object.assign({}, v); });
+        // soft geometric restraints of the Rietveld phases (atom_restraints.js): extra observations in chi^2
+        var restr = typeof AtomRestraints !== 'undefined' && problem.phases.some(function (p) { return p.method === 'rietveld' && AtomRestraints.active(p.restraints); })
+            ? AtomRestraints.prepare(problem, { cellOf: cellOf, sitePosition: sitePosition }) : null;
         // WPPF intensities are variables of their own, solved exactly at every evaluation, so a WPPF fit with nothing
         // else ticked is a refinement of the intensities at the current cell and profile.
         var freeIntensities = model.phases.some(function (P) { return P.method === 'wppf'; });
@@ -1661,7 +1664,34 @@ function* refineSteps(problem, opts) {
                 for (var i = 0; i < ev.y.length; i++) { if (!(w[i] > 0)) continue; var r = y[i] - ev.y[i]; s += w[i] * r * r; }
                 if (!(s < Infinity)) return Infinity;
             }
-            return s;
+            return restr ? s + restr.cost(vals) : s;
+        }
+        // the restraints in the normal equations: their residuals differentiated numerically against the variables
+        // they depend on (cheap: no pattern is calculated), A += J'J, g -= J'rho; returns their chi^2
+        function restraintNormal(xv, vals, onlyIdx, A, g) {
+            var r0 = restr.eval(vals), f0 = 0, k, cols = [];
+            for (k = 0; k < r0.length; k++) f0 += r0[k] * r0[k];
+            for (var q = 0; q < nv; q++) {
+                if (onlyIdx && onlyIdx.indexOf(q) < 0) continue;
+                var name = vars[q].name;
+                if (!restr.prefixes.some(function (pf) { return name.indexOf(pf) === 0; })) continue;
+                var h = 1e-5 * (1 + Math.abs(xv[q])), xp = Float64Array.from(xv), xm = Float64Array.from(xv);
+                xp[q] += h; xm[q] -= h;
+                var rp = restr.eval(apply(xp)), rm = restr.eval(apply(xm)), col = new Float64Array(r0.length), any = false;
+                for (k = 0; k < col.length; k++) { col[k] = (rp[k] - rm[k]) / (2 * h); if (col[k] !== 0) any = true; }
+                if (any) cols.push({ q: q, col: col });
+            }
+            cols.forEach(function (ca) {
+                var s = 0;
+                for (k = 0; k < r0.length; k++) s += ca.col[k] * r0[k];
+                g[ca.q] -= s;
+                cols.forEach(function (cb) {
+                    var t = 0;
+                    for (k = 0; k < r0.length; k++) t += ca.col[k] * cb.col[k];
+                    A[ca.q * nv + cb.q] += t;
+                });
+            });
+            return f0;
         }
         // normal equations at xv: A = J'WJ, g = J'W(y - ycalc), with the variables of each dataset (only: a subset). The
         // intensities are extracted afresh; held returns the Le Bail areas, to hold during the step of a cycle.
@@ -1691,6 +1721,7 @@ function* refineSteps(problem, opts) {
                 }
                 if (keep) { evs[d] = ev; projs[d] = { idx: idx, p: pj }; }
             }
+            if (restr) f += restraintNormal(xv, vals, onlyIdx, A, g);
             return { A: A, g: g, f: f, evs: evs, projs: projs, held: held };
         }
 
@@ -1925,7 +1956,7 @@ function* refineSteps(problem, opts) {
             if (algorithm === 'pt') {
                 var setup = preparePT();
                 var ptModel = model;
-                var accelerated = yield { problem:problem, model:model, constraints:constraints, x:Float64Array.from(x), info:info, setup:setup,
+                var accelerated = restr ? null : yield { problem:problem, model:model, constraints:constraints, x:Float64Array.from(x), info:info, setup:setup,
                     apply:apply, cost:function (xv) { return cost(apply(xv), null, ptModel); },
                     shouldStop:opts.shouldStop, onIter:function (p) { if (opts.onIter) opts.onIter(p); }, maxIter:setup.sweeps+maxIt*nStages };
                 if (accelerated && accelerated.x) {
@@ -1966,7 +1997,7 @@ function* refineSteps(problem, opts) {
         // of Le Bail and WPPF phases counted among the parameters)
         var fin = normal(x, null, true, true), nInt = 0;
         fin.evs.forEach(function (ev) { nInt += intensityCount(ev); });
-        var dof = Math.max(1, nPts - nv - nInt), chi2red = fin.f / dof, esdX = new Float64Array(nv).fill(NaN), idxE = [], inactive = [], onBounds = [], inv = null;
+        var nRes = restr ? restr.eval(apply(x)).length : 0, dof = Math.max(1, nPts + nRes - nv - nInt), chi2red = fin.f / dof, esdX = new Float64Array(nv).fill(NaN), idxE = [], inactive = [], onBounds = [], inv = null;
         for (j = 0; j < nv; j++) {
             var onB = x[j] <= info[j].lo + 1e-9 * (1 + Math.abs(info[j].lo)) || x[j] >= info[j].hi - 1e-9 * (1 + Math.abs(info[j].hi));
             onBounds[j]=onB;
@@ -2041,7 +2072,7 @@ function* refineSteps(problem, opts) {
                 if (precision) precision.s2 = chi2red;
             }
         });
-        return { ok: true, algorithm: only ? 'evaluate' : algorithm, effectiveAlgorithm: only ? 'evaluate' : algorithm === 'pt' ? 'pt+lm' : 'lm', pt: ptInfo, msg: msg, iter: it, chi2: fin.f, chi2red: chi2red, dof: dof, nPts: nPts, nVar: nv, nInt: nInt,
+        return { ok: true, algorithm: only ? 'evaluate' : algorithm, effectiveAlgorithm: only ? 'evaluate' : algorithm === 'pt' ? 'pt+lm' : 'lm', pt: ptInfo, msg: msg, iter: it, chi2: fin.f, chi2red: chi2red, dof: dof, restraints: restr ? { n: nRes, chi2: restr.cost(outVals), details: restr.details(outVals), cpuOnly: algorithm === 'pt' } : null, nPts: nPts, nVar: nv, nInt: nInt,
                  constraintWarnings:constraints ? constraints.warnings : [], constraintNames:constraints ? constraints.names : [], values: outVals, esd: esd, covarianceOK:!nv || !!inv && !inactive.length, uncertaintyIssues:uncertaintyIssues, fitWarnings:fitWarnings, stats: stats, intensities: intensities, precision: precision, ms: Date.now() - t0 };
     } catch (e) {
         if (opts.rethrow) throw e;

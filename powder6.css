@@ -843,6 +843,18 @@ table.grid.ac-list input.ac-m { width: 64px; min-width: 0; max-width: 64px; padd
 .ac-err:empty { display: none; }
 .ac-help { margin-top: 8px; }
 .ac-help summary { cursor: pointer; color: var(--ink-2); font-size: var(--fs-sm); }
+/* Restraints editor: rules, weights, geometry table and the molecule guide */
+.rs-main, .rs-guide-body { display: grid; gap: var(--sp-2); }
+.rs-rules { display: grid; gap: var(--sp-1); color: var(--ink-2); }
+.rs-rules textarea, .rs-guide-body textarea { width: 100%; }
+.rs-set { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); }
+.rs-set label { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--ink-2); }
+.rs-set input.num { width: 72px; }
+.rs-guide { margin-top: var(--sp-3); }
+.rs-err { margin: 0; }
+.rs-err:empty { display: none; }
+.rs-err.warn { color: var(--warn); }
+.rs-geom td.n { text-align: right; }
 .ac-phase + .ac-phase { margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--rule-2); }
 .ac-phase h3 { font-size: var(--fs-md); margin: 0 0 6px; }
 .ac-phase h3 .sub { color: var(--ink-3); font-weight: 400; font-size: var(--fs-sm); margin-left: 6px; }

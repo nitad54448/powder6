@@ -39,28 +39,29 @@ RV.layout=(function(){
   function selectRun(id){if(id && id!=='latest' && !records(method,'fit').some(function(r){return r.id===id;}))return;selected[method]=id==='latest'?null:id;syncRunPicker();RV.results.render();}
   function swap(on){var work=$('#work');on=on==null?!work.classList.contains('panels-swapped'):!!on;work.classList.toggle('panels-swapped',on);$('#swap-panels').setAttribute('aria-pressed',String(on));St.store('panelsSwapped',on);RV.bus.emit('panelLayout');}
   function splitStructure(host){
-    ['sgt','cf','wy'].forEach(function(k){$('#structure-result-'+k).innerHTML='';});
+    ['sgt','cf','wy','fo'].forEach(function(k){$('#structure-result-'+k).innerHTML='';});
     move(host.querySelector('#sv-int'),$('#structure-result-sgt'));move(host.querySelector('#sv-sgt-out'),$('#structure-result-sgt'));
     move(host.querySelector('#sv-cf-sum'),$('#structure-result-cf'));move(host.querySelector('#sv-wy-sum'),$('#structure-result-wy'));
     move(host.querySelector('#sv-cf-out'),$('#structure-result-cf'));
     ['cf-density','cf-sites','cf-struct'].forEach(function(k){move(host.querySelector('[data-acc="'+k+'"]'),$('#structure-result-cf'));});
     ['wy-solution','wy-sites','wy-struct'].forEach(function(k){move(host.querySelector('[data-acc="'+k+'"]'),$('#structure-result-wy'));});
+    ['fo-map','fo-peaks'].forEach(function(k){move(host.querySelector('[data-acc="'+k+'"]'),$('#structure-result-fo'));});
     host.querySelectorAll('[data-res-part]').forEach(function(p){var d=p.closest('details');if(d)d.remove();});
     syncStructure();
   }
   function syncStructure(){
     if(!$('#structure-run-select'))return;
     document.querySelectorAll('[data-structure-result]').forEach(function(b){var on=b.dataset.structureResult===structure;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;b.id='structure-tab-'+b.dataset.structureResult;b.setAttribute('aria-controls','structure-result-'+b.dataset.structureResult);});
-    ['sgt','cf','wy'].forEach(function(k){var panel=$('#structure-result-'+k);panel.hidden=k!==structure;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby','structure-tab-'+k);});
-    $('#structure-runbar').hidden=structure==='sgt';
-    var list=structure==='sgt'?[]:records('wppf',structure),picker=$('#structure-run-select');
+    ['sgt','cf','wy','fo'].forEach(function(k){var panel=$('#structure-result-'+k);panel.hidden=k!==structure;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby','structure-tab-'+k);});
+    $('#structure-runbar').hidden=structure==='sgt'||structure==='fo';
+    var list=structure==='sgt'||structure==='fo'?[]:records('wppf',structure),picker=$('#structure-run-select');
     if(structureRuns[structure] && !list.some(function(r){return r.id===structureRuns[structure];}))delete structureRuns[structure];
     picker.innerHTML='<option value="latest">Latest solution</option>'+list.map(function(r){return '<option value="'+r.id+'">'+esc(runLabel(r))+'</option>';}).join('');
     picker.value=structureRuns[structure] || 'latest';
   }
-  function structureResult(k,id){if(!['sgt','cf','wy'].includes(k))return;if(arguments.length>1)structureRuns[k]=id==='latest'?null:id;structure=k;RV.app.showTab('structure-results');syncStructure();if(RV.solve)RV.solve.renderSelectedSolution(k,structureRuns[k]);}
+  function structureResult(k,id){if(!['sgt','cf','wy','fo'].includes(k))return;if(arguments.length>1)structureRuns[k]=id==='latest'?null:id;structure=k;RV.app.showTab('structure-results');syncStructure();if(RV.solve)RV.solve.renderSelectedSolution(k,structureRuns[k]);}
   function latestStructure(k){structureRuns[k]=null;syncStructure();}
-  function structureRecord(){var list=structure==='sgt'?[]:records('wppf',structure);return list.find(function(r){return r.id===structureRuns[structure];}) || list[0] || null;}
+  function structureRecord(){var list=structure==='sgt'||structure==='fo'?[]:records('wppf',structure);return list.find(function(r){return r.id===structureRuns[structure];}) || list[0] || null;}
   function init(){
     $('#result-tabs').addEventListener('click',function(e){var b=e.target.closest('[data-result-method]');if(b)showResult(b.dataset.resultMethod);});
     $('#result-run-select').addEventListener('change',function(){selectRun(this.value);});
