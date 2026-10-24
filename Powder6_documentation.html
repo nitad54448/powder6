@@ -679,7 +679,7 @@ B_S = Q_ff + diag(1/τ_f²),   b_S = (Q·Î)_f      (f = reflections the group a
 <ol>
   <li>Select the phase in the ADDSYM section and open <b>Find higher symmetry…</b>.</li>
   <li>In <b>Positions of</b>, choose <b>The starting model (Phases)</b> or a dataset. The active dataset is selected initially when it holds the phase. A dataset’s <b>Rietveld model</b> supplies its coordinates and cell together; while using Le Bail or WPPF, the saved Rietveld calculation supplies these values. A dataset fitted by Le Bail or WPPF also offers <b>its refined cell with its atoms</b> (the Rietveld atoms when there are any, otherwise the atoms of the phase), so ADDSYM runs directly after a WPPF fit, with or without a Rietveld model.</li>
-  <li><b>Atoms within /Å</b> sets the distance tolerance passed to Moyo (default 0.2 Å). The report also scans 0.05, 0.1, 0.2, 0.3 and 0.5 Å, plus the entered value. The entered value is shown as soon as it is done; the scan follows.</li>
+  <li><b>Atoms within /Å</b> sets the distance tolerance passed to Moyo (default 0.2 Å). The report also scans 0.05, 0.1, 0.2, 0.3, 0.5, 0.75 and 1 Å, plus the entered value; when a higher symmetry appears only at a larger tolerance, the report names it and offers a button that sets that tolerance. Atoms refined in P1 from powder data scatter around the true positions, and a symmetry operation can need about twice that scatter (a P1 refinement of PbSO4 was recognised as Pnma only at about 0.75 Å). The entered value is shown as soon as it is done; the scan follows.</li>
   <li><b>Cell within /% and °</b> limits the permitted adjustment to the standardized lattice: 1 % for lengths and 1° for angles by default. Length and angle adjustments are checked separately before conversion is allowed.</li>
   <li><b>Occupancies within</b> (default 0.02): atoms of one type whose occupancies differ by less are one kind of atom, so refined occupancies of sites that are equivalent in the higher group (0.987 and 0.991) do not hide it. 0 asks for equal occupancies. Merged atoms take the mean occupancy.</li>
 </ol>
@@ -1018,8 +1018,9 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
 
 <section id="corrections">
 <h2>Recent changes</h2>
-<p>Version 2.16.3, 24 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
+<p>Version 2.17.0, 24 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 <ul>
+  <li>ADDSYM scans up to 1 Å and points to the tolerance at which a higher symmetry appears; the Structure pane starts with its three methods closed and its notes aligned.</li>
   <li>Wyckoff distance constraints can give a coordination shell a shape (tetrahedron, octahedron, square, triangle, linear, or tet, oct, sq, tri, lin), restraining its angles with an adjustable Shape weight.</li>
   <li>The Commands and Results headings and the plot help line are gone; the plot's mouse controls are in the tooltip of a round “i” at the right of its toolbar. Every session starts as a Cu X-ray tube.</li>
   <li>Dataset groups are removed: datasets are chosen with the selection alone.</li>

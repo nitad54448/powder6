@@ -536,6 +536,9 @@ RV.phasesTab = (function () {
     }
     if (sweep && sweep.length) h += '<p><b>At other tolerances</b> (cell ' + f.cellTol + ' %, ' + f.cellTol + '°):</p><div class="table-wrap"><table class="grid compact"><thead><tr><th>Tolerance /Å</th><th>Space group</th><th>Largest move /Å</th></tr></thead><tbody>' +
       sweep.map(function (w) { return '<tr' + (Math.abs(w.tol - s.tol) < 1e-9 ? ' class="best"' : '') + '><td>' + w.tol + '</td><td>' + (w.error ? '<span class="warn">'+esc(w.error)+'</span>' : w.r.group ? esc(St.sgText(w.r.group)) + (w.added ? w.higher ? '' : ' (conversion blocked)' : ' (no more than now)') : '—') + '</td><td>' + (w.conv ? w.conv.maxShift.toFixed(3) : '—') + '</td></tr>'; }).join('') + '</tbody></table></div>';
+    var more = sweep && sweep.filter(function (w) { return w.higher && w.tol > s.tol + 1e-9 && w.perOld > (s.higher ? s.perOld : ph.ops.length) + 1e-9; });
+    if (more && more.length) { var top = more.reduce(function (a, w) { return w.perOld > a.perOld + 1e-9 ? w : a; }, more[0]);
+      h += '<p><b>' + esc(St.sgText(top.r.group)) + '</b> appears at ' + top.tol + ' Å, with atoms moving by at most ' + top.conv.maxShift.toFixed(3) + ' Å. Atoms refined in P1 from powder data scatter around the true positions, so a symmetry operation can need a tolerance of about twice that scatter. <button type="button" data-use-tol="' + top.tol + '">Use ' + top.tol + ' Å</button></p>'; }
     h += '<p class="hint">' + (s.higher ? 'Convert… opens the conversion with this group and transformation; it merges the atoms the new symmetry relates and converts every dataset. Check the result against the data: a powder pattern may not tell a small distortion from the higher symmetry.'
                                         : s.added ? 'Resolve the conversion warnings above before applying this symmetry.' : 'No symmetry beyond ' + esc(ph.sg.symbol) + ' within ' + s.tol + ' Å for '+esc(s.sourceName)+'. If this model was fitted in P1, select its fitted dataset in Positions of. Larger tolerances find pseudo-symmetry; check them against the data.') + '</p>';
     return h + '</div>';
@@ -571,7 +574,7 @@ RV.phasesTab = (function () {
       try{
         model=symmetryModel(p,f);
         out.innerHTML='<p class="hint">Running public Moyo WebAssembly on '+esc(model.name)+'…</p>';
-        var tolerances=[f.tol].concat([.05,.1,.2,.3,.5]).filter(function(t,i,a){return a.indexOf(t)===i;});
+        var tolerances=[f.tol].concat([.05,.1,.2,.3,.5,.75,1]).filter(function(t,i,a){return a.indexOf(t)===i;});
         // the chosen tolerance comes first and is shown at once; the sweep follows
         var onRow=function(row){
           if(closed || id!==serial || row.tol!==f.tol || row.error)return;
@@ -597,6 +600,7 @@ RV.phasesTab = (function () {
       'Search the selected model’s atomic coordinates and cell: the starting model, a dataset’s Rietveld model, or after a Le Bail or WPPF fit the dataset’s refined cell with its atoms. Any symmetry change is previewed before applying it.',
       { wide: true, after: '<div class="convert-preview" data-symmetry-report aria-live="polite"></div>',
         onOpen: function (body) {
+          body.addEventListener('click',function(e){var b=e.target.closest('[data-use-tol]');if(!b)return;var t=body.querySelector('[data-key="tol"]');t.value=b.dataset.useTol;t.dispatchEvent(new Event('change',{bubbles:true}));});
           body.addEventListener('input',function(){
             clearTimeout(timer);
             if(job && runningInput!==JSON.stringify(read(body))){cancelJob();submitWhenReady=false;}

@@ -43,7 +43,10 @@
     function attr(key, dflt) { return isOpen(key, dflt) ? ' open' : ''; }
     function restore(root) { (root || document).querySelectorAll('details.acc[data-acc]').forEach(function (d) { var k = d.getAttribute('data-acc'); d.open = isOpen(k, d.hasAttribute('open')); }); }
     function isShown(el) { return !!el && el.isConnected && !el.closest('details:not([open])') && !el.closest('[hidden]'); }
+    // forget(keys): the remembered state of these blocks is dropped, so they start from their default (closed) in a new session
+    function forget(keys) { var s = load(); keys.forEach(function (k) { delete s[k]; }); St.store('acc', s); }
     function open(key) { document.querySelectorAll('details.acc[data-acc="' + key + '"]').forEach(function (d) { d.open = true; }); var s = load(); s[key] = true; St.store('acc', s); }
+    forget(['wppf-sgt', 'wppf-cf', 'wppf-wy']);
     document.addEventListener('toggle', function (e) {
       var d = e.target;
       if (!d || !d.matches || !d.matches('details.acc[data-acc]')) return;
@@ -53,7 +56,7 @@
       document.querySelectorAll('details.acc[data-acc="' + k + '"]').forEach(function (o) { if (o !== d && o.open !== d.open) o.open = d.open; });
       if (d.open) RV.bus.emit('acc', k);
     }, true);
-    return { attr: attr, isOpen: isOpen, restore: restore, isShown: isShown, open: open };
+    return { attr: attr, isOpen: isOpen, restore: restore, isShown: isShown, open: open, forget: forget };
   })();
 
   function syncCalculation() {

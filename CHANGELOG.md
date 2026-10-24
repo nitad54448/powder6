@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.17.0 — 24 October 2026
+
+1. ADDSYM finds the symmetry of a structure refined in P1. A converged P1 Rietveld refinement of PbSO4 (24 free atoms, from a start 0.1 Å off) was recognised as Pnma only at 0.75 Å, beyond the 0.5 Å the scan stopped at, so the report said there was no other symmetry. The scan now runs 0.05, 0.1, 0.2, 0.3, 0.5, 0.75 and 1 Å. When the entered tolerance finds nothing higher but a larger one does, the report names the group, the tolerance and the largest atom move, and a **Use … Å** button sets the tolerance. The hint explains that atoms refined from powder data scatter, and a symmetry operation can need about twice that scatter.
+2. Structure pane: the two notes above the box (what the pane does, the WebGPU budget), the box and the three methods now share one left edge; the box lists its facts on separate lines (single phase and its source, then the state of the WPPF fit) instead of one run-on sentence.
+3. The three methods of the Structure pane (Space group, Charge flipping, Wyckoff search) start closed in every session; what is opened afterwards is still remembered until the page is closed or reloaded.
+
 ## 2.16.3 — 24 October 2026
 
 1. Opening a project checks the archive before using it: `project.json` must be valid JSON and a plain object, observation sets must carry their column lists, a column's declared length must be a plain non-negative number that matches the stored data (and is refused before any memory is allocated when absurd), and the numbers of sets and the size of `project.json` are bounded. A damaged or hostile file now fails with a message instead of a `TypeError` or an out-of-memory error. Observation keys are held in a prototype-free map, so a key such as `constructor` or `__proto__` is an ordinary key.

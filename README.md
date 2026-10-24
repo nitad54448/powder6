@@ -1,6 +1,6 @@
 # Powder 6
 
-Version **2.16.3**, 24 October 2026. See [corrections](CHANGELOG.md).
+Version **2.17.0**, 24 October 2026. See [corrections](CHANGELOG.md).
 
 Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by **Rietveld**, **Le Bail** or **WPPF**, fitted individually or in one global fit, with **structure solution** from the extracted intensities. Everything runs locally; nothing is uploaded.
 
@@ -73,7 +73,7 @@ Open **Commands → Structure → Space group**. **Test · powder intensities** 
 
 Choose the phase, then use **Positions of** to select **The starting model (Phases)**, a dataset’s **Rietveld model**, or, after a Le Bail or WPPF fit, a dataset’s **refined cell with its atoms**. The active dataset is selected initially. A Rietveld model supplies its coordinates and cell together; while using Le Bail or WPPF, these come from its saved Rietveld calculation. Changing this selection searches that model independently.
 
-The atomic distance tolerance defaults to **0.2 Å**; the report also scans **0.05, 0.1, 0.2, 0.3 and 0.5 Å**. The allowed adjustment of the cell defaults to **1 % for lengths and 1° for angles**, checked separately. Atoms of one type whose occupancies differ by less than **0.02** (adjustable) count as one kind, and mixed sites are searched as one atom of the combined kind. The report identifies the selected model, engine, returned space group, axes, origin, cell and atomic mismatches. A detected higher group remains visible when conversion is blocked by a tolerance or a model mismatch. **Convert…** previews the change, retains the selected atomic source and explains adoption of its atoms and cell as the phase’s starting model. Every dataset’s Rietveld model is checked before applying the conversion; Ctrl+Z restores the previous state.
+The atomic distance tolerance defaults to **0.2 Å**; the report also scans **0.05, 0.1, 0.2, 0.3, 0.5, 0.75 and 1 Å** and names the tolerance at which a higher symmetry appears. The allowed adjustment of the cell defaults to **1 % for lengths and 1° for angles**, checked separately. Atoms of one type whose occupancies differ by less than **0.02** (adjustable) count as one kind, and mixed sites are searched as one atom of the combined kind. The report identifies the selected model, engine, returned space group, axes, origin, cell and atomic mismatches. A detected higher group remains visible when conversion is blocked by a tolerance or a model mismatch. **Convert…** previews the change, retains the selected atomic source and explains adoption of its atoms and cell as the phase’s starting model. Every dataset’s Rietveld model is checked before applying the conversion; Ctrl+Z restores the previous state.
 
 **ADDSYM is the interface label; the implementation is Moyo, not PLATON’s ADDSYM code.** The search uses the supplied full-cell positions, expanded with the assigned group, and compares stored atom types and occupancies. In P1, the model must contain every atom of the full cell. The returned group describes the supplied model at the selected tolerances. If all rows remain P1, inspect the full-cell atom list, types, occupancies and cell before drawing a conclusion. See [the help file](Powder6_documentation.html#s-addsym) for the controls and limitations.
 

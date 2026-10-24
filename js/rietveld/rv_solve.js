@@ -1074,7 +1074,7 @@ RV.solve = (function () {
           '<button type="button" class="primary" id="sv-extract" data-sv="extract" title="The WPPF intensities of the phase in this dataset at its current values, with their uncertainties">Extract intensities</button>' +
           '<span id="sv-switch"></span><span class="tool-gap"></span>' +
           '</div>' +
-        '<p class="hint" id="sv-fit-status"></p><div class="sv-int" id="sv-int"></div>' +
+        '<div class="hint sv-status" id="sv-fit-status"></div><div class="sv-int" id="sv-int"></div>' +
       '</div>' +
       block('wppf-sgt', 'Space group',
         block('sgt-test', 'Test · powder intensities',
@@ -1085,7 +1085,7 @@ RV.solve = (function () {
         block('sgt-addsym', 'ADDSYM · atomic model',
           '<p class="hint">Find symmetry present in the atomic positions, then preview conversion to the detected space group. This uses the starting model, a dataset’s Rietveld model, or after a Le Bail or WPPF fit the dataset’s refined cell with its atoms; it does not need extracted intensities.</p>' +
           '<div class="form-grid sv-form">'+select('sv-sym-phase','Phase',St.currentPhase() && St.currentPhase().key,S.phases.map(function(p){return [p.key,p.name+' · '+St.sgText(p.sg)];}),'Choose a phase with atoms.','')+'</div>' +
-          '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-addsym" data-sv="find-symmetry" title="Find higher symmetry of the selected atomic model">Find higher symmetry…</button></p>',true,null,'sub'), true) +
+          '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-addsym" data-sv="find-symmetry" title="Find higher symmetry of the selected atomic model">Find higher symmetry…</button></p>',true,null,'sub'), false) +
       block('wppf-cf', 'Charge flipping',
           formulaRow('cf') +
           '<p class="hint">Charge flipping (Oszlányi and Sütő 2004) on the extracted intensities, in the worker of powder5: GPU where there is one. The peaks of the map, put on the origin of the space group and reduced to the asymmetric unit, become sites; the formula unit names them.</p>' +
@@ -1159,8 +1159,8 @@ RV.solve = (function () {
     sw.innerHTML = ph && ph.method !== 'wppf' ? '<button type="button" data-sv="to-wppf" title="Fit ' + esc(ph.name) + ' by WPPF: its intensities become free variables of the fit">Fit ' + esc(ph.name) + ' by WPPF</button>' : '';
     var why = extractWhy(ph, dataset()), status = $('#sv-fit-status');
     ui.able($('#sv-extract'), why);
-    if (status) status.textContent = (S.phases.length===1 ? 'Single-phase WPPF: intensities are extracted automatically after fitting; the source follows the first selected dataset. ' : '') + (why || ('Current WPPF fit: ' + dataset().stats.msg + '. ' +
-      (/^converged/.test(dataset().stats.msg || '') ? 'Ready to extract intensities.' : 'Check the fit and convergence before using extracted intensities.')));
+    if (status) status.innerHTML = (S.phases.length===1 ? '<p>Single phase: the intensities are extracted automatically after fitting, from the first selected dataset.</p>' : '') + '<p>' + esc(why || ('WPPF fit: ' + dataset().stats.msg + '. ' +
+      (/^converged/.test(dataset().stats.msg || '') ? 'Ready to extract intensities.' : 'Check the fit and convergence before using extracted intensities.'))) + '</p>';
     var els = parseFormula(SV.opts.formula), dl = $('#sv-el-list');
     if (dl) dl.innerHTML = (els || []).map(function (c) { return '<option value="' + c.el + '">'; }).join('');
     syncSgtCount();renderCfPlan();syncAble();

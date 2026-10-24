@@ -683,9 +683,13 @@ table.grid.pm input:disabled { opacity: .45; }
 .acc .sv-panel { padding-top: 0; }
 .calc-layout[hidden] { display: none !important; }
 .solve { padding: 0 0 40px; }
-.solve > .hint:first-child { margin: 10px 18px 0; font-size: 12px; }
-.solve .sv-bar { margin: 10px 18px; padding: 8px 14px 6px; background: var(--panel); border: 1px solid var(--rule); border-radius: var(--radius); }
+.structure-pane > .hint { margin: 0 0 4px; }
+.solve > .hint:first-child { margin: 0 0 10px; font-size: 12px; }
+.solve > .acc { margin-left: 0; margin-right: 0; }
+.solve .sv-bar { margin: 10px 0; padding: 8px 14px 6px; background: var(--panel); border: 1px solid var(--rule); border-radius: var(--radius); }
 .solve .sv-bar #sv-fit-status:empty { display: none; }
+.sv-status p { margin: 2px 0; }
+.sv-status p + p { color: var(--ink-2); }
 .sv-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
 .sv-row + .sv-row { margin-top: 6px; }
 .sv-lbl { color: var(--ink-2); white-space: nowrap; }
