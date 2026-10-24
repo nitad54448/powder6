@@ -209,6 +209,7 @@ fn project_onto_wyckoff(pos: vec3<f32>, p_mat: array<f32, 9>, t_vec: vec3<f32>) 
     return out - floor(out);
 }
 
+var<workgroup> proposal_site: u32; // maxSites means a collective proposal
 var<workgroup> prop_sites: array<vec3<f32>, 32>;   // MAX_SITES
 var<workgroup> gx: array<f32, MAX_GEN_ATOMS>;
 var<workgroup> gy: array<f32, MAX_GEN_ATOMS>;
@@ -398,13 +399,37 @@ fn main(@builtin(workgroup_id) wgId: vec3<u32>,
 
         let sd = mcmcState[pIdx].stepSize;
         rng_state = hash_u32(mcmcState[pIdx].seed ^ (lid * 0x9E3779B9u));
+
+        // Select one FREE independent site in 3/4 of proposals. Fixed special
+        // positions and padded sites have zero projectors and must not consume
+        // attempts. Moving a site moves its full symmetry orbit, never one image.
+        if (lid == 0u) {
+            proposal_site = maxSites;
+            if (params.pad0 > 0.5 && rand_float() < 0.75) {
+                var nFree = 0u;
+                for (var s = 0u; s < maxSites; s = s + 1u) {
+                    let b = u32(params.projOff) + (A * siteStride + s) * 12u;
+                    var norm = 0.0;
+                    for (var j = 0u; j < 9u; j = j + 1u) {
+                        norm = norm + abs(staticFloats[b + j]);
+                    }
+                    if (norm > 1e-6) {
+                        nFree = nFree + 1u;
+                        // Reservoir selection gives every movable site equal weight.
+                        if (rand_float() < 1.0 / f32(nFree)) { proposal_site = s; }
+                    }
+                }
+            }
+        }
+        workgroupBarrier();
         
         if (lid < maxSites) {
             let s = lid;
             let c = pBase + s * 3u;
             var pos = vec3<f32>(particles[c], particles[c + 1u], particles[c + 2u]);
             
-            if (params.pad0 > 0.5) {
+            let moving = params.pad0 > 0.5 && (proposal_site == maxSites || proposal_site == s);
+            if (moving) {
                 pos.x = pos.x + rand_gaussian() * sd;
                 pos.y = pos.y + rand_gaussian() * sd;
                 pos.z = pos.z + rand_gaussian() * sd;
@@ -420,7 +445,9 @@ fn main(@builtin(workgroup_id) wgId: vec3<u32>,
             for (var i = 0u; i < 9u; i = i + 1u) { p_mat[i] = staticFloats[p_off + b + i]; }
             let t_vec = vec3<f32>(staticFloats[p_off + b + 9u], staticFloats[p_off + b + 10u], staticFloats[p_off + b + 11u]);
             
-            prop_sites[s] = project_onto_wyckoff(pos, p_mat, t_vec);
+            // Preserve untouched sites exactly; repeated projection can round them.
+            prop_sites[s] = pos;
+            if (moving) { prop_sites[s] = project_onto_wyckoff(pos, p_mat, t_vec); }
         }
         
         workgroupBarrier();

@@ -14,6 +14,14 @@
     St.addPhase(St.makePhase({name:'Reference phase',sg:St.resolveSG(1),cell:{a:5,b:5,c:5,alpha:90,beta:90,gamma:90},atoms:[]}));
     const datasets=St.insertDatasets(['Reference standard','Sample at 300 K'].map(name=>St.makeDataset({name,tth:[10,20,30],y:[10,40,20]})),{estimate:false,selectAll:true});
     RV.app.showTab('datasets');await frame();
+    check(!q('[data-acc="dataset-batch"]') && !q('#dataset-table'),'Duplicate batch section remains');
+    q('[data-edit-dataset]').click();await frame();
+    q('#dlg [data-key="name"]').value='Renamed standard';
+    q('#dlg [data-key="color"]').value='#16746d';
+    q('#dlg [data-key="automatic"]').checked=false;
+    q('#dlg .primary').click();await frame();
+    check(datasets[0].name==='Renamed standard' && datasets[0].color==='#16746d','Dataset appearance edit failed');
+    record('Dataset list owns name and colour editing without a duplicate batch section');
     check(all('#dataset-accordions > details').length===2,'Selected datasets must each have a heading');
     const shell=q('[data-dataset-accordion]');shell.querySelector('summary').click();await frame();
     check(RV.workspace.dataset().id===+shell.dataset.datasetAccordion,'Accordion did not activate its dataset');
@@ -24,12 +32,16 @@
     q('[aria-label="Batch fit mode"] [data-fitmode="global"]').click();await frame();
     check(RV.app.fitMode()==='global' && all('[data-fitmode="global"]').every(b=>b.getAttribute('aria-pressed')==='true'),'Batch global mode is not synchronized');
     const originalFit=RV.cmd.fit;let fitMode=null;RV.cmd.fit=()=>{fitMode=RV.app.fitMode();};
-    q('[data-acc="dataset-batch"] [data-workflow="fit"]').click();RV.cmd.fit=originalFit;check(fitMode==='global','Batch fit bypassed the selected mode');
+    q('[data-acc="dataset-selection"] [data-workflow="fit"]').click();RV.cmd.fit=originalFit;check(fitMode==='global','Batch fit bypassed the selected mode');
     St.selectIds([datasets[0].id]);await frame();check(q('[data-fitmode-visibility]').hidden,'Batch mode should hide for one selected dataset');
     St.selectAll();q('[aria-label="Batch fit mode"] [data-fitmode="single"]').click();await frame();
     record('Batch fit mode synchronizes with Method, controls fitting, and hides for one dataset');
     for(const theme of ['light','dark']){
       doc.documentElement.dataset.theme=theme;RV.theme.refresh();await frame();
+      const surface=w.getComputedStyle(q('.dataset-toolbar')).backgroundColor;
+      for(const selector of ['.phase-bar','.solve-sticky','.solve-sticky .calculation-tabs','.result-runbar','.structure-result-tabs']) {
+        check(w.getComputedStyle(q(selector)).backgroundColor===surface,theme+' inconsistent action/header surface: '+selector);
+      }
       const style=w.getComputedStyle(q('[data-remove-dataset]')),rect=q('[data-remove-dataset]').getBoundingClientRect();
       check(parseFloat(style.minHeight)>=24 && parseFloat(style.minWidth)>=24,'Remove button target is too small');
       const cs=w.getComputedStyle(doc.documentElement),rgb=s=>{const h=s.trim().replace('#','');return [0,2,4].map(i=>parseInt(h.slice(i,i+2),16)/255);};

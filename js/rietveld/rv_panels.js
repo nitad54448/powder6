@@ -10,7 +10,7 @@ RV.panels = (function () {
   // ================================================================ Datasets
   function dsRow(d) {
     var on = S.sel.has(d.id);
-    return '<div class="ds'+(on?' on':'')+'" data-id="'+d.id+'" style="--dataset-color:'+RV.plots.colorVar(d)+'" draggable="true" role="option" aria-selected="'+on+'"><input type="checkbox" data-dataset-check="'+d.id+'" aria-label="Include '+esc(d.name)+' in plots and fit"'+(on?' checked':'')+'><span class="nm" title="'+esc(d.name)+'">'+esc(d.name)+'</span><button type="button" class="icon-btn" data-remove-dataset="'+d.id+'" aria-label="Remove dataset '+esc(d.name)+'" title="Remove dataset '+esc(d.name)+'"'+(S.busy?' disabled':'')+'>✕</button></div>';
+    return '<div class="ds'+(on?' on':'')+'" data-id="'+d.id+'" style="--dataset-color:'+RV.plots.colorVar(d)+'" draggable="true" role="option" aria-selected="'+on+'"><input type="checkbox" data-dataset-check="'+d.id+'" aria-label="Include '+esc(d.name)+' in plots and fit"'+(on?' checked':'')+'><span class="nm" title="'+esc(d.name)+'">'+esc(d.name)+'</span><button type="button" class="mini" data-edit-dataset="'+d.id+'" aria-label="Edit '+esc(d.name)+'"'+(S.busy?' disabled':'')+'>Edit</button><button type="button" class="icon-btn" data-remove-dataset="'+d.id+'" aria-label="Remove dataset '+esc(d.name)+'" title="Remove dataset '+esc(d.name)+'"'+(S.busy?' disabled':'')+'>✕</button></div>';
   }
   function renderDatasets() {
     if (!S.datasets.length) {
@@ -26,6 +26,7 @@ RV.panels = (function () {
       if (!id) return;
       var on = S.sel.has(id);
       if (r.classList.contains('on') !== on) { r.classList.toggle('on', on); r.setAttribute('aria-selected', String(on)); }
+      var edit=r.querySelector('[data-edit-dataset]');if(edit)edit.disabled=!!S.busy;
       var remove=r.querySelector('[data-remove-dataset]');if(remove)remove.disabled=!!S.busy;
       var cb=r.querySelector('[data-dataset-check]');if(cb)cb.checked=on;
     });
@@ -47,6 +48,23 @@ RV.panels = (function () {
       (d.sim ? '<dt>Simulated</dt><dd>calculated from the phases' + (d.sim.noise ? ', with counting noise' : '') + '</dd>' : '') + '</dl>';
   }
   function rowOf(id) { return dsList.querySelector('.ds[data-id="' + id + '"]'); }
+  async function editDataset(id) {
+    var d=St.byId(id);if(!d || S.busy)return;
+    var v=await ui.prompt('Edit dataset',[
+      {key:'name',label:'Name',type:'text',value:d.name},
+      {key:'color',label:'Colour',type:'text',value:RV.plots.color(d)},
+      {key:'automatic',label:'Use automatic theme colour',type:'checkbox',value:!d.color}
+    ],'Apply','A custom colour is used in both themes.',{onOpen:function(body){
+      var color=body.querySelector('[data-key="color"]'),automatic=body.querySelector('[data-key="automatic"]');
+      color.type='color';color.addEventListener('input',function(){automatic.checked=false;});
+    }});
+    if(!v || S.busy || St.byId(id)!==d)return;
+    var name=v.name.trim(),color=v.automatic?null:v.color;
+    if(!name){ui.toast('Enter a dataset name.','warn');return;}
+    if(color && !/^#[0-9a-f]{6}$/i.test(color))return;
+    if(name===d.name && color===(d.color || null))return;
+    RV.history.take('edit dataset '+d.name);d.color=color;St.rename(id,name);
+  }
   function renameDs(id) {
     var row = rowOf(id), d = St.byId(id);
     if (!row || !d) return;
@@ -79,6 +97,7 @@ RV.panels = (function () {
     dsList = $('#ds-list');
     dsList.addEventListener('click', function (e) {
       if (e.target.closest('[data-act="demo"]')) { RV.cmd.demo(); return; }
+      var edit=e.target.closest('[data-edit-dataset]');if(edit){e.stopPropagation();if(!S.busy)editDataset(+edit.dataset.editDataset);return;}
       var remove=e.target.closest('[data-remove-dataset]');if(remove){e.stopPropagation();if(!S.busy)RV.cmd.deleteDatasets(+remove.dataset.removeDataset);return;}
       var row = e.target.closest('.ds');
       if (!row) return;

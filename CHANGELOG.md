@@ -2,6 +2,19 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.24.0 — 24 October 2026
+
+1. **One dataset selection section.** Remove Selection and batch and its duplicate editable table. Move fit mode, Fit selected datasets and selection actions into the Datasets accordion. Each dataset row has Edit for its name and colour, with automatic theme colour available. Custom colours apply to plots and headings and survive project saving, Undo and calculation History.
+
+## 2.23.1 — 24 October 2026
+
+1. **Palette refinement.** Spread the early dataset colours across blue, burnt orange, teal, purple, ochre, magenta and olive, with corresponding light colours in dark mode. Phase colours follow the same palette. Darker amber active anchors, stronger fixed anchors, background curves and axis colours improve plot annotation contrast in light mode; dark-mode axes and fixed anchors are brighter. Existing solid/dashed curves and filled/hollow anchor markers retain their roles.
+
+## 2.23.0 — 24 October 2026
+
+1. **Wyckoff proposals.** Three quarters of MCMC proposals move one free independent Wyckoff site (and its entire symmetry orbit); the rest retain collective moves. Fixed positions and padding are excluded from single-site selection, and untouched sites retain their exact coordinates. This reduces the coupled rejection of otherwise useful local moves in larger structures.
+2. **Panel surfaces.** Datasets, Phases and Method action headers, fit-result run selectors and Structure result tabs share the theme's chrome background in light and dark mode.
+
 ## 2.22.7 — 24 October 2026
 
 1. **Selection and batch fit mode.** Show Individual / Global when at least two datasets are selected, synchronized with Commands / Method. The Fit selected datasets button respects that mode instead of forcing individual fits. Updated the instructions to refer to dataset accordions.

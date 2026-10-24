@@ -1215,3 +1215,22 @@ test('transparency estimates carry the physical sign: a penetrating beam moves t
   const a = app();
   assert.ok(a.run('calculatePeakShift(40,{profileType:"simple_pvoigt",trns:-0.001})') < 0, 'negative t shifts down');
 });
+
+
+test('dataset colours survive projects, undo and retained calculations', () => {
+  const a=model();a.ds.color='#16746d';
+  a.context.RV.history.take('dataset appearance');a.ds.color='#ad4a29';
+  a.context.RV.history.undo();
+  assert.equal(a.S.datasets[0].color,'#16746d');
+  const d=a.S.datasets[0];d.stats={ok:true};
+  const record=a.context.RV.fitHistory.complete(a.context.RV.fitHistory.begin([d],false),[d]);
+  assert.equal(record.datasets[0].color,'#16746d');
+  const doc=JSON.parse(a.state.projectJSON([]));
+  a.state.commitProject(a.state.prepareProject(doc));
+  assert.equal(a.S.datasets[0].color,'#16746d');
+  a.S.datasets[0].color=null;a.context.RV.fitHistory.restore(record.id);
+  assert.equal(a.S.datasets[0].color,'#16746d');
+  doc.datasets[0].color='invalid';
+  a.state.commitProject(a.state.prepareProject(doc));
+  assert.equal(a.S.datasets[0].color,null);
+});

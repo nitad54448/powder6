@@ -247,6 +247,18 @@
               <div class="side-h"><span id="ds-count" class="sub"></span></div>
               <input type="search" id="dataset-search" placeholder="Find datasets…" aria-label="Find datasets">
               <div id="ds-list" class="ds-list" tabindex="0" role="listbox" aria-multiselectable="true" aria-label="Datasets selected for plotting and fitting"></div>
+            <div class="fit-line" data-fitmode-visibility hidden>
+              <span class="fit-lbl">Mode</span>
+              <div class="seg" role="group" aria-label="Batch fit mode">
+                <button type="button" data-fitmode="single" aria-pressed="true">Individual</button><button type="button" data-fitmode="global" aria-pressed="false">Global</button>
+              </div>
+            </div>
+            <div class="buttons">
+              <button type="button" data-dataset-action="all">Select all</button><button type="button" data-dataset-action="none">Clear selection</button>
+              <button type="button" data-workflow="fit">Fit selected datasets</button>
+              <span class="hint" id="dataset-summary"></span>
+            </div>
+            <p class="hint">Individual fits refine each dataset separately. Global fits tie parameters marked shared.</p>
             </section>
           </details>
           <details class="acc dataset-accordion dataset-card" id="dataset-editor" data-acc="dataset-editor" open>
@@ -299,24 +311,7 @@
             </section>
             </div>
           </details>
-          <details class="acc dataset-accordion dataset-card" data-acc="dataset-batch">
-            <summary><span class="acc-t">Selection and batch</span></summary>
-            <div class="acc-body">
-            <p class="hint">Set values and refinement flags in each dataset accordion. Use its Copy controls for an explicit batch change, then fit the selection. Individual fits keep separate fitted values for each dataset. Global fits tie only parameters marked shared; use local cells when the lattice varies between patterns.</p>
-            <div class="fit-line" data-fitmode-visibility hidden>
-              <span class="fit-lbl">Mode</span>
-              <div class="seg" role="group" aria-label="Batch fit mode">
-                <button type="button" data-fitmode="single" aria-pressed="true">Individual</button><button type="button" data-fitmode="global" aria-pressed="false">Global</button>
-              </div>
-            </div>
-            <div class="buttons">
-              <button type="button" data-dataset-action="all">Select all</button><button type="button" data-dataset-action="none">Clear selection</button>
-              <button type="button" data-workflow="fit">Fit selected datasets</button>
-              <span class="hint" id="dataset-summary"></span>
-            </div>
-            <div class="table-wrap ds-table" id="dataset-table"></div>
-            </div>
-          </details>
+
         </div>
       </div>
 

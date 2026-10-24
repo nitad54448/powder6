@@ -1,6 +1,6 @@
 # Powder 6
 
-Version **2.22.7**, 24 October 2026. See [corrections](CHANGELOG.md).
+Version **2.24.0**, 24 October 2026. See [corrections](CHANGELOG.md).
 
 Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by **Rietveld**, **Le Bail** or **WPPF**, fitted individually or in one global fit, with **structure solution** from the extracted intensities. Everything runs locally; nothing is uploaded.
 
@@ -29,7 +29,7 @@ Serve the folder over HTTP (browsers block `fetch` on `file://`):
 python -m http.server 8000
 ```
 
-Open `http://localhost:8000/index.html` in a current Chrome, Edge or Firefox. The Wyckoff search needs WebGPU (Chrome or Edge).
+Open `http://localhost:8000/index.html` in a current Chrome, Edge or Firefox. The Wyckoff search needs WebGPU (Chrome or Edge). Its MCMC proposals mix single free-site moves (75%) with collective moves (25%); each independent site always expands through its full symmetry orbit.
 
 Press **F9** to fit, **Ctrl+S** to save the project, **Ctrl+Z** to undo. Try the **load the demo** link in the empty Datasets panel, or type `demo` (NaCl and Si). **File → Export to GSAS-II** writes a ZIP (CIF per phase, `.xye` and `.instprm` per dataset, README).
 
@@ -79,7 +79,7 @@ The atomic distance tolerance defaults to **0.2 Å**; the report also scans **0.
 
 ## Workspace and stored calculations
 
-The workspace has two independently navigable panels, inspired by Powder5. **Commands** contains **Datasets, Phases, Method, Structure, Settings**. **Results** contains **Plots, Le Bail, WPPF, Rietveld, Structure, Log, History**. Drag the wider divider by its visible grip to resize them; arrow keys resize it too, and **⇄ Panels** swaps their positions. Dataset checkboxes under **Datasets for fitting and plotting** define one target set for fitting and plotting. Use **All datasets** or range selection, then choose **Overview** or **Inspect one dataset** for large series.
+The workspace has two independently navigable panels, inspired by Powder5. **Commands** contains **Datasets, Phases, Method, Structure, Settings**. **Results** contains **Plots, Le Bail, WPPF, Rietveld, Structure, Log, History**. Drag the wider divider by its visible grip to resize them; arrow keys resize it too, and **⇄ Panels** swaps their positions. Dataset checkboxes under **Datasets for fitting and plotting** define one target set for fitting and plotting. Use **Select all**, **Clear selection** or range selection in the Datasets accordion; **Edit** on each row changes its name and colour. Choose Individual / Global and fit from the same accordion. Choose **Overview** or **Inspect one dataset** for large series.
 
 **About** is immediately left of **⇄ Panels**. In Phases, **Edit** beside the colour picker renames the phase; each row in **Choose a phase** has a remove icon. **Delete selected** sits beside the dataset scope menu. Exclusions are inside the active dataset after Background. Resolution loads and saves calibrations above the coefficients and detects their profile type automatically.
 

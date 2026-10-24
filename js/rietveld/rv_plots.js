@@ -11,8 +11,8 @@ RV.plots = (function () {
   function $(s) { return document.querySelector(s); }
   var esc = RV.ui.esc;
   // dataset colours from --series-k, phase colours from --phase-k (powder6.css)
-  function color(ds) { var p = RV.theme.get().series; return p[(ds.id - 1) % p.length]; }
-  function colorVar(ds) { return RV.theme.seriesVar(ds.id - 1); }
+  function color(ds) { if(/^#[0-9a-f]{6}$/i.test(ds.color || ''))return ds.color; var p = RV.theme.get().series; return p[(ds.id - 1) % p.length]; }
+  function colorVar(ds) { return ds.color ? color(ds) : RV.theme.seriesVar(ds.id - 1); }
   function phaseColor(i) { if (S.phases[i] && /^#[0-9a-f]{6}$/i.test(S.phases[i].color || '')) return S.phases[i].color; var p = RV.theme.get().phases; return p[i % p.length]; }
   function phaseVar(i) { return S.phases[i] && S.phases[i].color ? phaseColor(i) : RV.theme.phaseVar(i); }
   function phaseIndex(key) { for (var i = 0; i < S.phases.length; i++) if (S.phases[i].key === key) return i; return 0; }

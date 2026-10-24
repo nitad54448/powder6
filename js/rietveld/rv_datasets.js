@@ -9,9 +9,6 @@ RV.datasets = (function () {
     dirty=true;if(!active())return;
     if(S.busy && !force && performance.now()-lastRender<1000)return;
     lastRender=performance.now();dirty=false;
-    $('#dataset-table').innerHTML=S.datasets.length?'<table class="grid compact"><thead><tr><th>Use</th><th>Dataset</th><th>Points</th><th>λ1 /Å</th><th>Phases</th></tr></thead><tbody>'+S.datasets.map(function(d){
-        return '<tr><td><input type="checkbox" data-dataset-select="'+d.id+'" aria-label="Select '+esc(d.name)+'"'+(S.sel.has(d.id)?' checked':'')+'></td><td><input data-dataset-name="'+d.id+'" value="'+esc(d.name)+'" aria-label="Dataset name"></td><td>'+d.tth.length+'</td><td>'+d.inst.lambda1+'</td><td>'+esc(St.phasesIn(d).map(function(p){return p.name;}).join(', '))+'</td></tr>';
-    }).join('')+'</tbody></table>':'<p class="hint">Read patterns or simulate a phase with atoms to begin.</p>';
     $('#dataset-summary').textContent=S.sel.size+' selected / '+S.datasets.length+' datasets for fitting and plotting.';
   }
   function schedule(){dirty=true;if(!active() || queued)return;queued=requestAnimationFrame(function(){queued=0;render(false);});}

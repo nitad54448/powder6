@@ -26,9 +26,9 @@
   --plot-bg: #FAFAFA;
   --plot-grid: #DEDEDE;
   --plot-minor: #EFEFEF;
-  --plot-axis: #818181;
-  --anchor-active: #D5A500;
-  --anchor-fixed: #8A8E93;
+  --plot-axis: #626B73;
+  --anchor-active: #946200;
+  --anchor-fixed: #68727B;
   --anchor-refinable: #B000B5;
   --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --font-code: "Cascadia Mono", ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
@@ -61,14 +61,14 @@
   --plot-line-width: 1.5px;
   --plot-area-opacity: 0.3;
   /* dataset colours, used in turn (add or remove entries, numbered from 1 without gaps) */
-  --series-1: #2864A0; --series-2: #B14949; --series-3: #37734C; --series-4: #80599A;
-  --series-5: #8E611A; --series-6: #21757C; --series-7: #A14D7E; --series-8: #5B722B;
-  --series-9: #9E5822; --series-10: #3E6F94; --series-11: #7B6659; --series-12: #555555;
+  --series-1: #2864A0; --series-2: #A94828; --series-3: #15716A; --series-4: #7D5796;
+  --series-5: #885D18; --series-6: #A13E76; --series-7: #526D20; --series-8: #785443;
+  --series-9: #965420; --series-10: #54529E; --series-11: #376A80; --series-12: #555555;
   /* phase colours, used in turn: the contribution of each phase and its row of reflection ticks */
-  --phase-1: #37734C; --phase-2: #80599A; --phase-3: #8E611A; --phase-4: #21757C;
-  --phase-5: #A14D7E; --phase-6: #5B722B; --phase-7: #9E5822; --phase-8: #3E6F94;
+  --phase-1: #15716A; --phase-2: #7D5796; --phase-3: #885D18; --phase-4: #A13E76;
+  --phase-5: #526D20; --phase-6: #785443; --phase-7: #965420; --phase-8: #54529E;
   /* one dataset on its own: calculated pattern, background and difference */
-  --calc-line: #B14949; --bkg-line: #808080; --diff-line: #555555;
+  --calc-line: #B14949; --bkg-line: #68727B; --diff-line: #555555;
   /* the regions left out of the fit, shaded across the plots */
   --excluded-fill: rgba(70, 70, 70, 0.13);
 
@@ -105,19 +105,19 @@
   --paper: #16181B; --panel: #202327; --ink: #E9ECEF; --ink-2: #C9CED3; --ink-3: #A3AAB1;
   --rule: #3C4247; --rule-2: #2F343A; --blue: #8FB6E0; --blue-2: #B0CCEA; --blue-tint: #26323F; --on-blue: #172431;
   --amber: #D9B56B; --amber-tint: #3E3525; --ok: #9BC6A4; --warn: #DEBB7B; --err: #E5A0A0;
-  --plot-bg: #242424; --plot-grid: #3D3D3D; --plot-minor: #303030; --plot-axis: #888888;
-  --anchor-active: #F3CF3E; --anchor-fixed: #969BA0; --anchor-refinable: #F06FFF;
+  --plot-bg: #242424; --plot-grid: #3D3D3D; --plot-minor: #303030; --plot-axis: #ABB2BA;
+  --anchor-active: #F3CF3E; --anchor-fixed: #ABB2BA; --anchor-refinable: #F06FFF;
   --control-bg: #2B2F34; --control-border: #77838E; --control-ink: #E0E0E0;
   --chrome: #1A1D20; --selection: #34475B; --selection-ink: #EAF2FA;
   --shadow: rgba(0, 0, 0, 0.32);
   --focus-ring: 0 0 0 2px var(--panel), 0 0 0 4px var(--blue);
   --plot-zoom-fill: rgba(157, 189, 224, 0.10); --plot-zoom-line: rgba(157, 189, 224, 0.85);
-  --series-1: #9DBDE0; --series-2: #DF9696; --series-3: #9BC6A4; --series-4: #BCA5CE;
-  --series-5: #D9B56B; --series-6: #8AC4C8; --series-7: #D2A0BF; --series-8: #B7C68E;
-  --series-9: #D9AE8A; --series-10: #9CC3DC; --series-11: #C5B0A2; --series-12: #CCCCCC;
-  --phase-1: #9BC6A4; --phase-2: #BCA5CE; --phase-3: #D9B56B; --phase-4: #8AC4C8;
-  --phase-5: #D2A0BF; --phase-6: #B7C68E; --phase-7: #D9AE8A; --phase-8: #9CC3DC;
-  --calc-line: #DF9696; --bkg-line: #989898; --diff-line: #C6C6C6;
+  --series-1: #9DBDE0; --series-2: #EDA17D; --series-3: #80C9BC; --series-4: #BCA5CE;
+  --series-5: #D9B56B; --series-6: #E29BC3; --series-7: #B7CC85; --series-8: #D0AD95;
+  --series-9: #D9AE8A; --series-10: #ABA9E5; --series-11: #8EC5DD; --series-12: #CCCCCC;
+  --phase-1: #80C9BC; --phase-2: #BCA5CE; --phase-3: #D9B56B; --phase-4: #E29BC3;
+  --phase-5: #B7CC85; --phase-6: #D0AD95; --phase-7: #D9AE8A; --phase-8: #ABA9E5;
+  --calc-line: #DF9696; --bkg-line: #ABB2BA; --diff-line: #C6C6C6;
   --excluded-fill: rgba(180, 180, 180, 0.12);
   --on-err: #16181B;
   --bg-inset: #1B1E21; --fg-4: #888888; --rule-strong: #5C646B;
@@ -436,7 +436,7 @@ button.mini { padding: 1px var(--sp-2); font-size: var(--fs-sm); min-height: var
 .ds:hover { background: var(--hover); }
 .ds.on { background: var(--selection); color: var(--selection-ink); box-shadow: var(--mark-bar); }
 .ds .sw { width: 8px; height: 8px; flex: none; border-radius: 2px; background: var(--dataset-color); }
-.ds .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ds.drop { box-shadow: inset 0 2px 0 var(--blue); }
 .ds .rename { flex: 1; padding: 1px 4px; min-height: var(--ctl-h-sm); }
 .ds.ph { height: 29px; }
@@ -603,7 +603,7 @@ body.dropping .drop-hint { display: flex; }
   gap: var(--sp-2);
   flex-wrap: wrap;
   padding: var(--sp-3) var(--inset);
-  background: color-mix(in srgb, var(--paper) 94%, var(--panel));
+  background: var(--chrome);
   backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--rule-2);
 }
@@ -690,10 +690,10 @@ table.grid.pm input:disabled { opacity: .45; }
 .calculation-tabs { display: flex; gap: var(--sp-1); padding: 0 var(--inset); overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--rule); position: sticky; top: 0; background: var(--panel); z-index: 2; }
 .solve-sticky {
   position: sticky; top: 0; z-index: 10;
-  background: color-mix(in srgb, var(--paper) 94%, var(--panel)); backdrop-filter: blur(6px);
+  background: var(--chrome); backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--rule);
 }
-.solve-sticky .calculation-tabs { position: static; padding-top: 0; }
+.solve-sticky .calculation-tabs { position: static; padding-top: 0; background: inherit; }
 .solve-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-3) var(--inset); }
 .solve-actions button.primary { order: 5; margin-left: auto; padding-left: 16px; padding-right: 16px; }
 .method-instructions,.method-warning { margin: 0; padding: 0 var(--inset) var(--sp-3); }
@@ -794,7 +794,7 @@ button.sgt-set { padding: 1px 8px; font-size: var(--fs-sm); font-family: var(--f
   position: sticky;
   top: 0;
   z-index: 2;
-  background: color-mix(in srgb, var(--paper) 94%, var(--panel));
+  background: var(--chrome);
   backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--rule);
 }
@@ -806,9 +806,6 @@ button.sgt-set { padding: 1px 8px; font-size: var(--fs-sm); font-family: var(--f
 .dataset-card h1 { font-size: var(--fs-h); margin: 0 0 10px; }
 .dataset-card h2 { font-size: var(--fs-xl); margin: 0 0 10px; }
 .dataset-card .buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
-.ds-table { max-height: 480px; overflow: auto; margin-top: 12px; }
-.ds-table thead { position: sticky; top: 0; z-index: 1; background: var(--panel); }
-.ds-table input[data-dataset-name] { width: 175px; }
 /* the running panel: one place, one look, one Stop for every calculation */
 .busy-guard { position: fixed; top: 46px; left: 50%; transform: translateX(-50%); z-index: 50000; width: min(560px, calc(100vw - 32px)); cursor: wait; }
 .busy-guard .busy-card { padding: var(--sp-3) var(--sp-4); border: 1px solid var(--rule); border-left: 5px solid var(--blue); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow-pop); }
@@ -1016,7 +1013,7 @@ select:has( > option.sg-std:checked) option:not(.sg-std) { font-weight: 400; }
 }
 .fit-selection .ds-list { max-height: 240px; min-height: 0; }
 .fit-results-pane.on { display: block; overflow: auto; background: var(--paper); }
-.result-runbar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; padding: var(--sp-3) var(--inset); border-bottom: 1px solid var(--rule); background: var(--panel); }
+.result-runbar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; padding: var(--sp-3) var(--inset); border-bottom: 1px solid var(--rule); background: var(--chrome); }
 .result-runbar label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 150px; }
 .result-runbar select { width: 100%; min-width: 0; }
 .fit-results-pane .result-state { margin: 0; }
@@ -1024,7 +1021,7 @@ select:has( > option.sg-std:checked) option:not(.sg-std) { font-weight: 400; }
 .history-picker { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
 .history-picker select { flex: 1; min-width: 0; }
 .structure-results-pane.on { display: block; overflow: auto; }
-.structure-result-tabs { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-3) var(--inset); border-bottom: 1px solid var(--rule); }
+.structure-result-tabs { background: var(--chrome); display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-3) var(--inset); border-bottom: 1px solid var(--rule); }
 .structure-result-tabs [aria-selected="true"] { background: var(--blue-tint); border-color: var(--blue); }
 .structure-result-body { padding: var(--sp-4) var(--inset); }
 

@@ -87,7 +87,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <div class="layout">
 <nav class="toc" aria-label="Contents">
   <a class="brand" href="#top"><svg viewBox="0 0 26 20" aria-hidden="true"><path d="M1 17.5h5.2l1.6-2.2 1.2 2.2h3.4l1.3-14.2 1.5 14.2h2.6l1.3-6.6 1.1 6.6H25" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Powder 6</a>
-  <p class="ver">Version 2.22.7 · 24 October 2026</p>
+  <p class="ver">Version 2.24.0 · 24 October 2026</p>
   <ol>
     <li><a href="#overview">Overview</a></li>
     <li><a href="#start">Getting started</a>
@@ -1021,7 +1021,10 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
 
 <section id="corrections">
 <h2>Recent changes</h2>
-<p>Version 2.22.0, 24 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
+<p>The Datasets accordion now contains selection, Individual / Global mode and Fit selected datasets. Edit beside each dataset changes its name and colour; automatic theme colours can be restored. The separate Selection and batch section and duplicate table have been removed.</p>
+<p>Dataset and phase palettes use more distinct early hues. Active and fixed background anchors, axes and background curves have stronger contrast in both themes.</p>
+<p>Wyckoff MCMC now mixes single free-site proposals (75%) with collective proposals (25%). Each site retains its full symmetry orbit. Command action headers and result selectors use a consistent theme-aware background.</p>
+<p>Version 2.24.0, 24 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 <ul>
   <li>Le Bail keeps to Maximum iterations for the whole fit (it ran up to twice as many). Phases has Starting model → datasets… and Dataset → starting model… to carry the cell and atoms between the phase and its datasets, and a Structure block with the picture and distances of the starting model or a dataset’s model. Find higher symmetry converts at once with Convert. The Wyckoff search writes a summary to the Log (the whole log is in History). File → Read project….</li>
   <li>Charge flipping imposes the space-group phase relation with the sign of its own Fourier convention, so the map obeys the group as written (it obeyed the inverted group before, and only the hand search put it right). Datasets take anomalous f′, f″ per element for the Rietveld structure factors. The SL/HL asymmetry is included in the peak area; transparency estimates carry the physical (negative) sign; the WPPF intensity solve no longer breaks down on nearly coincident or range-truncated reflections (it used to return zeros silently), and a failure is reported; the displacement moves at most about 0.1° per iteration.</li>
