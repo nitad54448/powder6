@@ -14,7 +14,7 @@ RV.workspace=(function(){
   // inspect are the same picture), and only on the Plots tab.
   function syncPlotSelection(){var bar=$('#plot-selection');if(bar)bar.hidden=!(RV.layout && RV.layout.resultTab()==='pattern') || St.selected().length<2;}
   function focusSelect(){syncPlotSelection();var list=St.selected(),first=St.first(),options=list.map(function(d){return '<option value="'+d.id+'"'+(first && first.id===d.id?' selected':'')+'>'+esc(d.name)+'</option>';}).join('');$('#inspect-dataset').innerHTML=options;$('#plot-mode').value=S.settings.plotMode;$('#plot-selection-note').textContent=list.length+' dataset(s) selected for fit and plots'+(first?' · inspecting '+first.name:'');}
-  function renderScopes(){document.querySelectorAll('.dataset-scope').forEach(function(h){h.innerHTML=scopesHTML();});}
+  function renderScopes(){document.querySelectorAll('.dataset-scope').forEach(function(h){h.innerHTML=scopesHTML();h.hidden=S.datasets.length<9;});}
   function editAnchorX(el){
     var d=dataset(),k=+el.dataset.anchorX,x=ui.parseNum(el.value),message='';
     if(!d || d.inst.bkgType!=='spline' || k>=d.inst.bkgX.length)return;

@@ -2,6 +2,10 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.22.4 — 24 October 2026
+
+1. **Dataset list controls.** Hide the Fit / plot datasets selector and Delete selected button with fewer than nine datasets, matching the Find field. Individual selection checkboxes and row remove buttons remain available.
+
 ## 2.22.3 — 24 October 2026
 
 1. **Datasets layout.** Datasets, the coloured active dataset name, and Selection and batch are accordions without white outer cards. The active dataset name appears only in the accordion heading; use the Datasets list to switch patterns. Each list row has a remove icon matching the phase remove controls, with confirmation and undo.
