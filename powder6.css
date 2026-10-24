@@ -800,6 +800,9 @@ button.sgt-set { padding: 1px 8px; font-size: var(--fs-sm); font-family: var(--f
 }
 .fit-selection { margin: var(--sp-3) var(--inset); }
 .dataset-card { margin: var(--sp-3) var(--inset); padding: var(--sp-4); }
+.dataset-accordion { background: transparent; border: 0; border-radius: 0; border-bottom: 1px solid var(--rule); padding: 0; }
+.dataset-accordion > summary { padding-left: 0; padding-right: 0; }
+.dataset-accordion > .acc-body { padding-left: 0; padding-right: 0; }
 .dataset-card h1 { font-size: var(--fs-h); margin: 0 0 10px; }
 .dataset-card h2 { font-size: var(--fs-xl); margin: 0 0 10px; }
 .dataset-card .buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }

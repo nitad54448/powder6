@@ -1112,12 +1112,14 @@ RV.cmd = (function () {
     }
   }
 
-  async function deleteDatasets() {
-    if (!idle() || !haveSel()) return;
-    var n = S.sel.size;
-    if (!(await ui.confirm('Delete ' + plural(n, 'selected dataset') + '? Undo brings them back.', 'Delete', true, 'Delete datasets'))) return;
+  async function deleteDatasets(id) {
+    if (!idle()) return;
+    var ids=typeof id==='number'?(St.byId(id)?[id]:[]):Array.from(S.sel),n=ids.length;
+    if(!n)return;
+    if (!(await ui.confirm('Delete ' + (typeof id==='number'?St.byId(id).name:plural(n, 'selected dataset')) + '? Undo brings them back.', 'Delete', true, 'Delete datasets'))) return;
     snapshot('deleting ' + plural(n, 'dataset'));
-    St.removeDatasets(Array.from(S.sel));
+    if(!idle())return;
+    St.removeDatasets(ids);
     ui.toast('Deleted ' + plural(n, 'dataset') + '.', 'info');
   }
   function estimate() {

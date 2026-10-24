@@ -10,7 +10,7 @@ RV.panels = (function () {
   // ================================================================ Datasets
   function dsRow(d) {
     var on = S.sel.has(d.id);
-    return '<div class="ds'+(on?' on':'')+'" data-id="'+d.id+'" style="--dataset-color:'+RV.plots.colorVar(d)+'" draggable="true" role="option" aria-selected="'+on+'"><input type="checkbox" data-dataset-check="'+d.id+'" aria-label="Include '+esc(d.name)+' in plots and fit"'+(on?' checked':'')+'><span class="nm" title="'+esc(d.name)+'">'+esc(d.name)+'</span></div>';
+    return '<div class="ds'+(on?' on':'')+'" data-id="'+d.id+'" style="--dataset-color:'+RV.plots.colorVar(d)+'" draggable="true" role="option" aria-selected="'+on+'"><input type="checkbox" data-dataset-check="'+d.id+'" aria-label="Include '+esc(d.name)+' in plots and fit"'+(on?' checked':'')+'><span class="nm" title="'+esc(d.name)+'">'+esc(d.name)+'</span><button type="button" class="icon-btn" data-remove-dataset="'+d.id+'" aria-label="Remove dataset '+esc(d.name)+'" title="Remove dataset '+esc(d.name)+'"'+(S.busy?' disabled':'')+'>✕</button></div>';
   }
   function renderDatasets() {
     if (!S.datasets.length) {
@@ -26,6 +26,7 @@ RV.panels = (function () {
       if (!id) return;
       var on = S.sel.has(id);
       if (r.classList.contains('on') !== on) { r.classList.toggle('on', on); r.setAttribute('aria-selected', String(on)); }
+      var remove=r.querySelector('[data-remove-dataset]');if(remove)remove.disabled=!!S.busy;
       var cb=r.querySelector('[data-dataset-check]');if(cb)cb.checked=on;
     });
     countDatasets(); renderInfo();
@@ -37,7 +38,7 @@ RV.panels = (function () {
     if (!d) { host.innerHTML = ''; return; }
     var i = d.inst, pol = i.radiation === 'neutron' ? 'neutrons' : { tube: 'X-rays, no monochromator', mono: 'X-rays, monochromator at 2θ = ' + i.monoTth + '°', sync: 'synchrotron, polarised fraction ' + i.polFrac, none: 'X-rays, no polarisation correction' }[i.pol];
     var pts = St.fitPoints(d), nFit = pts.tth.length - pts.nExcluded;
-    host.innerHTML = '<p class="hint">Properties of <b>'+esc(d.name)+'</b>; setup actions default to this dataset.</p><dl><dt>λ</dt><dd>' + i.lambda1 + (i.ratio > 0 && i.lambda2 > 0 ? ' and ' + i.lambda2 + ' Å, ratio ' + i.ratio : ' Å') + (i.anode && St.ANODES[i.anode] && Math.abs(St.ANODES[i.anode][0] - i.lambda1) < 1e-6 ? ' (' + i.anode + ')' : '') + '</dd>' +
+    host.innerHTML = '<dl><dt>λ</dt><dd>' + i.lambda1 + (i.ratio > 0 && i.lambda2 > 0 ? ' and ' + i.lambda2 + ' Å, ratio ' + i.ratio : ' Å') + (i.anode && St.ANODES[i.anode] && Math.abs(St.ANODES[i.anode][0] - i.lambda1) < 1e-6 ? ' (' + i.anode + ')' : '') + '</dd>' +
       '<dt>Beam</dt><dd>' + esc(pol) + '</dd>' +
       '<dt>Fitted</dt><dd>' + i.tthMin.toFixed(2) + '–' + i.tthMax.toFixed(2) + '°, ' + nFit + ' of ' + d.tth.length + ' points' + (d.step ? ', step ' + (+d.step.toPrecision(3)) + '°' : '') + '</dd>' +
       '<dt>Background</dt><dd>' + (i.bkgType === 'spline' ? 'spline through ' + plural(i.bkgX.length, 'anchor') : plural(i.bkgN, 'Chebyshev term')) + '</dd>' +
@@ -78,14 +79,16 @@ RV.panels = (function () {
     dsList = $('#ds-list');
     dsList.addEventListener('click', function (e) {
       if (e.target.closest('[data-act="demo"]')) { RV.cmd.demo(); return; }
+      var remove=e.target.closest('[data-remove-dataset]');if(remove){e.stopPropagation();if(!S.busy)RV.cmd.deleteDatasets(+remove.dataset.removeDataset);return;}
       var row = e.target.closest('.ds');
       if (!row) return;
       var id = +row.getAttribute('data-id');
       cursor = id;
       if(e.target.matches('[data-dataset-check]'))St.toggle(id);else if (e.shiftKey) St.range(id); else if (e.ctrlKey || e.metaKey) St.toggle(id); else if(S.sel.has(id))St.setFocus(id);else St.selectIds([id]);
     });
-    dsList.addEventListener('dblclick', function (e) { var row = e.target.closest('.ds'); if (row) renameDs(+row.getAttribute('data-id')); });
+    dsList.addEventListener('dblclick', function (e) { if(e.target.closest('button'))return;var row = e.target.closest('.ds'); if (row) renameDs(+row.getAttribute('data-id')); });
     dsList.addEventListener('keydown', function (e) {
+      if(e.target.closest('button'))return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); St.selectAll(); }
       else if (e.key === 'Delete') { e.preventDefault(); RV.cmd.deleteDatasets(); }
       else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); moveSel(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey); }
@@ -120,7 +123,7 @@ RV.panels = (function () {
     RV.bus.on('datasetFocus', renderInfo);
     RV.bus.on('stats', renderDatasets);
     RV.bus.on('data', renderDatasets);
-    RV.bus.on('busy', renderInfo);
+    RV.bus.on('busy', function(){renderInfo();updateSel();});
     renderDatasets();
   }
 
