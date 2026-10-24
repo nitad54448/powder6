@@ -142,11 +142,11 @@
     $('#busy-cancel').addEventListener('click',function(){RV.cmd.stop();});
     function guard(e) {
       if(!S.busy)return;
+      if(e.type==='keydown' && e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();RV.cmd.stop();return;}
       var stop=e.target && e.target.closest && e.target.closest('#busy-cancel');
       if(stop)return;
       var inspect=e.target && e.target.closest && e.target.closest('#pat-host,#diff-host,#plot-selection,#dataset-tabs,#result-run-select,#structure-run-select,[data-structure-result],#side-grip,#swap-panels,#btn-about,#pane-about,.panel-tabs');
       if(inspect)return;
-      if(e.type==='keydown' && e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();RV.cmd.stop();return;}
       e.preventDefault();e.stopImmediatePropagation();
     }
     // Inert handles keyboard focus; the capture guard also covers dialogs,

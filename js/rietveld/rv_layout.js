@@ -67,6 +67,14 @@ RV.layout=(function(){
     $('#pane-solve').addEventListener('click',function(e){var b=e.target.closest('[data-run-action]');if(!b)return;var r=record();try{if(b.dataset.runAction==='history'){if(r)RV.fitHistory.inspect(r.id);RV.app.showTab('history');return;}if(!r)return;if(b.dataset.runAction==='restore'){RV.fitHistory.restore(r.id);RV.app.calculation(r.method,true);}else if(b.dataset.runAction==='keep')RV.fitHistory.keep(r.id,!r.pinned);}catch(x){RV.ui.toast(x.message,'warn');}});
     $('#swap-panels').addEventListener('click',function(){swap();});
     document.querySelectorAll('[data-structure-result]').forEach(function(b){b.addEventListener('click',function(){structureResult(b.dataset.structureResult);});});
+    $('.structure-result-tabs').addEventListener('keydown',function(e){
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
+      var tabs=Array.from(this.querySelectorAll('[data-structure-result]')),i=tabs.indexOf(document.activeElement);
+      if(i<0)return;
+      e.preventDefault();
+      var j=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
+      tabs[j].focus();structureResult(tabs[j].dataset.structureResult);
+    });
     $('#structure-run-select').addEventListener('change',function(){structureRuns[structure]=this.value==='latest'?null:this.value;RV.solve.renderSelectedSolution(structure,structureRuns[structure]);});
     RV.bus.on('fitHistory',function(){syncRunPicker();syncStructure();});
     ['selection','datasets','params','busy','calculation'].forEach(function(ev){RV.bus.on(ev,syncRunPicker);});

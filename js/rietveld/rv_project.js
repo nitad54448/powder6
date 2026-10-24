@@ -36,7 +36,10 @@ RV.project = (function(){
         if(!plain(field) || typeof field.path!=='string' || !Number.isSafeInteger(field.length) || field.length<0 || field.length*8>LIMITS.column)throw new Error('Invalid observation column.');
         var file=zip.file(field.path);if(!file)throw new Error('Missing observation column '+field.path);var declared=declaredSize(file);if(declared!==null && declared!==field.length*8)throw new Error('Observation column length mismatch.');
         var array=values(await file.async('uint8array'));if(array.length!==field.length)throw new Error('Observation column length mismatch.');raw[c]=array;}
-      if(!raw.tth || !raw.y || raw.tth.length!==raw.y.length)throw new Error('Invalid powder observations.');pool[row.key]=raw;}
+      if(!raw.tth || !raw.y || raw.tth.length!==raw.y.length)throw new Error('Invalid powder observations.');
+      if(raw.sig && raw.sig.length!==raw.tth.length)throw new Error('Observation uncertainty length mismatch.');
+      if(raw.weights && raw.weights.length!==raw.tth.length)throw new Error('Observation weights length mismatch.');
+      pool[row.key]=raw;}
     doc.datasets.forEach(function(d){var raw=plain(d) && typeof d.dataKey==='string'?pool[d.dataKey]:null;if(!raw)throw new Error('Missing observations for '+(plain(d) && d.name || 'a dataset'));columns.forEach(function(c){d[c]=raw[c] || null;});});
     if(doc.fitHistory)doc.fitHistory.observations=Object.values(pool).map(function(raw){var o={key:raw.key};columns.forEach(function(c){o[c]=raw[c] || null;});return o;});
     return doc;
