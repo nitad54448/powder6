@@ -1234,3 +1234,44 @@ test('dataset colours survive projects, undo and retained calculations', () => {
   a.state.commitProject(a.state.prepareProject(doc));
   assert.equal(a.S.datasets[0].color,null);
 });
+
+
+test('GSAS header count mismatch imports complete points with a visible warning and no padding', async () => {
+  const a=app(),pairs=Array.from({length:9568},(_,i)=>[142.5+i%5,17]);
+  const rows=[];for(let i=0;i<pairs.length;i+=5)rows.push(pairs.slice(i,i+5).flat().map(v=>v.toFixed(1).padStart(8)).join(''));
+  const text='Instrument parameter      bl04.prm\nBANK 1 9570 1914 CONST 0.300 0.300 0.0 0.0 ESD\n'+rows.join('\n');
+  await a.context.RV.cmd.readFiles([file('sfmo_x3_373.gsa',text)]);
+  assert.equal(a.S.datasets.length,1);const d=a.S.datasets[0];
+  assert.equal(d.tth.length,9568);assert.equal(d.y.length,9568);assert.equal(d.sig.length,9568);
+  assert.equal(d.y[0],142.5);assert.equal(d.sig[9567],17);
+  assert.ok(Math.abs(d.tth[9567]-(.003+9567*.003))<1e-9);
+  assert.ok(a.messages.some(m=>m.kind==='warn' && /9570.*9568/.test(m.message)));
+  assert.throws(()=>a.run("detectAndParseFile('bad.gsa','BANK 1 10 2 CONST 1 1 0 0 ESD\\n100 2 400')"),/Invalid intensity/);
+  assert.throws(()=>a.run("detectAndParseFile('empty.gsa','BANK 1 10 2 CONST 1 1 0 0 ESD\\n')"),/at least two/);
+});
+
+
+test('Philips UDF RawScan imports packed counts and wavelengths from the supplied fixture', async () => {
+  const a=app(),text=read('test_files/sfmo_x3_299.udf');
+  const p=a.run('detectAndParseFile("sample.udf",'+JSON.stringify(text)+')');
+  assert.equal(p.tth.length,9574);assert.equal(p.intensity.length,9574);
+  assert.deepEqual(Array.from(p.intensity.slice(0,8)),[239,288,232,253,260,240,251,263]);
+  assert.deepEqual(Array.from(p.intensity.slice(-6)),[259,237,263,254,250,264]);
+  assert.equal(p.tth[0],20.00718);assert.ok(Math.abs(p.tth[9573]-99.9953388)<1e-8);
+  assert.equal(p.wavelength,1.54060);assert.equal(p.wavelength2,1.54443);assert.equal(p.ratio21,.5);
+  assert.equal(p.warnings.length,0);
+  await a.context.RV.cmd.readFiles([file('sfmo_x3_299.udf',text)]);
+  const d=a.S.datasets[0];assert.equal(d.y.length,9574);assert.equal(d.inst.lambda1,1.54060);assert.equal(d.inst.lambda2,1.54443);assert.equal(d.inst.ratio,.5);
+  assert.ok(!a.messages.some(m=>m.kind==='warn' && /DataAngleRange/.test(m.message)));
+  const mismatch=a.run('detectAndParseFile("mismatch.udf",'+JSON.stringify(text.replace('99.99567','100.99567'))+')');
+  assert.equal(mismatch.intensity.length,9574);assert.ok(mismatch.warnings.some(w=>/DataAngleRange/.test(w)));
+});
+
+test('Philips UDF retains sectioned XY support and rejects malformed RawScan instead of guessing XY', () => {
+  const a=app();
+  const p=a.run("detectAndParseFile('section.udf','Lambda=1.2\\n[Data]\\n10,100\\n11,200')");
+  assert.deepEqual(Array.from(p.tth),[10,11]);assert.deepEqual(Array.from(p.intensity),[100,200]);
+  assert.throws(()=>a.run("detectAndParseFile('bad.udf','DataAngleRange,10,11,/\\nScanStepSize,0.1,/\\nRawScan\\n100,bad,200,/')"),/invalid intensity/);
+  assert.throws(()=>a.run("detectAndParseFile('bad.udf','RawScan\\n100,200,/')"),/DataAngleRange/);
+  assert.throws(()=>a.run("detectAndParseFile('bad.udf','10 100\\n11 200')"),/No \[Data\] section/);
+});

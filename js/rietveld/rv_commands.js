@@ -151,13 +151,14 @@ RV.cmd = (function () {
     return inst;
   }
   async function readData(items, importedPhases) {
-    var raws = [], failed = 0;
+    var raws = [], failed = 0, warnings = [];
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
       try {
         var parsed = await detectAndParseBuffer(it.name, it.buf), patterns = parsed.patterns || [parsed], fileRaws = [];
         patterns.forEach(function (pattern) {
           var pd = normalizeParsedData(pattern, it.name);
+          (pd.warnings || []).forEach(function(warning){warnings.push(it.name+': '+warning);});
           var raw = { name: baseName(it.name) + (patterns.length > 1 ? ' / ' + pd.blockName : ''), tth: pd.tth, y: pd.intensity, sig: pd.sig, weights: pd.weights, inst: instFromFile(pd) };
           if (pd.phaseBlockIds) raw.phases = pd.phaseBlockIds.map(function (blockName) {
             var found = (importedPhases || []).filter(function (p) { return p.source === it.source && p.blockName === blockName; })[0];
@@ -173,10 +174,12 @@ RV.cmd = (function () {
     if (!raws.length) return;
     snapshot('reading ' + plural(raws.length, 'file'));
     var made = St.addDatasets(raws);
+    if(RV.app)RV.app.showTab('pattern');
     var pts = made.reduce(function (a, d) { return a + d.tth.length; }, 0), wl = made.filter(function (d) { return raws[made.indexOf(d)].inst.lambda1; }).length;
     ui.toast('Read ' + plural(made.length, 'dataset') + ' (' + pts + ' points): ' + made.slice(0, 3).map(function (d) { return d.name; }).join(', ') + (made.length > 3 ? ' …' : '') + '. ' +
       (wl ? 'Wavelength from the file' + (wl < made.length ? ' for ' + wl + ' of them' : '') + '. ' : 'No wavelength in the file: ' + made[0].inst.lambda1 + ' Å assumed (Data, Instrument and range). ') +
       (S.phases.length ? 'Scales estimated.' : 'Next: read a structure CIF.'), failed ? 'warn' : 'ok');
+    warnings.forEach(function(warning){ui.toast(warning,'warn');});
   }
   function phaseFromCif(text, fileName) {
     if (!window.CifStructure) throw new Error('the CIF reader (js/cif_structure.js) is not loaded');

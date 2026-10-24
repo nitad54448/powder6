@@ -273,6 +273,7 @@ const detectAndParseBuffer = async (fileName, buffer) => {
                 },
                 { // Philips UDF/RD/SD
                     test: (name) => name.endsWith('.udf') || name.endsWith('.rd') || name.endsWith('.sd'),
+                    fatal: () => true,
                     parser: parsePhilipsUdfFile
                 },
                 { // GSAS ESD/XRA
@@ -541,16 +542,50 @@ const detectAndParseBuffer = async (fileName, buffer) => {
                     }
                 }
             }
-            if (intensity.length !== count) {
-                throw new Error(`GSAS Parse Error: BANK declares ${count} channels, but only ${intensity.length} were read.`);
+            if (intensity.length < 2) {
+                throw new Error(`GSAS Parse Error: BANK declares ${count} channels, but only ${intensity.length} were read; at least two complete points are required.`);
             }
+            // Retain measured records when the header count exceeds the data.
+            // Never pad missing intensities or uncertainties to the declared size.
+            const warnings = intensity.length !== count ?
+                [`GSAS BANK declares ${count} channels, but ${intensity.length} complete points were read. Imported only those points, without padding. Check whether the file is incomplete or its header count is incorrect.`] : [];
             return {
-                tth: type === 'FXYE' ? tth : Array.from({ length: count }, (_, i) => start + i * step),
-                intensity, wavelength, sig: type === 'STD' ? null : sig
+                tth: type === 'FXYE' ? tth : Array.from({ length: intensity.length }, (_, i) => start + i * step),
+                intensity, wavelength, sig: type === 'STD' ? null : sig, warnings
             };
         };
         const parseGsasEsdFile = (text) => parseGsasBankFile(text, 'ESD');
         const parseGsasXraFile = (text) => parseGsasBankFile(text, 'STD');
 
         const parseUxdFile = (text) => { const lines = text.trim().split(/\r?\n/); const intensity = []; let startTth, stepSize, wavelength; let inDataSection = false; for (const line of lines) { const trimmedLine = line.trim(); if (inDataSection) { const parts = trimmedLine.split(/\s+/); parts.forEach(part => { const val = parseFloat(part); if (!isNaN(val)) intensity.push(val); }); } else { if (trimmedLine.toUpperCase().startsWith('_START=')) startTth = parseFloat(trimmedLine.substring(7)); else if (trimmedLine.toUpperCase().startsWith('_STEPSIZE=')) stepSize = parseFloat(trimmedLine.substring(10)); else if (trimmedLine.toUpperCase().startsWith('_WL1=')) wavelength = parseFloat(trimmedLine.substring(5)); else if (trimmedLine.toUpperCase() === '_COUNTS') inDataSection = true; } } if (!isFinite(startTth) || !isFinite(stepSize) || stepSize === 0) throw new Error("Could not find valid _START and _STEPSIZE in UXD file."); if (intensity.length === 0) throw new Error("No intensity data found after _COUNTS in UXD file."); const tth = Array.from({ length: intensity.length }, (_, i) => startTth + i * stepSize); return { tth, intensity, wavelength }; };
-        const parsePhilipsUdfFile = (text) => { const lines = text.trim().split(/\r?\n/); const tth = [], intensity = []; let inDataSection = false; let wavelength = null; for (const line of lines) { const trimmedLine = line.trim(); if (trimmedLine.toUpperCase().startsWith('LAMBDA')) { const parts = trimmedLine.split('='); if (parts.length > 1) wavelength = parseFloat(parts[1]); } if (trimmedLine.toUpperCase() === '[DATA]') { inDataSection = true; continue; } if (trimmedLine.startsWith('[') && trimmedLine.toUpperCase() !== '[DATA]') inDataSection = false; if (inDataSection) { const parts = trimmedLine.split(/,/).map(p => p.trim()); if(parts.length >= 2) { const x = parseFloat(parts[0]); const y = parseFloat(parts[1]); if (!isNaN(x) && !isNaN(y)) { tth.push(x); intensity.push(y); } } } } if (tth.length === 0) throw new Error("No [Data] section found in UDF file."); return { tth, intensity, wavelength }; };
+        const parsePhilipsRawScan = (text) => {
+            const lines = text.split(/\r?\n/), header = {};
+            const first = lines.findIndex(line => /^RawScan\s*$/i.test(line.trim()));
+            for (const line of lines.slice(0, first)) {
+                const fields = line.split(',').map(v => v.trim());
+                header[fields[0].toLowerCase()] = fields.slice(1).filter(v => v && v !== '/');
+            }
+            const number = key => Number((header[key] || [])[0]);
+            const range = header.dataanglerange || [], start = Number(range[0]), end = Number(range[1]), step = number('scanstepsize');
+            if (!Number.isFinite(start) || !Number.isFinite(step) || step === 0) throw new Error('UDF RawScan requires a numeric DataAngleRange start and nonzero ScanStepSize.');
+            const intensity = [], numeric = /^[+\-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+\-]?\d+)?$/;
+            let finished = false;
+            for (const line of lines.slice(first + 1)) {
+                const slash = line.indexOf('/'), record = slash < 0 ? line : line.slice(0, slash);
+                for (const field of record.trim().split(/[\s,]+/).filter(Boolean)) {
+                    if (!numeric.test(field) || !Number.isFinite(Number(field))) throw new Error('UDF RawScan contains an invalid intensity: ' + field);
+                    intensity.push(Number(field));
+                }
+                if (slash >= 0) { finished = true; break; }
+            }
+            if (intensity.length < 2) throw new Error('UDF RawScan contains fewer than two intensity points.');
+            const tth = intensity.map((_, i) => start + i * step), warnings = [];
+            if (Number.isFinite(end) && Math.abs(tth[tth.length - 1] - end) > Math.max(Math.abs(step) / 2, 1e-5)) {
+                warnings.push('UDF DataAngleRange ends at ' + end + ' degrees, but ' + intensity.length + ' intensities with ScanStepSize ' + step + ' end at ' + tth[tth.length - 1].toFixed(7) + ' degrees. Kept all measured points with the stated step; check the header range.');
+            }
+            if (!finished) warnings.push('UDF RawScan has no closing / marker; loaded the available complete numeric points. Check whether the file is incomplete.');
+            const wavelength = number('labdaalpha1'), wavelength2 = number('labdaalpha2'), ratio21 = number('ratioalpha21');
+            return { tth, intensity, wavelength: wavelength > 0 ? wavelength : null,
+                     wavelength2: wavelength2 > 0 ? wavelength2 : null, ratio21: Number.isFinite(ratio21) && ratio21 >= 0 ? ratio21 : null, warnings };
+        };
+        const parsePhilipsUdfFile = (text) => { if (/^\s*RawScan\s*$/im.test(text)) return parsePhilipsRawScan(text); const lines = text.trim().split(/\r?\n/); const tth = [], intensity = []; let inDataSection = false; let wavelength = null; for (const line of lines) { const trimmedLine = line.trim(); if (trimmedLine.toUpperCase().startsWith('LAMBDA')) { const parts = trimmedLine.split('='); if (parts.length > 1) wavelength = parseFloat(parts[1]); } if (trimmedLine.toUpperCase() === '[DATA]') { inDataSection = true; continue; } if (trimmedLine.startsWith('[') && trimmedLine.toUpperCase() !== '[DATA]') inDataSection = false; if (inDataSection) { const parts = trimmedLine.split(/,/).map(p => p.trim()); if(parts.length >= 2) { const x = parseFloat(parts[0]); const y = parseFloat(parts[1]); if (!isNaN(x) && !isNaN(y)) { tth.push(x); intensity.push(y); } } } } if (tth.length === 0) throw new Error("No [Data] section found in UDF file."); return { tth, intensity, wavelength }; };

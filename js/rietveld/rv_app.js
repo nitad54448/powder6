@@ -199,7 +199,8 @@
 
   // ---------------------------------------------------------------- pattern toolbar
   function syncToolbar() {
-    document.querySelectorAll('[data-yscale]').forEach(function (b) { var k=b.getAttribute('data-yscale');b.setAttribute('aria-pressed',String(k === (S.settings.noBackground ? 'lin' : S.settings.yscale)));b.disabled=!!S.settings.noBackground && k!=='lin'; });
+    var subtract=RV.plots.backgroundSubtracted();
+    document.querySelectorAll('[data-yscale]').forEach(function (b) { var k=b.getAttribute('data-yscale');b.setAttribute('aria-pressed',String(k === (subtract ? 'lin' : S.settings.yscale)));b.disabled=subtract && k!=='lin'; });
     $('#show-anchors').checked=!!S.settings.showAnchors;$('#no-background').checked = !!S.settings.noBackground; $('#show-bkg').checked = !!S.settings.showBkg; $('#show-phases').checked = !!S.settings.showPhases; $('#show-ticks').checked = !!S.settings.showTicks;
   }
 

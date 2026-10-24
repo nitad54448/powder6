@@ -2,6 +2,18 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.24.8 — 24 October 2026
+
+1. **Philips UDF RawScan.** Read packed intensity rows using DataAngleRange and ScanStepSize, with LabdaAlpha1/2 and RatioAlpha21 metadata. Preserve all complete points and warn when the stated endpoint disagrees or the closing marker is missing. Recognized UDF/RD/SD files no longer fall back to interpreting counts as angle/intensity pairs when parsing fails. Regression coverage includes sfmo_x3_299.udf (9,574 points).
+
+## 2.24.7 — 24 October 2026
+
+1. **GSAS channel-count mismatches.** Load complete numeric points when fewer points are present than the BANK header declares, and show a warning with both counts. Do not pad missing intensities or uncertainties. Malformed numeric records, incomplete ESD pairs and fewer than two complete points remain errors.
+
+## 2.24.6 — 24 October 2026
+
+1. **Observed patterns without a phase.** Opening patterns selects the Plots results view. A saved background-subtraction setting no longer hides observed points when a calculated background is unavailable: show raw intensities with an explanatory note and matching axes. Apply subtraction only when all plotted datasets have calculated backgrounds, outside the multi-dataset overview. Phase requirements still apply to refinement.
+
 ## 2.24.5 — 24 October 2026
 
 1. **Automatic WPPF intensity preparation.** Remove the manual Extract intensities button. Structure selects the phase/dataset source and automatically prepares its uncertainty and correlation information after WPPF fitting, including multiphase datasets. Cache prepared sources by dataset and phase, and show availability or the fit prerequisite. Failed preparations do not retry continuously.

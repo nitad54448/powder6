@@ -40,7 +40,7 @@ RV.plots = (function () {
   // ---------------------------------------------------------------- tooltips
   function tipObs(s, i) {
     var ds = s.ds, k = s.idx[i], t = ds.tth[k], yo = ds.y[k], c = RV.state.calcFor(ds);
-    var sub = S.settings.noBackground && c ? '<br>Displayed I − background = '+fmtI(yo-backgroundAt(ds,t)) : '';
+    var sub = backgroundSubtracted() && c ? '<br>Displayed I − background = '+fmtI(yo-backgroundAt(ds,t)) : '';
     var h = '<b>' + esc(ds.name) + '</b>' + (s.out ? ' <i>outside the fitted range</i>' : '') +
             '<br>2θ = ' + t.toFixed(4) + '°, d = ' + dOf(ds, t).toFixed(5) + ' Å<br>I obs = ' + fmtI(yo);
     var j = c && !s.out ? indexIn(c.tth, t) : -1;
@@ -74,8 +74,12 @@ RV.plots = (function () {
       return list.filter(function (ds) { return RV.state.hasPhase(ds, ph) && RV.state.calcFor(ds); })[0] || null;
     });
   }
+  function backgroundSubtracted(list) {
+    list=list || plotted();
+    return !!S.settings.noBackground && !!list.length && !(S.settings.plotMode==='overview' && list.length>1) && list.every(function(ds){return !!RV.state.calcFor(ds);});
+  }
   function build(list) {
-    var T = RV.theme.get(), st = S.settings, main = [], diff = [], one = list.length === 1, named = legendIndices(list.length);
+    var T = RV.theme.get(), st = S.settings, main = [], diff = [], one = list.length === 1, named = legendIndices(list.length), subtract=backgroundSubtracted(list);
     if(st.plotMode==='overview' && list.length>1){
       list.forEach(function(ds,n){var x=[],y=[],step=Math.max(1,Math.ceil(ds.tth.length/700)),lo=Infinity,hi=-Infinity;for(var i=0;i<ds.y.length;i++){lo=Math.min(lo,ds.y[i]);hi=Math.max(hi,ds.y[i]);}for(var i=0;i<ds.tth.length;i+=step){var top=i;for(var j=i+1;j<Math.min(ds.y.length,i+step);j++)if(ds.y[j]>ds.y[top])top=j;x.push(ds.tth[top]);y.push(n+.8*(ds.y[top]-lo)/Math.max(1,hi-lo));}main.push({name:ds.name,group:'ds'+ds.id,x:x,y:y,color:color(ds),mode:'lines',width:1,legend:named.includes(n),ds:ds});});
       return {main:main,diff:diff};
@@ -97,14 +101,14 @@ RV.plots = (function () {
         if (anchors.every(function(a,k){return !k || a.x>anchors[k-1].x;})) background = RVCore.splineValues(c.tth,anchors.map(function(a){return a.x;}),anchors.map(function(a){return a.y;}));
       }
       for (var k = 0; k < ds.tth.length; k++) (ds.tth[k] >= lo && ds.tth[k] <= hi ? inI : outI).push(k);
-      main.push({ name: ds.name, group: 'ds' + ds.id, x: pick(ds.tth, inI), y: Float64Array.from(inI,function(k){return st.noBackground ? c ? ds.y[k]-backgroundAt(ds,ds.tth[k]) : NaN : ds.y[k];}), color: col, mode: 'markers', size: 2.6,
+      main.push({ name: ds.name, group: 'ds' + ds.id, x: pick(ds.tth, inI), y: Float64Array.from(inI,function(k){return subtract ? c ? ds.y[k]-backgroundAt(ds,ds.tth[k]) : NaN : ds.y[k];}), color: col, mode: 'markers', size: 2.6,
                   hover: true, legend: named.indexOf(n)>=0, ds: ds, idx: inI, kind: 'obs' });
-      if (outI.length) main.push({ name: ds.name, group: 'ds' + ds.id, x: pick(ds.tth, outI), y: Float64Array.from(outI,function(k){return st.noBackground ? c ? ds.y[k]-backgroundAt(ds,ds.tth[k]) : NaN : ds.y[k];}), color: col, mode: 'markers',
+      if (outI.length) main.push({ name: ds.name, group: 'ds' + ds.id, x: pick(ds.tth, outI), y: Float64Array.from(outI,function(k){return subtract ? c ? ds.y[k]-backgroundAt(ds,ds.tth[k]) : NaN : ds.y[k];}), color: col, mode: 'markers',
                                    size: 2.6, hollow: true, alpha: 0.5, noAuto: true, hover: true, ds: ds, idx: outI, kind: 'obs', out: true });
       if (!c) return;
-      main.push({ name: 'Calculated', group: 'calc', x: c.tth, y: st.noBackground ? Float64Array.from(c.ycalc,function(y,k){return y-c.bkg[k];}) : preview ? Float64Array.from(c.ycalc,function(y,k){return y-c.bkg[k]+background[k];}) : c.ycalc, color: one ? T.calc : col, mode: 'lines', width: 1.5, legend: n === 0 });
-      if (st.showBkg && !st.noBackground) main.push({ name: 'Background', group: 'bkg', x: c.tth, y: background, color: one ? T.bkg : col, mode: 'lines', width: 1.1, dash: [6, 4], legend: n === 0 });
-      if (st.showAnchors && !st.noBackground && ds.inst.bkgType === 'spline' && ds.inst.bkgX.length) {
+      main.push({ name: 'Calculated', group: 'calc', x: c.tth, y: subtract ? Float64Array.from(c.ycalc,function(y,k){return y-c.bkg[k];}) : preview ? Float64Array.from(c.ycalc,function(y,k){return y-c.bkg[k]+background[k];}) : c.ycalc, color: one ? T.calc : col, mode: 'lines', width: 1.5, legend: n === 0 });
+      if (st.showBkg && !subtract) main.push({ name: 'Background', group: 'bkg', x: c.tth, y: background, color: one ? T.bkg : col, mode: 'lines', width: 1.1, dash: [6, 4], legend: n === 0 });
+      if (st.showAnchors && !subtract && ds.inst.bkgType === 'spline' && ds.inst.bkgX.length) {
         [true,false].forEach(function(fit){
           var ax=[],ay=[],ai=[];
           ds.inst.bkgX.forEach(function(x,k){var v=ds.p['bga'+k];if(!!ds.fit['bga'+k]!==fit || !Number.isFinite(v))return;if(preview && k===anchorDrag.index){x=anchorDrag.x;v=anchorDrag.y;}ax.push(x);ay.push(v);ai.push(k);});
@@ -116,7 +120,7 @@ RV.plots = (function () {
       if(active && active.dsId===ds.id && active.index<ds.inst.bkgX.length){
         var ax=preview?active.x:ds.inst.bkgX[active.index],ay=preview?active.y:ds.p['bga'+active.index];
         main.push({name:'Active background anchor',group:'anchor-edit',x:[ax],y:[0],color:T.anchorActive,mode:'vline',noAuto:true,width:1.5});
-        if(!st.noBackground)main.push({name:'Active background anchor',group:'anchor-edit',x:[ax],y:[ay],color:T.anchorActive,mode:'markers',noAuto:true,size:9,hollow:true,lineWidth:2});
+        if(!subtract)main.push({name:'Active background anchor',group:'anchor-edit',x:[ax],y:[ay],color:T.anchorActive,mode:'markers',noAuto:true,size:9,hollow:true,lineWidth:2});
       }
       S.phases.forEach(function (ph, pi) {
         var part = c.phases[pi];
@@ -124,7 +128,7 @@ RV.plots = (function () {
         var pc = phaseColor(pi), g = 'ph:' + ph.key;
         if (st.showPhases && S.phases.length) {
           var yy = new Float64Array(c.tth.length);
-          for (var q = 0; q < yy.length; q++) yy[q] = (st.noBackground ? 0 : background[q]) + part.y[q];
+          for (var q = 0; q < yy.length; q++) yy[q] = (subtract ? 0 : background[q]) + part.y[q];
           main.push({ name: ph.name, group: g, x: c.tth, y: yy, color: pc, mode: 'lines', width: 1.1, dash: [4, 3], legend: src[pi] === ds });
         }
         if (st.showTicks) {
@@ -143,8 +147,8 @@ RV.plots = (function () {
   function bandPx() { return S.settings.showTicks && S.phases.length ? S.phases.length * 9 + 7 : 0; }
   function yOpts() {
     if(S.settings.plotMode==='overview' && S.sel.size>1)return {ylog:false,ysqrt:false,ylabel:'Dataset index + normalized intensity'};
-    var m = S.settings.yscale; if(S.settings.noBackground && m!=='lin')m='lin';
-    return { ylog: m === 'log', ysqrt: m === 'sqrt', ylabel: S.settings.noBackground ? 'Intensity − background /counts' : m === 'sqrt' ? 'Intensity /counts (√ scale)' : m === 'log' ? 'Intensity /counts (log scale)' : 'Intensity /counts' };
+    var subtract=backgroundSubtracted(),m = S.settings.yscale; if(subtract && m!=='lin')m='lin';
+    return { ylog: m === 'log', ysqrt: m === 'sqrt', ylabel: subtract ? 'Intensity − background /counts' : m === 'sqrt' ? 'Intensity /counts (√ scale)' : m === 'log' ? 'Intensity /counts (log scale)' : 'Intensity /counts' };
   }
 
   function render() {
@@ -153,7 +157,7 @@ RV.plots = (function () {
     var list = plotted(), s = build(list), note = $('#plot-note');
     var anchors=$('#show-anchors'),anchorLabel=anchors.closest('label');
     var anchorWhy=!list.some(function(ds){return ds.inst.bkgType==='spline' && ds.inst.bkgX.length;})?'Anchors are used only by spline backgrounds in the plotted datasets.':
-      S.settings.noBackground?'Anchors are hidden while background subtraction is enabled.':
+      backgroundSubtracted(list)?'Anchors are hidden while background subtraction is enabled.':
       S.settings.plotMode==='overview' && list.length>1?'Choose Overlay or Inspect one dataset to display spline anchors.':'';
     RV.ui.able(anchors,anchorWhy);anchorLabel.classList.toggle('disabled',!!anchorWhy);anchorLabel.title=anchorWhy || 'Show spline background anchors independently of the background curve.';
     var empty = S.datasets.length ? 'Select one or more datasets' : 'No data yet. Use File, drop files on this window, or type demo in the command line below.';
@@ -162,16 +166,18 @@ RV.plots = (function () {
     Object.assign(P.pat.o, yOpts(), { band: bandPx() });
     // Rescale only when WHAT is plotted changes. A new space group, cell, phase or method changes the
     // calculated curves, and the user may be zoomed on the region they are checking.
-    var sig = list.map(function (ds) { return ds.id + ':' + ds.dataKey; }).join(',') + '|' + S.settings.yscale + '|' + !!S.settings.noBackground + '|' + S.settings.plotMode;
+    var sig = list.map(function (ds) { return ds.id + ':' + ds.dataKey; }).join(',') + '|' + S.settings.yscale + '|' + backgroundSubtracted(list) + '|' + S.settings.plotMode;
     if (sig !== plottedSig) { plottedSig = sig; needAuto = true; }
     if (needAuto) { needAuto = false; [P.pat, P.diff].forEach(function (p) { p.auto = true; p.hidden.clear(); }); }
+    var subtract=backgroundSubtracted(list);
+    document.querySelectorAll('[data-yscale]').forEach(function(b){var k=b.getAttribute('data-yscale');b.setAttribute('aria-pressed',String(k===(subtract?'lin':S.settings.yscale)));b.disabled=subtract && k!=='lin';});
     P.pat.resize();
     P.pat.setSeries(s.main, true);
     P.diff.setSeries(s.diff, true);
     if (!P.pat.auto && P.pat.view) P.diff.setXView(P.pat.view.x0, P.pat.view.x1);
     if (note) {
       var bad = list.filter(function (ds) { return !ds.calc && ds.calcErr; })[0], nsel = S.sel.size;
-      note.textContent = bad ? bad.name + ': ' + bad.calcErr : nsel > list.length ? 'Showing ' + list.length + ' of ' + nsel + ' fit datasets · use Overview to see the full selection' :
+      note.textContent = S.settings.noBackground && !subtract && list.length ? 'Showing observed intensities; background subtraction needs a calculated background for every plotted dataset and an overlay or focused view.' : !S.phases.length && list.length ? 'Observed intensities. A phase is needed only to calculate or refine a model.' : bad ? bad.name + ': ' + bad.calcErr : nsel > list.length ? 'Showing ' + list.length + ' of ' + nsel + ' fit datasets · use Overview to see the full selection' :
         list.length > 1 && S.settings.showTicks && S.phases.length ? ticksNote(list) : '';
     }
   }
@@ -257,6 +263,6 @@ RV.plots = (function () {
 
   // the pixel of a 2theta on the pattern plot (NaN before it is drawn)
   function pxOf(x) { return P.pat && P.pat.view ? P.pat.px(x) : NaN; }
-  return { init: init, refresh: refresh, show: show, autoscale: autoscale, exportPNG: exportPNG, redrawAll: redrawAll, plotted: plotted, build: build, legendIndices:legendIndices, backgroundAt:backgroundAt, pxOf: pxOf, anchorAt:anchorAt,
+  return { init: init, refresh: refresh, show: show, autoscale: autoscale, exportPNG: exportPNG, redrawAll: redrawAll, plotted: plotted, build: build, legendIndices:legendIndices, backgroundAt:backgroundAt, backgroundSubtracted:backgroundSubtracted, pxOf: pxOf, anchorAt:anchorAt,
            color: color, colorVar: colorVar, phaseColor: phaseColor, phaseVar: phaseVar, phaseIndex: phaseIndex, _plots: P };
 })();
