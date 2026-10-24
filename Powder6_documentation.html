@@ -5,30 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Powder 6 documentation</title>
+<script src="js/rietveld/rv_theme_startup.js"></script>
 <style>
 :root {
+  color-scheme: light;
+  --switch-thumb: #FFFFFF; --switch-shadow: 0 1px 2px rgba(0, 0, 0, .14);
   --bg: #F6F7F8; --panel: #FFFFFF; --ink: #1B1F23; --ink-2: #3F464D; --ink-3: #5A636B; --rule: #D5DADE; --rule-2: #E6E9EB;
   --blue: #1F5E9C; --blue-tint: #E4ECF4; --code-bg: #EEF1F3; --warn: #8B5D16; --warn-tint: #F6EEDC; --ok: #2F6B45;
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --mono: "Cascadia Mono", ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
 }
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #16181B; --panel: #1E2124; --ink: #E9ECEF; --ink-2: #C9CED3; --ink-3: #A3AAB1; --rule: #3A4045; --rule-2: #2D3236;
   --blue: #8FB6E0; --blue-tint: #26323F; --code-bg: #272B2F; --warn: #DEBB7B; --warn-tint: #3A3223; --ok: #9BC6A4;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #16181B; --panel: #1E2124; --ink: #E9ECEF; --ink-2: #C9CED3; --ink-3: #A3AAB1; --rule: #3A4045; --rule-2: #2D3236;
     --blue: #8FB6E0; --blue-tint: #26323F; --code-bg: #272B2F; --warn: #DEBB7B; --warn-tint: #3A3223; --ok: #9BC6A4;
   }
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 20px; }
+html { scroll-behavior: smooth; scroll-padding-top: 60px; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.62 var(--font); -webkit-font-smoothing: antialiased; }
 a { color: var(--blue); text-underline-offset: 2px; }
 :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 3px; }
-.layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 100vh; }
-nav.toc { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto; padding: 24px 18px 32px 24px; border-right: 1px solid var(--rule); background: var(--panel); }
+.layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: calc(100vh - 40px); }
+nav.toc { position: sticky; top: 40px; align-self: start; height: calc(100vh - 40px); overflow-y: auto; padding: 24px 18px 32px 24px; border-right: 1px solid var(--rule); background: var(--panel); }
 nav.toc .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; font-size: 17px; margin: 0 0 4px; color: var(--ink); text-decoration: none; }
 nav.toc .brand svg { width: 26px; height: 20px; color: var(--blue); }
 nav.toc .ver { color: var(--ink-3); font-size: 13px; margin: 0 0 18px; }
@@ -38,19 +43,24 @@ nav.toc a { display: block; padding: 4px 8px; border-radius: 4px; color: var(--i
 nav.toc a:hover { background: var(--blue-tint); color: var(--ink); }
 nav.toc a.on { background: var(--blue-tint); color: var(--blue); font-weight: 600; }
 nav.toc ol ol a { padding-left: 22px; font-size: 13px; color: var(--ink-3); }
-.theme { margin-top: 18px; padding: 6px 10px; border: 1px solid var(--rule); background: transparent; color: var(--ink-2); border-radius: 4px; font: inherit; font-size: 13px; cursor: pointer; }
-.theme:hover { border-color: var(--blue); color: var(--blue); }
-main { min-width: 0; padding: 44px clamp(20px, 5vw, 72px) 96px; max-width: 980px; }
+.help-toolbar { position: sticky; top: 0; z-index: 3; height: 40px; display: flex; align-items: center; justify-content: flex-end; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--rule); }
+.theme-switch { display: flex; align-items: center; gap: 8px; border: 0; background: none; color: var(--ink-3); padding: 6px 2px; font: 13px var(--font); cursor: pointer; }
+.theme-switch:hover { color: var(--ink); }
+.theme-switch .track { position: relative; width: 30px; height: 16px; border-radius: 8px; background: var(--rule); transition: background .15s; }
+.theme-switch .track i { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--switch-thumb); box-shadow: var(--switch-shadow); transition: left .15s; }
+.theme-switch[aria-checked="true"] .track { background: var(--blue); }
+.theme-switch[aria-checked="true"] .track i { left: 16px; }
+.theme-switch[aria-checked="false"] .mode-light, .theme-switch[aria-checked="true"] .mode-dark { color: var(--ink); font-weight: 600; }
+main { min-width: 0; padding: 44px clamp(20px, 3vw, 48px) 96px; overflow-wrap: anywhere; }
 h1 { font-size: 34px; line-height: 1.15; margin: 0 0 10px; letter-spacing: -0.01em; }
 h2 { font-size: 24px; margin: 56px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); letter-spacing: -0.005em; }
 h3 { font-size: 18px; margin: 30px 0 6px; }
 h4 { font-size: 15px; margin: 22px 0 4px; color: var(--ink-2); }
-p, ul, ol { max-width: 72ch; }
-p.lead { font-size: 19px; line-height: 1.55; color: var(--ink-2); max-width: 62ch; margin: 0 0 14px; }
+p.lead { font-size: 19px; line-height: 1.55; color: var(--ink-2); margin: 0 0 14px; }
 li { margin: 4px 0; }
 code, kbd { font-family: var(--mono); font-size: 0.88em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
 kbd { border: 1px solid var(--rule); border-bottom-width: 2px; background: var(--panel); }
-pre { background: var(--code-bg); padding: 12px 16px; border-radius: 6px; overflow-x: auto; font: 13.5px/1.55 var(--mono); border: 1px solid var(--rule-2); max-width: 80ch; }
+pre { background: var(--code-bg); padding: 12px 16px; border-radius: 6px; overflow-x: auto; font: 13.5px/1.55 var(--mono); border: 1px solid var(--rule-2); }
 pre code { background: none; padding: 0; font-size: inherit; }
 table { border-collapse: collapse; width: 100%; max-width: 100%; margin: 12px 0 18px; font-size: 14.5px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; }
 th, td { text-align: left; vertical-align: top; padding: 7px 12px; border-bottom: 1px solid var(--rule-2); }
@@ -59,13 +69,13 @@ tr:last-child td { border-bottom: 0; }
 td:first-child { white-space: nowrap; }
 td.wrap:first-child, table.wrapfirst td:first-child { white-space: normal; }
 .tablewrap { overflow-x: auto; }
-.note, .warn { padding: 10px 14px; border-left: 3px solid var(--blue); background: var(--blue-tint); border-radius: 0 4px 4px 0; max-width: 72ch; margin: 14px 0; font-size: 15px; }
+.note, .warn { padding: 10px 14px; border-left: 3px solid var(--blue); background: var(--blue-tint); border-radius: 0 4px 4px 0; margin: 14px 0; font-size: 15px; }
 .warn { border-left-color: var(--warn); background: var(--warn-tint); }
 .note b, .warn b { color: var(--ink); }
 .tree { font: 13.5px/1.55 var(--mono); }
 .tag { display: inline-block; font-size: 12px; padding: 0 7px; border-radius: 9px; border: 1px solid var(--rule); color: var(--ink-3); vertical-align: 1px; margin-left: 6px; }
 .tag.opt { color: var(--warn); border-color: var(--warn); }
-dl.defs { display: grid; grid-template-columns: minmax(140px, max-content) minmax(0, 1fr); gap: 6px 22px; max-width: 80ch; }
+dl.defs { display: grid; grid-template-columns: minmax(140px, max-content) minmax(0, 1fr); gap: 6px 22px; }
 dl.defs dt { font-weight: 600; } dl.defs dd { margin: 0; color: var(--ink-2); }
 .menu-btn { display: none; }
 @media (max-width: 860px) {
@@ -74,9 +84,9 @@ dl.defs dt { font-weight: 600; } dl.defs dd { margin: 0; color: var(--ink-2); }
   nav.toc ol ol { display: none; }
   main { padding-top: 28px; }
 }
-@media print { nav.toc, .theme { display: none; } .layout { display: block; } main { max-width: none; padding: 0; } h2 { break-after: avoid; } pre, table { break-inside: avoid; } }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-.eq { font: 14.5px/1.6 var(--mono); background: var(--code-bg); border: 1px solid var(--rule-2); border-radius: 6px; padding: 8px 14px; margin: 10px 0 14px; max-width: 80ch; overflow-x: auto; white-space: pre; }
+@media print { nav.toc, .help-toolbar { display: none; } .layout { display: block; } main { max-width: none; padding: 0; } h2 { break-after: avoid; } pre, table { break-inside: avoid; } }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .theme-switch .track, .theme-switch .track i { transition: none; } }
+.eq { font: 14.5px/1.6 var(--mono); background: var(--code-bg); border: 1px solid var(--rule-2); border-radius: 6px; padding: 8px 14px; margin: 10px 0 14px; overflow-x: auto; white-space: pre; }
 .eq + p, .eq + ul { margin-top: 0; }
 table.tight td, table.tight th { padding: 5px 10px; }
 td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -84,10 +94,13 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 </style>
 </head>
 <body>
+<header class="help-toolbar">
+  <button class="theme-switch" type="button" id="theme" role="switch" aria-label="Dark mode" aria-checked="false"><span class="mode-light" aria-hidden="true">Light</span><span class="track" aria-hidden="true"><i></i></span><span class="mode-dark" aria-hidden="true">Dark</span></button>
+</header>
 <div class="layout">
 <nav class="toc" aria-label="Contents">
   <a class="brand" href="#top"><svg viewBox="0 0 26 20" aria-hidden="true"><path d="M1 17.5h5.2l1.6-2.2 1.2 2.2h3.4l1.3-14.2 1.5 14.2h2.6l1.3-6.6 1.1 6.6H25" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Powder 6</a>
-  <p class="ver">Version 2.24.0 · 24 October 2026</p>
+  <p class="ver">Version 2.24.2 · 24 October 2026</p>
   <ol>
     <li><a href="#overview">Overview</a></li>
     <li><a href="#start">Getting started</a>
@@ -117,7 +130,6 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
     <li><a href="#refs">References</a></li>
     <li><a href="#about">About</a></li>
   </ol>
-  <button class="theme" type="button" id="theme">Switch theme</button>
 </nav>
 
 <main id="top">
@@ -1021,10 +1033,11 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
 
 <section id="corrections">
 <h2>Recent changes</h2>
+<p>The help opens in the same theme as the program, with a Light/Dark slider at the top right, matching the program’s toggle. Text uses the available window width.</p>
 <p>The Datasets accordion now contains selection, Individual / Global mode and Fit selected datasets. Edit beside each dataset changes its name and colour; automatic theme colours can be restored. The separate Selection and batch section and duplicate table have been removed.</p>
 <p>Dataset and phase palettes use more distinct early hues. Active and fixed background anchors, axes and background curves have stronger contrast in both themes.</p>
 <p>Wyckoff MCMC now mixes single free-site proposals (75%) with collective proposals (25%). Each site retains its full symmetry orbit. Command action headers and result selectors use a consistent theme-aware background.</p>
-<p>Version 2.24.0, 24 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
+<p>Version 2.24.2, 24 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 <ul>
   <li>Le Bail keeps to Maximum iterations for the whole fit (it ran up to twice as many). Phases has Starting model → datasets… and Dataset → starting model… to carry the cell and atoms between the phase and its datasets, and a Structure block with the picture and distances of the starting model or a dataset’s model. Find higher symmetry converts at once with Convert. The Wyckoff search writes a summary to the Log (the whole log is in History). File → Read project….</li>
   <li>Charge flipping imposes the space-group phase relation with the sign of its own Fourier convention, so the map obeys the group as written (it obeyed the inverted group before, and only the hand search put it right). Datasets take anomalous f′, f″ per element for the Rietveld structure factors. The SL/HL asymmetry is included in the peak area; transparency estimates carry the physical (negative) sign; the WPPF intensity solve no longer breaks down on nearly coincident or range-truncated reflections (it used to return zeros silently), and a failure is reported; the displacement moves at most about 0.1° per iteration.</li>
@@ -1118,13 +1131,29 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
 <script>
 (function () {
   var root = document.documentElement, btn = document.getElementById('theme');
-  try { var t = localStorage.getItem('powder6.doc.theme'); if (t) root.setAttribute('data-theme', t); } catch (e) {}
+  var manualTheme = false;
+  function syncThemeButton() {
+    btn.setAttribute('aria-checked', String(root.getAttribute('data-theme') === 'dark'));
+  }
+  // The shared startup script applies the application's saved theme before paint.
+  // A help-page override lasts for this page only; reopening follows the app again.
+  syncThemeButton();
   btn.addEventListener('click', function () {
-    var dark = root.getAttribute('data-theme') ? root.getAttribute('data-theme') === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-    var next = dark ? 'light' : 'dark';
-    root.setAttribute('data-theme', next);
-    try { localStorage.setItem('powder6.doc.theme', next); } catch (e) {}
+    manualTheme = true;
+    root.setAttribute('data-theme', root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    syncThemeButton();
   });
+  if (window.matchMedia) {
+    var media = matchMedia('(prefers-color-scheme: dark)');
+    media.addEventListener('change', function () {
+      if (manualTheme) return;
+      var preference;
+      try { preference = JSON.parse(localStorage.getItem('powder6.settings') || 'null'); } catch (e) {}
+      if (preference && (preference.theme === 'light' || preference.theme === 'dark')) return;
+      root.setAttribute('data-theme', media.matches ? 'dark' : 'light');
+      syncThemeButton();
+    });
+  }
   var links = [].slice.call(document.querySelectorAll('nav.toc a[href^="#"]')), map = {};
   links.forEach(function (a) { map[a.getAttribute('href').slice(1)] = a; });
   if ('IntersectionObserver' in window) {

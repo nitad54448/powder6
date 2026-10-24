@@ -2,6 +2,14 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.24.2 — 24 October 2026
+
+1. **Help theme switch.** Replace the help's plain theme button with a Light/Dark slider in a sticky top-right toolbar, matching the main program's toggle. Both labels remain visible and the selected mode is emphasized. The contents and anchor scrolling account for the toolbar; it is hidden when printing.
+
+## 2.24.1 — 24 October 2026
+
+1. **Help appearance.** Documentation uses the program's saved theme before first paint, with a user-controlled theme switch. Switching the help theme affects the current help page; reopening follows the program again. Remove reading-width caps so paragraphs, notes and examples use the available content width.
+
 ## 2.24.0 — 24 October 2026
 
 1. **One dataset selection section.** Remove Selection and batch and its duplicate editable table. Move fit mode, Fit selected datasets and selection actions into the Datasets accordion. Each dataset row has Edit for its name and colour, with automatic theme colour available. Custom colours apply to plots and headings and survive project saving, Undo and calculation History.
