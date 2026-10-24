@@ -377,7 +377,7 @@ RV.solve = (function () {
     if (!T || !ev.phases[pi]) { ui.toast('No WPPF intensities for ' + ph.name + '.', 'err'); return; }
     var profile=profileOf(ph,ds),refl = ev.phases[pi].refl.map(function (r, k) {
       return { i: k, h: r.h, k: r.k, l: r.l, m: r.m, d: r.d, tth: r.tth, lp: r.lp, K: r.K, height: r.height, Icalc: T.area[k], area: T.area[k],
-               sigma: T.sigma[k], bound: !!T.bound[k], group: T.group[k], inRange: r.inRange, fwhm:reflectionWidth({profile:profile},r) };
+               sigma: T.sigma[k], bound: !!T.bound[k], group: T.group[k], cov: T.cov ? T.cov[k] : null, inRange: r.inRange, fwhm:reflectionWidth({profile:profile},r) };
     });
     var det = refl.filter(function (r) { return r.inRange && Number.isFinite(r.sigma); });
     var nv = (St.jobFor(ds).vars || []).length, st = res.stats[0], cell = St.cellOf(ph, ds.p), got = symopsFor(ph.sg);
@@ -416,12 +416,15 @@ RV.solve = (function () {
   // the list charge flipping and the Wyckoff search share (cfPrepareIntensities of powder5): the determined WPPF
   // intensities, French-Wilson for the weak ones, anything still not positive a measured zero
   function solveInput(I) {
-    var list = I.det.map(function (r) { return { h: r.h, k: r.k, l: r.l, area: r.area, rawArea: r.area, sigma: r.sigma, multiplicity: r.m, tth: r.tth, d: r.d, lp: r.lp,fwhm:reflectionWidth(I,r) }; });
+    // covariances of overlapped intensities, by indices of the reflection list, as [h, k, l, cov]: the Wyckoff search
+    // sums overlapped intensities and needs them for the variance of the sum
+    var covOf = function (r) { return (r.cov || []).map(function (p) { var o = I.refl[p[0]]; return o ? [o.h, o.k, o.l, p[1]] : null; }).filter(Boolean); };
+    var list = I.det.map(function (r) { return { h: r.h, k: r.k, l: r.l, area: r.area, rawArea: r.area, sigma: r.sigma, cov: covOf(r), multiplicity: r.m, tth: r.tth, d: r.d, lp: r.lp,fwhm:reflectionWidth(I,r) }; });
     var fw = frenchWilsonCorrect(list, I.symops, I.pol), zero = 0;
     var hklList = list.map(function (r) {
       var v = r.area;
       if (!(v > 0)) { v = 0; zero++; }
-      return { h_orig: r.h, k_orig: r.k, l_orig: r.l, intensity: v, multiplicity: r.multiplicity, rawIntensity: r.rawArea, sigma: r.sigma > 0 ? r.sigma : null, tth: r.tth, d: r.d, lp: r.lp,fwhm:r.fwhm };
+      return { h_orig: r.h, k_orig: r.k, l_orig: r.l, intensity: v, multiplicity: r.multiplicity, rawIntensity: r.rawArea, sigma: r.sigma > 0 ? r.sigma : null, cov: r.cov, tth: r.tth, d: r.d, lp: r.lp,fwhm:r.fwhm };
     }).filter(function (r) { return Number.isFinite(r.intensity); });
     var note = 'Lp: ' + polarizationDescription(I.pol) + '. ' + (fw.applied ? 'French–Wilson correction of ' + plural(fw.corrected, 'weak reflection') + (fw.negatives ? ' (' + fw.negatives + ' negative)' : '') : 'No French–Wilson correction (' + fw.reason + ')') + '; ' + zero + ' set to zero.';
     return { hklList: hklList, note: note, fw: fw, zero: zero };

@@ -196,9 +196,11 @@ function normaliseObservations(reflections, opts = {}) {
         }
         for (const r of src) {
             const tth = tthOf(r);
-            const lp = obsLorentzPolarization(tth, K);
-            rows.push({ h: r.h, k: r.k, l: r.l, Fo2: r.Ihkl / (multOf(r) * lp),
-                        mult: multOf(r), d: dOf(r), twoTheta: tth, sigma: r.sigma });
+            // sigma scaled with its value, as in the m_lp route above
+            const lp = obsLorentzPolarization(tth, K), k = multOf(r) * lp;
+            rows.push({ h: r.h, k: r.k, l: r.l, Fo2: r.Ihkl / k,
+                        mult: multOf(r), d: dOf(r), twoTheta: tth,
+                        sigma: (Number.isFinite(r.sigma) && k > 0) ? r.sigma / k : r.sigma });
         }
     } else if (haveI) {
         route = 'raw';
@@ -212,6 +214,26 @@ function normaliseObservations(reflections, opts = {}) {
     } else {
         errors.push('The reflection list carries no intensity column.');
         return { rows: [], route: null, warnings, errors };
+    }
+
+    // COVARIANCES OF OVERLAPPED INTENSITIES ([h, k, l, cov] on the intensity
+    // scale, from the WPPF fit), scaled into Fo2 units with BOTH reflections'
+    // factors, as sigma is with its own. Rows follow src one to one. The Fo route
+    // carries no intensity scale to apply, so it carries no covariances.
+    if (route !== 'Fo') {
+        const scaleOf = new Map();
+        rows.forEach((row, i) => {
+            const r = src[i], f = route === 'raw' ? 1
+                    : route === 'm_lp' ? 1 / (r.multiplicity * r.lp)
+                    : 1 / (multOf(r) * obsLorentzPolarization(tthOf(r), K));
+            scaleOf.set(row.h + ',' + row.k + ',' + row.l, f);
+        });
+        rows.forEach((row, i) => {
+            const c = src[i].cov, fi = scaleOf.get(row.h + ',' + row.k + ',' + row.l);
+            if (!Array.isArray(c) || !c.length || !Number.isFinite(fi)) return;
+            row.cov = c.map(p => { const fj = scaleOf.get(p[0] + ',' + p[1] + ',' + p[2]); return Number.isFinite(fj) && Number.isFinite(p[3]) ? [p[0], p[1], p[2], p[3] * fi * fj] : null; })
+                       .filter(Boolean);
+        });
     }
 
     const bad = rows.filter(r => !Number.isFinite(r.Fo2) || !(r.d > 0));
@@ -355,6 +377,45 @@ function groupPowderObservations(rows, overlapTol = 0.002) {
         }
     }
     return groups;
+}
+
+/**
+ * Variance of a group's observed intensity, sum(mult * Fo2) over its members.
+ *
+ * The members' variances add, AND twice their covariances: overlapped WPPF
+ * intensities are strongly anti-correlated (what one takes the other cannot),
+ * so the sum is far better determined than the independent sum of variances
+ * says, and ignoring that under-weights exactly the overlapped groups. A
+ * member's cov holds [h, k, l, cov(Fo2, Fo2')] for partners, each pair once
+ * (normaliseObservations). Without covariances this is the independent sum.
+ *
+ * Shared by swPackReflections (the search) and crGroupReflections (the
+ * coordinate refinement) so the two weight the same residual.
+ *
+ * @param {Array} members rows with mult, sigma (of Fo2), optional cov
+ * @returns {number|null} null when a member has no usable sigma
+ */
+function obsGroupVariance(members) {
+    let v = 0;
+    const byHkl = new Map();
+    for (const r of members) {
+        if (!(Number.isFinite(r.sigma) && r.sigma > 0)) return null;
+        const sm = r.mult * r.sigma;
+        v += sm * sm;
+        byHkl.set(r.h + ',' + r.k + ',' + r.l, r);
+    }
+    if (!(v > 0)) return null;
+    let c = 0;
+    if (members.length > 1) for (const r of members) {
+        if (!Array.isArray(r.cov)) continue;
+        for (const p of r.cov) {
+            const o = byHkl.get(p[0] + ',' + p[1] + ',' + p[2]);
+            if (o && o !== r && Number.isFinite(p[3])) c += 2 * r.mult * o.mult * p[3];
+        }
+    }
+    // a covariance that rounding or a French-Wilson value pushed past positive
+    // definiteness is floored, rather than giving one group an unbounded weight
+    return Math.max(v + c, 1e-3 * v);
 }
 
 /**
@@ -524,6 +585,6 @@ function sharkoFInverse95(d1, d2) {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { SHARKO_OBSERVATIONS_VERSION, powderMultiplicity, twoThetaFromD,
                        obsLorentzPolarization, normaliseObservations,
-                       wilsonB, groupPowderObservations, powderResiduals, hamiltonRatioTest,
+                       wilsonB, groupPowderObservations, obsGroupVariance, powderResiduals, hamiltonRatioTest,
                        sharkoFTail, sharkoBetaI };
 }

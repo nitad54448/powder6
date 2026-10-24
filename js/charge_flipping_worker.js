@@ -950,6 +950,8 @@ function modelInitialGrid(model, N, seed) {
         const amp = Math.sqrt(Math.max(0, model.orbitTargetI[g]) / count);
         // One random phase per ORBIT, propagated through the operator phase
         // factors, so the starting point already obeys the space group.
+        // rho = sum F exp(+2 pi i h.x) (the inverse transform of fft3d), so
+        // F(hR) = F(h) exp(+2 pi i h.t): the stored phase, not its conjugate.
         const ang = 2 * Math.PI * rand();
         const f0r = amp * Math.cos(ang), f0i = amp * Math.sin(ang);
         for (let i = 0; i < count; i++) {
@@ -957,8 +959,8 @@ function modelInitialGrid(model, N, seed) {
             const word = model.orbitIdx[p];
             const idx = word & 0x7fffffff;
             const cr = model.phase[2 * p], ci = model.phase[2 * p + 1];
-            let a = f0r * cr + f0i * ci;
-            let b = f0i * cr - f0r * ci;
+            let a = f0r * cr - f0i * ci;
+            let b = f0r * ci + f0i * cr;
             if (word & 0x80000000) b = -b;
             init[2 * idx] = a;
             init[2 * idx + 1] = b;
@@ -1440,9 +1442,10 @@ const weakI = weak.cutoff;
                     const j = word & 0x7fffffff;
                     let a = re[j], b = im[j];
                     if (word & 0x80000000) b = -b;
+                    // F(h0) = F(h0 R) conj(exp(2 pi i h0.t)), see modelInitialGrid
                     const cr = ph[2 * p], ci = ph[2 * p + 1];
-                    sr += a * cr - b * ci;
-                    si += a * ci + b * cr;
+                    sr += a * cr + b * ci;
+                    si += b * cr - a * ci;
                 }
                 sr /= count; si /= count;
                 for (let i = 0; i < count; i++) {
@@ -1450,8 +1453,8 @@ const weakI = weak.cutoff;
                     const word = idx[p];
                     const j = word & 0x7fffffff;
                     const cr = ph[2 * p], ci = ph[2 * p + 1];
-                    let a = sr * cr + si * ci;
-                    let b = si * cr - sr * ci;
+                    let a = sr * cr - si * ci;
+                    let b = sr * ci + si * cr;
                     if (word & 0x80000000) b = -b;
                     re[j] += lambda * (a - re[j]);
                     im[j] += lambda * (b - im[j]);

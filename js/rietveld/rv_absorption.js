@@ -106,12 +106,13 @@ RV.absorption = (function () {
     for(var el in model.fractions){if(!model.fractions[el])continue;var item=coefficient(el,E);if(item.error)return item;massMu+=model.fractions[el]*item.value;}
     if(!(massMu>0))return {error:'The mixture mass attenuation is zero; no finite transparency estimate.'};
     var mu90=massMu*model.density90/10, R=ds.inst.radiusMM;
-    return {energyEV:E,massMu:massMu,density:model.density,density90:model.density90,mu90:mu90,transparency90:R>0?1/(2*R*mu90):null,multiphase:model.multiphase,label:label};
+    // a penetrating beam moves the peaks to LOWER angle: dtwotheta = -sin(2theta) / (2 mu R), so t = -1 / (2 mu R)
+    return {energyEV:E,massMu:massMu,density:model.density,density90:model.density90,mu90:mu90,transparency90:R>0?-1/(2*R*mu90):null,multiphase:model.multiphase,label:label};
   }
   function tip(ds) {
     var R=ds.inst.radiusMM,t=ds.p.transp, f=ui.fmt;
-    var lines=['Transparency coefficient t: Δ2θ = t sin(2θ), in radians.'];
-    lines.push(R>0 && t>0 ? 'From current t: µeff = '+f(1/(2*R*t),6)+' mm⁻¹; absorption length '+f(2*R*t,6)+' mm (R = '+R+' mm).' : 'Fitted µeff requires positive t and a known goniometer radius (Datasets → Instrument).');
+    var lines=['Transparency coefficient t: Δ2θ = t sin(2θ), in radians; a physical value is negative (the peaks move to lower angle).'];
+    lines.push(R>0 && t<0 ? 'From current t: µeff = '+f(-1/(2*R*t),6)+' mm⁻¹; absorption length '+f(-2*R*t,6)+' mm (R = '+R+' mm).' : 'Fitted µeff requires negative t and a known goniometer radius (Datasets → Instrument).');
     var p=predict(ds,ds.inst.lambda1);
     if(p.error)lines.push(p.error);
     else{

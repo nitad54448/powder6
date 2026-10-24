@@ -155,7 +155,7 @@ RV.panels = (function () {
   function groupsFor(ds) {
     var out = [], rows = [{ name: 'zero', label: 'zero', unit: '°', tip: 'Zero point: observed minus calculated 2θ' },
                           { name: 'disp', label: 'displ.', unit: '', tip: 'Sample displacement: Δ2θ = −(displ./1000) cos θ, in radians' },
-                          { name: 'transp', label: 'transp.', unit: '', tip: 'Sample transparency: Δ2θ = transp. sin 2θ, in radians' }];
+                          { name: 'transp', label: 'transp.', unit: '', tip: 'Sample transparency: Δ2θ = transp. sin 2θ, in radians (negative for a real specimen: the peaks move to lower angle)' }];
     var resolution = St.instrumentParamsFor(ds).filter(function (p) { return Object.prototype.hasOwnProperty.call(ds.p, 'inst.' + p[0]); }).map(function (p) {
       return { name: 'inst.' + p[0], label: p[0], unit: /^(U|V|W)(_[LR])?$/.test(p[0]) ? 'cdeg²' : /^(X|Y|Z)(_[LR])?$/.test(p[0]) ? 'cdeg' : '', tip: 'Instrument resolution for all phase contributions in this dataset. ' + ({U:'Gaussian tan²θ coefficient',V:'Gaussian tanθ coefficient',W:'Gaussian constant variance',Z:'Lorentzian constant width',X:'Lorentzian /cosθ coefficient',Y:'Lorentzian tanθ coefficient',SL:'Axial asymmetry coefficient /tanθ',HL:'Constant axial asymmetry coefficient'}[p[0]] || (/^eta/.test(p[0]) ? 'Independent pseudo-Voigt mixing fraction' : 'Left/right instrument width coefficient')) };
     });
@@ -267,7 +267,7 @@ RV.panels = (function () {
     var R=ds.inst.radiusMM, v=ds.p[n];
     if(n==='disp')return 'Sample displacement: Δ2θ = −(displ./1000) cos θ in radians. '+(R>0 ? 'Bragg–Brentano height h = '+ui.fmt(v*R/2000,6)+' mm; radius R = '+R+' mm.' : 'Set the goniometer radius in Datasets → Instrument to obtain height in mm.');
     if(n==='transp' && RV.absorption)return RV.absorption.tip(ds);
-    if(n==='transp')return 'Transparency: Δ2θ = transp. sin 2θ in radians. '+(R>0 && v>0 ? 'Thick flat Bragg–Brentano specimen approximation: µeff = 1/(2 R transp.) = '+ui.fmt(1/(2*R*v),6)+' mm⁻¹; absorption length '+ui.fmt(2*R*v,6)+' mm. Not a composition-derived absorption coefficient.' : 'Effective absorption requires a positive transparency coefficient and the goniometer radius (Datasets → Instrument), assuming a thick flat Bragg–Brentano specimen.');
+    if(n==='transp')return 'Transparency: Δ2θ = transp. sin 2θ in radians; negative for a real specimen. '+(R>0 && v<0 ? 'Thick flat Bragg–Brentano specimen approximation: µeff = −1/(2 R transp.) = '+ui.fmt(-1/(2*R*v),6)+' mm⁻¹; absorption length '+ui.fmt(-2*R*v,6)+' mm. Not a composition-derived absorption coefficient.' : 'Effective absorption requires a negative transparency coefficient and the goniometer radius (Datasets → Instrument), assuming a thick flat Bragg–Brentano specimen.');
     return null;
   }
   function renderValues() {
@@ -611,7 +611,7 @@ RV.panels = (function () {
     {legend:'History storage',fields:[{key:'historyMB',label:'Automatic history budget /MB',type:'num',hint:'Oldest unkept calculations are removed when this budget is exceeded. Kept records are preserved.'},{key:'historyCount',label:'Recent unkept calculations per method',type:'int',hint:'Charge-flipping and Wyckoff results have their own quota of the same size. Observation arrays are stored once. History retains complete global sets and grouped individual batches.'}]},
     { legend: 'Numerical conditions', fields: [
       { key: 'algorithm', label: 'Algorithm', type: 'select', options: [['lm', 'LM · Levenberg–Marquardt'], ['pt', 'PT · parallel tempering + LM finish']], hint: 'PT uses WebGPU when available, with automatic CPU fallback. LM then converges in double precision and estimates uncertainties. Results record which PT backend ran.' },
-      { key: 'ptSweeps', label: 'PT sweeps', type: 'int', pt: true, hint: '10 to 100000 sweeps; one proposal per replica per sweep.' },
+      { key: 'ptSweeps', label: 'PT sweeps', type: 'int', pt: true, hint: '10 to 100000 sweeps; a sweep is one proposal per refined variable per replica, so its cost grows with the number of ticked parameters.' },
       { key: 'ptChains', label: 'PT replicas', type: 'int', pt: true, hint: '2 to 16 replicas within each fit worker.' },
       { key: 'ptMaxTemp', label: 'PT highest temperature', type: 'num', pt: true, hint: 'Geometric temperature ladder from 1 to this value (greater than 1).' },
       { key: 'ptSeed', label: 'PT random seed', type: 'int', pt: true, hint: 'Repeat proposals with the same seed, backend and starting values. CPU and GPU searches use different random streams; floating-point behavior can vary between GPUs.' },

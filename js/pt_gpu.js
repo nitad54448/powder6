@@ -140,17 +140,19 @@
                 const pre=P.prefix, par=n=>param(d,pre+n), type=profileType==='simple_pvoigt'?1:profileType==='split_pvoigt'?2:3;
                 let struct='var height=0.0;';
                 if(P.method==='rietveld') {
-                    struct+='var fr=0.0; var fi=0.0;';
+                    struct+='var fr=0.0; var fi=0.0; var gr=0.0; var gi=0.0;';
                     (P.def.atoms||[]).forEach((at,j) => {
                         const pos=at.site.r0.map((v,i)=>sum([f(v),...at.site.free.map(fc=>product(param(d,pre+at.label+'.'+'xyz'[fc]),f(at.site.basis[fc][i])))]));
-                        const ff=D.def.radiation==='neutron' ? f(at.ff.neutron) : sum([f(at.ff.xray.c),...at.ff.xray.a.map((a,k)=>`${f(a)}*exp(-(${f(at.ff.xray.b[k])})*q*0.25)`)]);
-                        struct+=`{let pos=vec3<f32>(${pos.join(',')}); let weight=${param(d,pre+at.label+'.occ')}*(${ff})*exp(-${param(d,pre+at.label+'.B')}*q*0.25)*${f(at.site.mult/P.reps.length)}; var ar=0.0; var ai=0.0;
+                        // f' and f'' as rietveld_core.js Model.structure: |F|^2 = (Re f) part^2 + (f'') part^2, Friedel-averaged
+                        const neutron=D.def.radiation==='neutron', an=!neutron && D.anom && D.anom[pi] && D.anom[pi][j] || [0,0];
+                        const ff=neutron ? f(at.ff.neutron) : sum([f(at.ff.xray.c+an[0]),...at.ff.xray.a.map((a,k)=>`${f(a)}*exp(-(${f(at.ff.xray.b[k])})*q*0.25)`)]);
+                        struct+=`{let pos=vec3<f32>(${pos.join(',')}); let atomWeight=${param(d,pre+at.label+'.occ')}*exp(-${param(d,pre+at.label+'.B')}*q*0.25)*${f(at.site.mult/P.reps.length)}; let weight=atomWeight*(${ff}); var ar=0.0; var ai=0.0;
                             for(var j=0u;j<${u(P.reps.length)};j++){let o=${u(op)}+12u*j; let hh=vec3<f32>(dot(h,vec3<f32>(dat[o],dat[o+3u],dat[o+6u])),dot(h,vec3<f32>(dat[o+1u],dat[o+4u],dat[o+7u])),dot(h,vec3<f32>(dat[o+2u],dat[o+5u],dat[o+8u]))); let ph=2.0*PI*fract(dot(hh,pos)+dot(h,vec3<f32>(dat[o+9u],dat[o+10u],dat[o+11u]))); ar+=cos(ph); ai+=sin(ph);}
-                            fr+=weight*ar; fi+=weight*ai;}`;
+                            fr+=weight*ar; fi+=weight*ai;${an[1] ? ` gr+=atomWeight*${f(an[1])}*ar; gi+=atomWeight*${f(an[1])}*ai;` : ''}}`;
                     });
                     struct+=`var po=1.0; let pr=${par('po')}; let direction=${vec(P.def.poDir||[0,0,1])}; let hh=dot(direction,g.g*direction);
                         if(pr>0.0 && abs(pr-1.0)>1e-12 && hh>0.0){po=0.0; for(var j=0u;j<u32(dat[rr+5u]);j++){let o=u32(dat[rr+4u])+3u*j; let e=vec3<f32>(dat[o],dat[o+1u],dat[o+2u]); let c2=min(1.0,sq(dot(e,g.g*direction))/max(1e-30,dot(e,g.g*e)*hh)); po+=pow(pr*pr*c2+(1.0-c2)/pr,-1.5);} po/=dat[rr+5u];}
-                        height=${par('scale')}*dat[rr+3u]*lp(tc,${f(D.def.polK)})*po*(fr*fr+fi*fi)/pk.area;`;
+                        height=${par('scale')}*dat[rr+3u]*lp(tc,${f(D.def.polK)})*po*(fr*fr+fi*fi+gr*gr+gi*gi)/pk.area;`;
                 }
                 const mk = (angle,centre) => `makePeak(${angle},${centre},width_${pair.index}(c,${angle},h,spacing,g),${type===2?`left_${pair.index}(c,${angle},h,spacing,g)`:'vec2<f32>(0.0)'},${type===2?`right_${pair.index}(c,${angle},h,spacing,g)`:'vec2<f32>(0.0)'},${u(type)},${get(type===2?'eta_split':'eta',0.5)},${type===3?`(${get('SL')}/tan(${angle}*RAD*0.5)+${get('HL')})`:'0.0'})`;
                 functions.push(`fn phase_${pair.index}(c:u32,ri:u32){
@@ -301,12 +303,26 @@
     fn mixing(eta:f32,g:f32,l:f32)->f32{let wl=eta*L0/max(1e-12,l);let wg=(1.0-eta)*G0/max(1e-12,g);return wl/(wl+wg);}
     fn raw(delta:f32,pk:Peak)->f32{var z=delta;if(pk.asym!=0.0 && abs(z)>=1e-9){z/=1.0-clamp(pk.asym*z,-0.95,0.95);}let g=select(pk.hg,pk.hgr,z>=0.0);let l=select(pk.hl,pk.hlr,z>=0.0);let c=select(pk.cl,pk.clr,z>=0.0);return c/(1.0+4.0*sq(z/l))+(1.0-c)*exp(-2.772588722239781*sq(z/g));}
     fn profile(t:f32,pk:Peak)->f32{let delta=t-pk.center;if(pk.radius<=0.0 || abs(delta)>pk.radius){return 0.0;}return max(0.0,raw(delta,pk)-pk.pedestal);}
+    fn erfcApprox(z:f32)->f32{let t=1.0/(1.0+0.5*z);return t*exp(-z*z-1.26551223+t*(1.00002368+t*(0.37409196+t*(0.09678418+t*(-0.18628806+t*(0.27886807+t*(-1.13520398+t*(1.48851587+t*(-0.82215223+t*0.17087277)))))))));}
+    fn tailArea(x:f32,pk:Peak)->f32{let h=pk.hl;return pk.cl*0.5*h*(0.5*PI-atan(2.0*x/h))+(1.0-pk.cl)*0.5*h*sqrt(PI/2.772588722239781)*erfcApprox(sqrt(2.772588722239781)*x/h);}
+    fn asymPanel(lo:f32,hi:f32,side:f32,pk:Peak,sym:Peak)->f32{let m=0.5*(lo+hi);let h=0.5*(hi-lo);
+        let x0=h*0.1834346424956498;let x1=h*0.5255324099163290;let x2=h*0.7966664774136267;let x3=h*0.9602898564975363;
+        let s=0.3626837833783620*(raw(side*(m-x0),pk)-raw(side*(m-x0),sym)+raw(side*(m+x0),pk)-raw(side*(m+x0),sym))
+             +0.3137066458778873*(raw(side*(m-x1),pk)-raw(side*(m-x1),sym)+raw(side*(m+x1),pk)-raw(side*(m+x1),sym))
+             +0.2223810344533745*(raw(side*(m-x2),pk)-raw(side*(m-x2),sym)+raw(side*(m+x2),pk)-raw(side*(m+x2),sym))
+             +0.1012285362903763*(raw(side*(m-x3),pk)-raw(side*(m-x3),sym)+raw(side*(m+x3),pk)-raw(side*(m+x3),sym));return s*h;}
+    // profile.js asymmetryAreaCorrection, panel for panel: the change of area the SL/HL asymmetry makes (type 3)
+    fn asymArea(pk:Peak,width:f32)->f32{var sym=pk;sym.asym=0.0;let w=max(1e-6,width);let clampAt=0.95/max(1e-30,abs(pk.asym));let D=max(pk.radius,min(clampAt,4096.0*w));var total=0.0;
+        for(var k=0u;k<2u;k++){let side=select(-1.0,1.0,k==1u);var lo=0.0;var e=0.25*w;
+            loop{let hi=min(e,D);if(clampAt>lo && clampAt<hi){total+=asymPanel(lo,clampAt,side,pk,sym);lo=clampAt;}total+=asymPanel(lo,hi,side,pk,sym);lo=hi;if(hi>=D){break;}e*=2.0;}
+            let st=1.0-clamp(pk.asym*side*D,-0.95,0.95);total+=st*tailArea(D/st,pk)-tailArea(D,pk);}
+        return total;}
     fn makePeak(tc:f32,center:f32,w:vec2<f32>,left:vec2<f32>,right:vec2<f32>,kind:u32,eta0:f32,asym0:f32)->Peak{
         var pk:Peak;pk.center=center;pk.hg=w.x;pk.hl=w.y;var eta=clamp(eta0,0.0,1.0);var width=fwhm(w.x,w.y);
         if(kind==2u){pk.hg=left.x;pk.hl=left.y;pk.hgr=right.x;pk.hlr=right.y;width=max(fwhm(left.x,left.y),fwhm(right.x,right.y));pk.cl=mixing(eta,left.x,left.y);pk.clr=mixing(eta,right.x,right.y);}
         else{if(kind==3u){let r=w.y/width;eta=clamp(1.36603*r-0.47719*r*r+0.11116*r*r*r,0.0,1.0);pk.hg=width;pk.hl=width;}pk.cl=mixing(eta,pk.hg,pk.hl);pk.hgr=pk.hg;pk.hlr=pk.hl;pk.clr=pk.cl;}
         pk.area=0.5*(pk.cl*LAREA*pk.hl+(1.0-pk.cl)*GAREA*pk.hg+pk.clr*LAREA*pk.hlr+(1.0-pk.clr)*GAREA*pk.hgr);
-        if(kind==3u && tc>=0.1 && tc<180.0){pk.asym=asym0;}pk.radius=min(WINDOW_MAX,(WINDOW_G+(WINDOW_L-WINDOW_G)*eta)*max(0.01,width)*select(1.0,2.0,pk.asym!=0.0));pk.pedestal=max(raw(pk.radius,pk),raw(-pk.radius,pk));return pk;
+        if(kind==3u && tc>=0.1 && tc<180.0){pk.asym=asym0;}pk.radius=min(WINDOW_MAX,(WINDOW_G+(WINDOW_L-WINDOW_G)*eta)*max(0.01,width)*select(1.0,2.0,pk.asym!=0.0));pk.pedestal=max(raw(pk.radius,pk),raw(-pk.radius,pk));if(kind==3u && pk.asym!=0.0){pk.area+=asymArea(pk,width);}return pk;
     }
     fn shift(t:f32,disp:f32,transp:f32)->f32{let theta=t*RAD*0.5;if(abs(theta-PI*0.5)<1e-6){return 0.0;}return (-disp*0.001*cos(theta)+transp*sin(2.0*theta))/RAD;}
     fn lp(t:f32,k:f32)->f32{if(t<=0.0 || t>=180.0){return 1.0;}let th=t*RAD*0.5;let s=sin(th);let c=cos(th);if(s<1e-6 || c<1e-6){return 1.0;}return (1.0+k*sq(cos(t*RAD)))/((1.0+k)*s*s*c);}
@@ -318,7 +334,7 @@
     var<workgroup> partial:array<f32,64>;
     @compute @workgroup_size(64) fn energy(@builtin(workgroup_id) group:vec3<u32>,@builtin(local_invocation_index) lane:u32){let c=group.x;var result=0.0;for(var i=lane;i<NP;i+=64u){result+=pointEnergy(c,i);}partial[lane]=result;workgroupBarrier();for(var step=32u;step>0u;step/=2u){if(lane<step){partial[lane]+=partial[lane+step];}workgroupBarrier();}if(lane==0u){let b=c*STRIDE;var cost=partial[0];if(state[b+3u*NV+7u]<0.5 || !finite(cost)){cost=BIG;}if(state[b+3u*NV+7u]>0.5 && !solved(c)){state[b+3u*NV+9u]=1.0;cost=BIG;}state[b+3u*NV+10u]=cost;}}
     @compute @workgroup_size(64) fn accept(@builtin(global_invocation_id) id:vec3<u32>){let c=id.x;if(c>=CHAINS){return;}let b=c*STRIDE;let sweep=state[b+3u*NV+2u];let cost=state[b+3u*NV+10u];let old=state[b+3u*NV];let temp=pow(MAX_TEMP,f32(c)/f32(CHAINS-1u));if(sweep<0.0 || (cost<BIG && (cost<=old || state[b+3u*NV+8u]<(old-cost)/(2.0*temp)))){for(var j=0u;j<NV;j++){state[b+j]=state[b+NV+j];}state[b+3u*NV]=cost;if(sweep>=0.0){state[b+3u*NV+3u]+=1.0;}if(sweep<0.0 || cost<state[b+3u*NV+1u]){for(var j=0u;j<NV;j++){state[b+2u*NV+j]=state[b+NV+j];}state[b+3u*NV+1u]=cost;}}if(sweep>=0.0){state[b+3u*NV+4u]+=1.0;}state[b+3u*NV+2u]=sweep+1.0;}
-    @compute @workgroup_size(64) fn exchange(@builtin(global_invocation_id) id:vec3<u32>){let parity=u32(state[3u*NV+2u]-1.0)%2u;let c=2u*id.x+parity;if(c+1u>=CHAINS){return;}let b=c*STRIDE;let z=(c+1u)*STRIDE;let t0=pow(MAX_TEMP,f32(c)/f32(CHAINS-1u));let t1=pow(MAX_TEMP,f32(c+1u)/f32(CHAINS-1u));let a=0.5*(1.0/t0-1.0/t1)*(state[b+3u*NV]-state[z+3u*NV]);var seed=rng(c,u32(state[b+3u*NV+2u])+2147483647u);state[b+3u*NV+6u]+=1.0;if(a>=0.0 || log(random(&seed))<a){for(var j=0u;j<NV;j++){let v=state[b+j];state[b+j]=state[z+j];state[z+j]=v;}let v=state[b+3u*NV];state[b+3u*NV]=state[z+3u*NV];state[z+3u*NV]=v;state[b+3u*NV+5u]+=1.0;}}
+    @compute @workgroup_size(64) fn exchange(@builtin(global_invocation_id) id:vec3<u32>){let parity=u32(state[3u*NV+2u]/f32(NV)-1.0)%2u;let c=2u*id.x+parity;if(c+1u>=CHAINS){return;}let b=c*STRIDE;let z=(c+1u)*STRIDE;let t0=pow(MAX_TEMP,f32(c)/f32(CHAINS-1u));let t1=pow(MAX_TEMP,f32(c+1u)/f32(CHAINS-1u));let a=0.5*(1.0/t0-1.0/t1)*(state[b+3u*NV]-state[z+3u*NV]);var seed=rng(c,u32(state[b+3u*NV+2u])+2147483647u);state[b+3u*NV+6u]+=1.0;if(a>=0.0 || log(random(&seed))<a){for(var j=0u;j<NV;j++){let v=state[b+j];state[b+j]=state[z+j];state[z+j]=v;}let v=state[b+3u*NV];state[b+3u*NV]=state[z+3u*NV];state[z+3u*NV]=v;state[b+3u*NV+5u]+=1.0;}}
     `;
 
     function timeout(promise, label, ms=20000) {
@@ -356,7 +372,7 @@
             function initial(vectors){const values=new Float32Array(plan.chains*plan.stride);for(let c=0;c<plan.chains;c++){const b=c*plan.stride,v=vectors[c%vectors.length];values.set(v,b);values.set(v,b+plan.nv);values.set(v,b+2*plan.nv);values[b+3*plan.nv]=3e38;values[b+3*plan.nv+1]=3e38;values[b+3*plan.nv+2]=-1;values[b+3*plan.nv+7]=1;}device.queue.writeBuffer(sb,0,values);}
             return {plan,close,initial,
                 async costs(vectors){initial(vectors);const e=device.createCommandEncoder();dispatch(e,'propose',plan.chains);evaluate(e);const state=await snapshot(e);return Array.from({length:plan.chains},(_,c)=>{const b=c*plan.stride+3*plan.nv;if(state[b+9])throw new Error('WebGPU PT intensity solve did not converge.');return state[b+10];});},
-                async batch(count,bootstrap){check();const e=device.createCommandEncoder();for(let j=0;j<count;j++){dispatch(e,'propose',plan.chains);evaluate(e);dispatch(e,'accept',plan.chains);if(!bootstrap)dispatch(e,'exchange',Math.ceil(plan.chains/2));}return snapshot(e);}
+                async batch(count,bootstrap){check();const e=device.createCommandEncoder(),steps=bootstrap?1:plan.nv;for(let j=0;j<count;j++){for(let q=0;q<steps;q++){dispatch(e,'propose',plan.chains);evaluate(e);dispatch(e,'accept',plan.chains);}if(!bootstrap)dispatch(e,'exchange',Math.ceil(plan.chains/2));}return snapshot(e);}
             };
         }catch(e){close();throw e;}
     }
@@ -372,7 +388,7 @@
             gpu.initial([ctx.x]);let state=await gpu.batch(1,true), best=Float64Array.from(ctx.x), bestCost=ctx.setup.initialCost, completed=0, stopped=false;
             const seen=new Set();
             function inspect(){for(let c=0;c<ctx.setup.chains;c++){const b=c*gpu.plan.stride,n=ctx.x.length;if(state[b+3*n+9])throw new Error('WebGPU PT intensity solve did not converge; restarting CPU PT.');const candidate=Array.from(state.subarray(b+2*n,b+3*n)),key=candidate.join(',');if(seen.has(key))continue;seen.add(key);if(!candidate.every((v,j)=>Number.isFinite(v)&&v>=ctx.info[j].lo&&v<=ctx.info[j].hi))continue;const value=ctx.cost(candidate);if(value<bestCost){best=Float64Array.from(candidate);bestCost=value;}}}
-            while(completed<ctx.setup.sweeps){if(ctx.shouldStop && ctx.shouldStop()){stopped=true;break;}const count=Math.min(8,ctx.setup.sweeps-completed);state=await gpu.batch(count,false);completed+=count;inspect();ctx.onIter({it:completed,chi2:bestCost,maxIter:ctx.maxIter,stage:'pt',backend:'webgpu'});}
+            while(completed<ctx.setup.sweeps){if(ctx.shouldStop && ctx.shouldStop()){stopped=true;break;}const count=Math.min(Math.max(1,Math.ceil(8/gpu.plan.nv)),ctx.setup.sweeps-completed);state=await gpu.batch(count,false);completed+=count;inspect();ctx.onIter({it:completed,chi2:bestCost,maxIter:ctx.maxIter,stage:'pt',backend:'webgpu'});}
             const stats={accepted:0,proposals:0,swaps:0,swapAttempts:0};for(let c=0;c<ctx.setup.chains;c++){const b=c*gpu.plan.stride+3*ctx.x.length;stats.accepted+=state[b+3];stats.proposals+=state[b+4];stats.swaps+=state[b+5];stats.swapAttempts+=state[b+6];}
             return {x:best,stopped,pt:Object.assign({backend:'webgpu',chains:ctx.setup.chains,sweeps:completed,requestedSweeps:ctx.setup.sweeps,maxTemp:ctx.setup.maxTemp,seed:ctx.setup.seed,initialChi2:ctx.setup.initialCost,bestChi2:bestCost,validationError},stats)};
         }finally{if(gpu)gpu.close();}

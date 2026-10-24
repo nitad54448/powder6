@@ -65,6 +65,12 @@
             const ctx=await context(job),gpu=await RVPTGPU.create(ctx,{device});
             try{const costs=await gpu.costs([ctx.x]),cpu=ctx.cost(ctx.x),relative=Math.abs(costs[0]-cpu)/Math.max(1,cpu);check(relative<.001,'Negative variance continuation mismatch '+relative);record('negative Gaussian variance U='+U,{pass:true,relativeError:relative});}finally{gpu.close();}
         }
+        // f' and f'' of the dataset reach the GPU structure factors as they do the CPU ones.
+        {
+            const job=problem('rietveld','tch_aniso');job.phases[0].atoms[0].element='C';job.datasets[0].anomalous={C:[-0.5,1.2]};
+            const ctx=await context(job),gpu=await RVPTGPU.create(ctx,{device});
+            try{const costs=await gpu.costs([ctx.x]),cpu=ctx.cost(ctx.x),relative=Math.abs(costs[0]-cpu)/Math.max(1,cpu);check(relative<.001,'Anomalous dispersion mismatch '+relative);record('anomalous dispersion',{pass:true,relativeError:relative});}finally{gpu.close();}
+        }
         // Dataset sharing, dependent coordinates, occupancy sums, held values,
         // mixed phases and a phase absent from one dataset share one GPU job.
         const joint=problem('rietveld','gsas_cw'),ph=joint.phases[0],v=joint.values[0];
@@ -109,13 +115,13 @@
         const job=problem('rietveld','gsas_cw'),progress=[];
         const result=await RVCore.refineAsync(job,{linearStart:false,onIter:p=>progress.push(p)});
         check(result.ok,result.msg);check(result.pt.backend==='webgpu','Unexpected fallback: '+result.pt.fallbackReason);
-        check(result.pt.proposals===job.pt.chains*job.pt.sweeps,'Wrong proposal count');check(result.pt.swapAttempts>0,'No replica exchanges');
+        check(result.pt.proposals===job.pt.chains*job.pt.sweeps*job.vars.length,'Wrong proposal count (a sweep is one proposal per variable per replica)');check(result.pt.swapAttempts>0,'No replica exchanges');
         check(result.pt.bestChi2<=result.pt.initialChi2,'PT lost its initial best');check(progress.some(p=>p.backend==='webgpu'),'No GPU progress');
         record('complete GPU PT + CPU LM',{pass:true,pt:result.pt,chi2:result.chi2});
         for(const method of ['rietveld','wppf','lebail']){
             const worker=new Worker('../js/rietveld_worker.js'),job=problem(method,'gsas_cw');
             try{const result=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Fit worker timed out')),30000);worker.onerror=e=>{clearTimeout(timer);reject(new Error(e.message));};worker.onmessage=e=>{if(e.data.type==='done'){clearTimeout(timer);resolve(e.data.result);}};worker.postMessage({type:'refine',id:1,problem:job});});
-                check(result.ok,result.msg);check(result.pt.backend==='webgpu',method+' worker fallback: '+result.pt.fallbackReason);check(result.pt.proposals===job.pt.chains*job.pt.sweeps,'Wrong worker proposal count');record(method+' actual fit worker',{pass:true,chi2:result.chi2});
+                check(result.ok,result.msg);check(result.pt.backend==='webgpu',method+' worker fallback: '+result.pt.fallbackReason);check(result.pt.proposals===job.pt.chains*job.pt.sweeps*job.vars.length,'Wrong worker proposal count');record(method+' actual fit worker',{pass:true,chi2:result.chi2});
             }finally{worker.terminate();}
         }
         const rejected=await RVCore.refineAsync(problem('rietveld','gsas_cw'),{linearStart:false,ptBackend:async ctx=>{

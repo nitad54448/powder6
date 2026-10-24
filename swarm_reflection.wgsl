@@ -214,6 +214,10 @@ var<workgroup> gx: array<f32, MAX_GEN_ATOMS>;
 var<workgroup> gy: array<f32, MAX_GEN_ATOMS>;
 var<workgroup> gz: array<f32, MAX_GEN_ATOMS>;
 var<workgroup> gT: array<u32, MAX_GEN_ATOMS>;
+// 1 for a centring translate of an earlier image of the same site (genPack bit
+// 24, set by buildAssignmentTables): skipped in the |F|^2 sums, where it adds
+// exactly what its class representative adds, and kept for the contacts.
+var<workgroup> gSkip: array<u32, MAX_GEN_ATOMS>;
 
 var<workgroup> rPen: array<f32, WG>;
 // ---------------------------------------------------------------------------
@@ -475,6 +479,7 @@ fn main(@builtin(workgroup_id) wgId: vec3<u32>,
         // 15; local_rMin holds MAX_ELEM^2 entries and the scattering table has
         // a row of nElem, so either reader would run off the end.
         gT[g] = min(ty, maxType);
+        gSkip[g] = (pk >> 24u) & 1u;
     }
     workgroupBarrier();
 
@@ -552,6 +557,7 @@ fn main(@builtin(workgroup_id) wgId: vec3<u32>,
                 // at the origin carries (-I | t) with t nonzero, for which F
                 // is complex.
                 for (var a = 0u; a < nTot; a = a + 1u) {
+                    if (gSkip[a] != 0u) { continue; }
                     // Reduce to one turn BEFORE scaling by 2*pi. At h,k,l up to
                     // +/-511 the unreduced argument reaches ~3200 rad, outside
                     // the range WGSL guarantees for cos/sin and outside what
@@ -562,6 +568,7 @@ fn main(@builtin(workgroup_id) wgId: vec3<u32>,
                 }
             } else {
                 for (var a = 0u; a < nTot; a = a + 1u) {
+                    if (gSkip[a] != 0u) { continue; }
                     // See the centrosymmetric branch: reduced to one turn
                     // before scaling, so cos/sin never see a large argument.
                     let q  = h * gx[a] + k * gy[a] + l * gz[a];

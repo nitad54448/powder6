@@ -1091,3 +1091,116 @@ test('excluded zones that are not applied are kept in projects and restore point
   a.state.commitProject(a.state.prepareProject(old));
   assert.deepEqual(plain(a.S.datasets[0].inst.exclOff), [], 'a project of an earlier version has no zones kept aside');
 });
+
+test('anomalous dispersion enters the Rietveld structure factors, Friedel-averaged, from the instrument of the dataset', () => {
+  const a = model(), ds = a.ds;
+  const before = a.core.evaluate(a.state.problemFor([ds]), 0).phases[0].refl.find(r => r.inRange);
+  a.state.setInstrument([ds], { anomalous: 'si -0.3 0.4; ' });
+  assert.equal(ds.inst.anomalous, 'Si -0.3 0.4', 'the text is cleaned');
+  assert.deepEqual(plain(a.state.problemFor([ds]).datasets[0].anomalous), { SI: [-0.3, 0.4] });
+  const after = a.core.evaluate(a.state.problemFor([ds]), 0).phases[0].refl.find(r => r.h === before.h && r.k === before.k && r.l === before.l);
+  // Si at the origin of Pm-3m: F = f, so |F|^2 goes from f0^2 to (f0 + f')^2 + f''^2 (one Debye-Waller factor on both)
+  const f0 = Math.sqrt(before.F2);
+  assert.ok(Math.abs(after.F2 - ((f0 - 0.3 * Math.exp(-0.5 * (1 / before.d) ** 2 / 4)) ** 2 + (0.4 * Math.exp(-0.5 * (1 / before.d) ** 2 / 4)) ** 2)) < 1e-9 * after.F2, after.F2 + ' ' + before.F2);
+  assert.match(a.core.parseAnomalous('Fe -3.36 3.2, Q').bad[0], /Q/);
+  a.state.commitProject(a.state.prepareProject(JSON.parse(a.state.projectJSON([]))));
+  assert.equal(a.S.datasets[0].inst.anomalous, 'Si -0.3 0.4', 'saved with the project');
+});
+
+test('the area normaliser includes the SL/HL asymmetry (brute-force integral of the asymmetric peak)', () => {
+  const a = app();
+  const out = a.run(`(function(){var p={profileType:'tch_aniso',U:0,V:0,W:5,X:5,Y:0,SL:0.05,HL:0.02,minFwhm:0.005},prep=prepareVoigt(10,10,{d:1},p),
+    asym=Object.assign({},prep,{x0:0,max_d:Infinity,pedestal:0}),sym=Object.assign({},asym,{asym_param:0}),L=3000*prep.fwhm_total,n=2e5,diff=0;
+    for(var i=0;i<n;i++){var u=-1+(i+0.5)*2/n,x=L*u*u*u,dx=3*L*u*u*2/n;diff+=(evalVoigt(x,asym)-evalVoigt(x,sym))*dx;}
+    return [getPseudoVoigtArea(10,{d:1},p),prep.analyticArea+diff,prep.analyticArea];})()`);
+  assert.ok(Math.abs(out[0] - out[1]) < 2e-4 * out[1], out.join(' '));
+  assert.ok(out[0] > out[2] * 1.01, 'the asymmetry visibly changes the area here');
+});
+
+test('charge flipping imposes F(hR) = F(h) exp(2 pi i h.t), the relation of rho = sum F exp(+2 pi i h.x)', () => {
+  Object.assign(globalThis, require('../js/constants.js'), require('../js/crystal.js'));
+  if (typeof globalThis.postMessage !== 'function') globalThis.postMessage = () => {};
+  const cf = require('../js/charge_flipping_worker.js');
+  const ops = [{ r: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }, { r: [-1, 0, 0, 0, -1, 0, 0, 0, 1], t: [0, 0, 0.5] },
+               { r: [0, -1, 0, 1, 0, 0, 0, 0, 1], t: [0, 0, 0.25] }, { r: [0, 1, 0, -1, 0, 0, 0, 0, 1], t: [0, 0, 0.75] }];   // P4_1
+  const hklList = [];
+  for (const [h, k, l] of [[1, 0, 0], [1, 1, 0], [1, 0, 1], [1, 1, 1], [2, 1, 0], [1, 2, 3], [2, 1, 3], [0, 0, 4], [1, 0, 2]]) hklList.push({ h_orig: h, k_orig: k, l_orig: l, intensity: 100 + 37 * h + 11 * l, tth: 10 + 3 * (h + k + l) + 0.1 * h, d: 3 });
+  const N = 16, r = cf.runChargeFlippingCPU({ gridSize: N, maxIterations: 20, thresholdSigma: 1, seed: 3, cell: { a: 5, b: 5, c: 8, alpha: 90, beta: 90, gamma: 90 },
+    symops: ops, laueClass: '4/m', symLambda: 1, weakFraction: 0, applyLP: false, overlapTolTth: 1e-6, hklList });
+  const re = Float64Array.from(r.map), im = new Float64Array(re.length);
+  cf.fft3d(re, im, N, false);
+  const w = v => ((v % N) + N) % N, at = h => w(h[0]) + w(h[1]) * N + w(h[2]) * N * N;
+  let plus = 0, minus = 0, norm = 0;
+  for (const p of hklList) {
+    const h = [p.h_orig, p.k_orig, p.l_orig], x = re[at(h)], y = im[at(h)];
+    for (const o of ops) {
+      const hR = [0, 1, 2].map(j => h[0] * o.r[j] + h[1] * o.r[3 + j] + h[2] * o.r[6 + j]), t = 2 * Math.PI * (h[0] * o.t[0] + h[1] * o.t[1] + h[2] * o.t[2]);
+      const c = Math.cos(t), s = Math.sin(t), X = re[at(hR)], Y = im[at(hR)];
+      plus += (X - (x * c - y * s)) ** 2 + (Y - (x * s + y * c)) ** 2; minus += (X - (x * c + y * s)) ** 2 + (Y - (y * c - x * s)) ** 2; norm += X * X + Y * Y;
+    }
+  }
+  assert.ok(plus < 1e-20 * norm && minus > 1e-3 * norm, 'residual with exp(+): ' + plus + ', with exp(-): ' + minus);
+});
+
+test('Wyckoff tables mark centring translates, and one image per class gives the full |F|^2 for allowed reflections', () => {
+  const A = require('../js/wyckoff_assign.js'), db = require('../sg/all.json').space_groups;
+  for (const num of [12, 166, 225]) {
+    const s = db[num].settings[0], ops = s.sym_ops, count = num === 12 ? 8 : num === 166 ? 18 : 32;
+    const demand = [{ element: 'A', count, z: 20, r: 1 }, { element: 'B', count, z: 8, r: 1 }];
+    const list = A.enumerateAssignments(s.wyckoff, demand, { ceiling: 24, symOps: ops }).assignments.slice(0, 6);
+    const T = A.buildAssignmentTables(list, ops.length, demand, ops), nC = T.centring.length + 1;
+    assert.ok(nC > 1, 'centred group ' + num);
+    list.forEach((As, ai) => {
+      assert.equal(Array.from(T.genSkip.subarray(ai * T.nTot, (ai + 1) * T.nTot)).filter(x => !x).length, T.nTot / nC);
+      const pos = As.sites.map((st, si) => A.projectOnto(st.w, 0.11 + 0.07 * si, 0.23 + 0.05 * si, 0.37 + 0.03 * si, new Float64Array(3)));
+      for (const h of [[1, 1, 1], [2, 0, 0], [2, 2, 0], [3, 1, 1], [1, 0, 1], [0, 0, 3], [1, 1, 0], [4, 2, 0]]) {
+        if (!T.centring.every(c => { const p = h[0] * c[0] + h[1] * c[1] + h[2] * c[2]; return Math.abs(p - Math.round(p)) < 1e-6; })) continue;
+        let fr = 0, fi = 0, gr = 0, gi = 0;
+        for (let g = 0; g < T.nTot; g++) {
+          const o = ops[T.genOp[ai * T.nTot + g]], p = pos[T.genSite[ai * T.nTot + g]], f = T.genType[ai * T.nTot + g] ? 8 : 20;
+          const q = [0, 1, 2].map(i => o.r[3 * i] * p[0] + o.r[3 * i + 1] * p[1] + o.r[3 * i + 2] * p[2] + o.t[i]), ph = 2 * Math.PI * (h[0] * q[0] + h[1] * q[1] + h[2] * q[2]);
+          fr += f * Math.cos(ph); fi += f * Math.sin(ph);
+          if (!T.genSkip[ai * T.nTot + g]) { gr += f * Math.cos(ph); gi += f * Math.sin(ph); }
+        }
+        assert.ok(Math.abs(fr * fr + fi * fi - nC * nC * (gr * gr + gi * gi)) < 1e-9 * Math.max(1, fr * fr + fi * fi), num + ' ' + h);
+      }
+    });
+    assert.equal(T.genPack[0] >>> 24 & 1, T.genSkip[0]);
+  }
+  assert.equal(A.buildAssignmentTables([], 4, [{ element: 'A', count: 4, z: 1, r: 1 }]).centring.length, 0, 'without operators nothing is flagged');
+});
+
+test('observations scale sigma and covariances with their reflection, and overlapped groups use the covariance', () => {
+  Object.assign(globalThis, require('../js/constants.js'), require('../js/crystal.js'));
+  const O = require('../js/observations.js');
+  const out = O.normaliseObservations([{ h: 1, k: 0, l: 0, Ihkl: 400, sigma: 20, multiplicity: 6, twoTheta: 20, cov: [[1, 1, 0, -150]] },
+                                       { h: 1, k: 1, l: 0, Ihkl: 300, sigma: 30, multiplicity: 12, twoTheta: 20.05 }], { polarisationK: 1, wavelength: 1.5406 });
+  assert.equal(out.route, 'lp_from_2theta');
+  const lp = t => O.obsLorentzPolarization(t, 1), k1 = 6 * lp(20), k2 = 12 * lp(20.05), [r1, r2] = out.rows;
+  assert.ok(Math.abs(r1.sigma - 20 / k1) < 1e-12 && Math.abs(r2.sigma - 30 / k2) < 1e-12, 'sigma in Fo2 units');
+  assert.ok(Math.abs(r1.cov[0][3] + 150 / (k1 * k2)) < 1e-12, 'covariance in Fo2 units');
+  const v = O.obsGroupVariance([r1, r2]), ind = (6 * r1.sigma) ** 2 + (12 * r2.sigma) ** 2;
+  assert.ok(Math.abs(v - (ind + 2 * 6 * 12 * r1.cov[0][3])) < 1e-9 * ind && v < ind, 'the anti-correlation lowers the variance of the sum');
+  assert.equal(O.obsGroupVariance([r1, { h: 2, k: 0, l: 0, mult: 1 }]), null, 'a member without sigma');
+});
+
+test('the WPPF solve factors a near-singular normal matrix (reflections cut by the end of the range) instead of returning zeros', () => {
+  const a = app(), St = a.state;
+  St.setCalculation('rietveld');
+  const ph = St.makePhase({ name: 'Synthetic Si', sg: St.resolveSG(1), cell: { a: 4.2, b: 4.6, c: 5.1, alpha: 83, beta: 94, gamma: 101 }, atoms: [{ label: 'Si1', type: 'Si', x: .13, y: .21, z: .32 }] });
+  St.addPhase(ph);
+  const ds = St.makeDataset({ name: 'pattern', tth: Array.from({ length: 501 }, (_, i) => 10 + i * .2), y: Array(501).fill(100), inst: { bkgN: 1, lambda2: 0, ratio: 0, resolutionType: 'simple_pvoigt' } });
+  a.S.datasets.push(ds); St.selectIds([ds.id]);
+  ds.p[ph.key + '.scale'] = .002; ds.p.bkg0 = 10; ds.p.zero = .12; ds.y = a.core.evaluate(St.problemFor([ds]), 0).ycalc;
+  St.setCalculation('wppf'); Object.keys(ds.fit).forEach(n => { ds.fit[n] = n === 'bkg0'; });
+  const r = a.core.refine(St.jobFor(ds));
+  assert.equal(r.ok, true, r.msg);
+  assert.ok(r.stats[0].nInt > 100 && r.stats[0].Rwp < 0.01, 'intensities extracted: ' + r.stats[0].nInt + ', Rwp ' + r.stats[0].Rwp);
+});
+
+test('transparency estimates carry the physical sign: a penetrating beam moves the peaks to lower angle', () => {
+  const src = read('js/rietveld/rv_absorption.js');
+  assert.match(src, /transparency90:R>0\?-1\/\(2\*R\*mu90\)/);
+  const a = app();
+  assert.ok(a.run('calculatePeakShift(40,{profileType:"simple_pvoigt",trns:-0.001})') < 0, 'negative t shifts down');
+});

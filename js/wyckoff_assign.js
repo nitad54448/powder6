@@ -286,9 +286,13 @@ const NON_CENTROSYMMETRIC_GEOMETRY = new Set([
  * throw away correct assignments, which is a worse failure than admitting a
  * few wrong ones. A caller that knows better can always state `geometry`
  * explicitly on the distance constraint.
+ *
+ * Oxygen is NOT on the list: four-coordinate O is square planar on an
+ * inversion centre in NbO (3c, 4/mmm), so inferring a tetrahedron for "O Nb 4"
+ * would throw away the correct assignment.
  */
 const TETRAHEDRAL_AT_FOUR = new Set([
-    'B', 'C', 'N', 'O', 'F', 'AL', 'SI', 'P', 'S', 'CL',
+    'B', 'C', 'N', 'F', 'AL', 'SI', 'P', 'S', 'CL',
     'GA', 'GE', 'AS', 'SE', 'BR', 'V', 'CR', 'MN', 'FE', 'CO', 'ZN',
     'MO', 'W', 'TC', 'RE', 'BE', 'I', 'XE'
 ]);
@@ -749,8 +753,28 @@ function dedupeEquivalentAssignments(assignments, wyckoff, symOps) {
  * genOp comes from the position's precomputed coset operators, so exactly
  * `multiplicity` distinct atoms are produced with no tolerance to tune.
  */
-function buildAssignmentTables(assignments, symOpCount, demand) {
+function buildAssignmentTables(assignments, symOpCount, demand, symOps) {
     const nTot = demand.reduce((n, d) => n + d.count, 0);
+    // CENTRING. With the operators given, an image that is a centring
+    // translate of an earlier image of the same site is flagged (bit 24 of
+    // genPack): for an allowed reflection, h.c is an integer for every
+    // centring vector c, so the images of a centring class contribute
+    // identically and the structure factor is |C| times the sum over one image
+    // per class. The kernel and swFitnessOnCpu skip the flagged images in the
+    // reflection sums only -- contacts still see the whole cell -- and the
+    // caller drops the reflections the centring forbids. The factor |C|^2 on
+    // Icalc is absorbed by the refined scale.
+    const centring = [];
+    const frac1 = v => v - Math.floor(v + 1e-9);
+    if (Array.isArray(symOps)) for (const op of symOps) {
+        const r = op && op.r, t = op && op.t;
+        if (!r || !t || r.length < 9) continue;
+        const ident = r[0] === 1 && r[4] === 1 && r[8] === 1 && !r[1] && !r[2] && !r[3] && !r[5] && !r[6] && !r[7];
+        const c = t.map(frac1);
+        if (ident && c.some(v => Math.abs(v) > 1e-6 && Math.abs(v - 1) > 1e-6)) centring.push(c);
+    }
+    const near0 = v => Math.abs(v - Math.round(v)) < 1e-4;
+    const genSkip = new Uint8Array(assignments.length * nTot);
     const nA = assignments.length;
     const maxSites = assignments.reduce((m, A) => Math.max(m, A.nSites), 0);
 
@@ -795,12 +819,22 @@ function buildAssignmentTables(assignments, symOpCount, demand) {
                               `general position only. Re-run the generator with the Wyckoff patch.`);
             }
             const ops = cosets || Array.from({ length: s.w.multiplicity }, (_, k) => k % symOpCount);
+            // images of a generic point of the position, to recognise centring translates
+            const p = centring.length ? projectOnto(s.w, _SS_GENERIC[0], _SS_GENERIC[1], _SS_GENERIC[2], new Float64Array(3)) : null;
+            const seen = [];
             for (const op of ops) {
                 if (g >= nTot) break;
                 genSite[ai * nTot + g] = si;
                 genOp[ai * nTot + g] = op;
                 genZ[ai * nTot + g] = s.z;
                 genType[ai * nTot + g] = s.elementIdx;
+                const O = p && symOps[op];
+                if (O) {
+                    const r = O.r, t = O.t;
+                    const q = [r[0] * p[0] + r[1] * p[1] + r[2] * p[2] + t[0], r[3] * p[0] + r[4] * p[1] + r[5] * p[2] + t[1], r[6] * p[0] + r[7] * p[1] + r[8] * p[2] + t[2]];
+                    if (seen.some(e => centring.some(c => near0(q[0] - e[0] - c[0]) && near0(q[1] - e[1] - c[1]) && near0(q[2] - e[2] - c[2])))) genSkip[ai * nTot + g] = 1;
+                    seen.push(q);
+                }
                 g++;
             }
             const { P, T } = wyckoffProjector(s.w);
@@ -861,13 +895,29 @@ function buildAssignmentTables(assignments, symOpCount, demand) {
     // Bit-packed for the kernel: site | op << 8 | type << 20. WebGPU guarantees
     // only eight storage buffers per stage and this kernel uses all eight, so
     // three per-atom u32 fields have to travel as one.
-    const genPack = new Uint32Array(nA * nTot);
-    for (let i = 0; i < genPack.length; i++) {
-        genPack[i] = genSite[i] | (genOp[i] << 8) | (genType[i] << 20);
+    // The centring flags are used only if every assignment keeps exactly one
+    // image per centring class (nTot / |C|); anything else means the database
+    // orbit is not what was assumed, and the full sums are kept.
+    const nCent = centring.length + 1;
+    let useCentring = nCent > 1 && nTot % nCent === 0;
+    for (let ai = 0; useCentring && ai < nA; ai++) {
+        let kept = 0;
+        for (let g = 0; g < nTot; g++) if (!genSkip[ai * nTot + g]) kept++;
+        if (kept !== nTot / nCent) useCentring = false;
+    }
+    if (nCent > 1 && !useCentring) {
+        warnings.push('The orbits do not split into centring classes as expected; the structure factors sum over the whole cell.');
+        genSkip.fill(0);
     }
 
-    return { nTot, maxSites, genSite, genOp, genZ, genType, genPack,
-             siteProj, siteCount, normW, warnings: [...new Set(warnings)] };
+    // Bit 24 marks a centring translate (see above); bits 25-31 are free.
+    const genPack = new Uint32Array(nA * nTot);
+    for (let i = 0; i < genPack.length; i++) {
+        genPack[i] = genSite[i] | (genOp[i] << 8) | (genType[i] << 20) | (genSkip[i] << 24);
+    }
+
+    return { nTot, maxSites, genSite, genOp, genZ, genType, genPack, genSkip,
+             centring: useCentring ? centring : [], siteProj, siteCount, normW, warnings: [...new Set(warnings)] };
 }
 
 /**

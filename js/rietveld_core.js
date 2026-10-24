@@ -30,8 +30,9 @@
                 flat start, at the current cell, profile and background.
                 Starting from flat each time makes them a function of the
                 parameters alone, not of the path the fit took to them, and
-                the fit minimises the residual of that function: its Jacobian
-                is taken with the partition repeated at the moved values.
+                the fit minimises the residual of that function; its Jacobian
+                is taken with the areas held (the classic cycles, after a first
+                stage that solves them as WPPF intensities).
 
      WPPF       the intensities are free least-squares variables (Pawley 1981;
                 Toraya 1986), solved exactly and non-negatively at every
@@ -91,11 +92,10 @@
                                    unit profiles: no profile is re-evaluated
      po                            difference of the heights only
      spline anchors                differences of the spline
-     cell, profile, zero, disp,    forward differences of the pattern of the
+     cell, profile, zero, disp,    central differences of the pattern of the
      transp                        phase concerned
    then, with WPPF phases in the dataset, projected on the complement of the
-   intensity columns; with a Le Bail phase, the intensities partitioned again
-   at the moved value (Model.prototype.derivatives says why).
+   intensity columns; a Le Bail phase is held at its areas.
 
    The local fit is Levenberg-Marquardt, optionally preceded by replica-exchange PT,
    with Marquardt scaling and box limits held by
@@ -388,6 +388,23 @@ function formFactor(ff, radiation, s) {
     return f;
 }
 
+/**
+ * Anomalous dispersion of a dataset, as typed: "Fe -3.36 3.20, O 0.05 0.03" (element, f', f'' in electrons;
+ * separated by commas, semicolons or new lines). They depend on the wavelength, so they belong to the dataset.
+ * @returns {{map: Object<string, number[]>, bad: string[], text: string}} map keyed by the element in capitals
+ */
+function parseAnomalous(text) {
+    var map = {}, bad = [], parts = [];
+    String(text || '').split(/[,;\n]+/).map(function (s) { return s.trim(); }).filter(Boolean).forEach(function (s) {
+        var m = /^([A-Za-z]{1,2})\s+(\S+)\s+(\S+)$/.exec(s), fp = m ? Number(m[2].replace('−', '-')) : NaN, fpp = m ? Number(m[3].replace('−', '-')) : NaN;
+        if (!m || !Number.isFinite(fp) || !Number.isFinite(fpp)) { bad.push(s); return; }
+        var el = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase();
+        map[el.toUpperCase()] = [fp, fpp];
+        parts.push(el + ' ' + fp + ' ' + fpp);
+    });
+    return { map: map, bad: bad, text: parts.join(', ') };
+}
+
 // ---------------------------------------------------------------------------
 //  PROFILE PARAMETERS, BY PROFILE TYPE (names as profile.js reads them)
 // ---------------------------------------------------------------------------
@@ -480,7 +497,7 @@ function stepCap(c, v) {
         case 'cell': return /^[abc]$/.test(c.comp) ? 0.02 * Math.abs(v) + 1e-6 : 1;
         case 'atom': return c.comp === 'occ' ? 0.2 : c.comp === 'B' ? 2 : 0.05;
         case 'zero': return 0.1;
-        case 'disp': return 100;
+        case 'disp': return 2;                 // 2e-3 rad cos(theta), about 0.11 deg: the zero point's 0.1 deg
         case 'transp': return 0.01;
         case 'po': return 0.25;
         case 'instrument': return /^(SL|HL)$/.test(c.comp) ? 0.01 : 0.5 * Math.max(Math.abs(v), 1);
@@ -598,7 +615,12 @@ function Model(problem) {
                 if (!valid) throw new Error('Missing ' + (neutron ? 'neutron' : 'X-ray') + ' scattering factor for ' + P.def.key + '.' + at.label + '.');
             });
         });
-        return { def: d, n: n, T: T, spline: spline, bkgX: bx, trap: trap, nFit: nFit, refl: [], nnls: {}, has: has };
+        // f' and f'' of every atom of every phase in this dataset (X-rays only; zero for an element without an entry)
+        var an = d.radiation === 'neutron' ? null : (d.anomalous || null);
+        var anom = self.phases.map(function (P) {
+            return (P.def.atoms || []).map(function (at) { var e = an && at.element ? an[String(at.element).toUpperCase()] : null; return e ? [Number(e[0]) || 0, Number(e[1]) || 0] : [0, 0]; });
+        });
+        return { def: d, n: n, T: T, spline: spline, bkgX: bx, trap: trap, nFit: nFit, refl: [], nnls: {}, has: has, anom: anom };
     });
     // reflections of each phase in each dataset, from the start values, with 2 % of margin for the cell to move
     this.datasets.forEach(function (D, di) {
@@ -660,12 +682,18 @@ Model.prototype.geometry = function (P, D, v, pi) {
  * to the free structural parameters of the phase: x y z (free ones), occ, B.
  * F = sum_j occ_j f_j exp(-B_j s^2/4) (m_j/|reps|) sum_reps exp(2 pi i h.(R r_j + t))
  * (the centring factor |C| folded into m_j / |reps| = |C| / stab_j).
+ *
+ * With anomalous dispersion f_j = f0_j + f'_j + i f''_j, and the powder line
+ * holds h and its Friedel mate in equal parts, so with the sums
+ * A = sum Re(f) cos, B = sum Re(f) sin, C = sum f'' cos, D = sum f'' sin
+ * the intensity is (|F(h)|^2 + |F(-h)|^2) / 2 = A^2 + B^2 + C^2 + D^2.
  */
 Model.prototype.structure = function (P, D, v, geo, grad) {
     var atoms = P.def.atoms || [], nA = atoms.length, reps = P.reps, nR = reps.length, rad = D.def.radiation, pre = P.prefix;
-    var A = atoms.map(function (at) {
-        var u = [v[pre + at.label + '.x'], v[pre + at.label + '.y'], v[pre + at.label + '.z']];
-        return { pos: sitePosition(at.site, u), occ: v[pre + at.label + '.occ'], B: v[pre + at.label + '.B'], w0: (at.site.mult || 1) / nR, at: at };
+    var anom = (D.anom && D.anom[this.phases.indexOf(P)]) || [];
+    var A = atoms.map(function (at, j) {
+        var u = [v[pre + at.label + '.x'], v[pre + at.label + '.y'], v[pre + at.label + '.z']], an = anom[j] || [0, 0];
+        return { pos: sitePosition(at.site, u), occ: v[pre + at.label + '.occ'], B: v[pre + at.label + '.B'], w0: (at.site.mult || 1) / nR, at: at, fp: an[0], fpp: an[1] };
     });
     var hkl = geo.hkl, n = hkl.length, F2 = new Float64Array(n), G = null;
     // gradient slots: per atom, the free coordinates, then occ, then B
@@ -678,13 +706,16 @@ Model.prototype.structure = function (P, D, v, geo, grad) {
         });
         G = slots.map(function () { return new Float64Array(n); });
     }
-    var Aj = new Float64Array(nA), Bj = new Float64Array(nA), dA = new Float64Array(nA * 3), dB = new Float64Array(nA * 3);
+    var Aj = new Float64Array(nA), Bj = new Float64Array(nA), Cj = new Float64Array(nA), Dj = new Float64Array(nA);
+    var dA = new Float64Array(nA * 3), dB = new Float64Array(nA * 3), dC = new Float64Array(nA * 3), dD = new Float64Array(nA * 3);
+    var neutron = rad === 'neutron';
     for (var k = 0; k < n; k++) {
         var R = hkl[k];
         if (!Number.isFinite(R.tth)) continue;
-        var s = R.s, s2 = s * s, Ar = 0, Br = 0;
+        var s = R.s, s2 = s * s, Ar = 0, Br = 0, Cr = 0, Dr = 0;
         for (var j = 0; j < nA; j++) {
-            var a = A[j], wj = a.occ * formFactor(a.at.ff, rad, s) * Math.exp(-a.B * s2 / 4) * a.w0, c = 0, sn = 0, dc0 = 0, dc1 = 0, dc2 = 0, ds0 = 0, ds1 = 0, ds2 = 0;
+            var a = A[j], dw = Math.exp(-a.B * s2 / 4), f0 = formFactor(a.at.ff, rad, s);
+            var wj = a.occ * (neutron ? f0 : f0 + a.fp) * dw * a.w0, wi = neutron || !a.fpp ? 0 : a.occ * a.fpp * dw * a.w0, c = 0, sn = 0, dc0 = 0, dc1 = 0, dc2 = 0, ds0 = 0, ds1 = 0, ds2 = 0;
             for (var q = 0; q < nR; q++) {
                 var r = reps[q].r, t = reps[q].t;
                 var H0 = R.h * r[0] + R.k * r[3] + R.l * r[6], H1 = R.h * r[1] + R.k * r[4] + R.l * r[7], H2 = R.h * r[2] + R.k * r[5] + R.l * r[8];
@@ -693,35 +724,38 @@ Model.prototype.structure = function (P, D, v, geo, grad) {
                 c += cs; sn += si;
                 if (grad) { dc0 -= H0 * si; dc1 -= H1 * si; dc2 -= H2 * si; ds0 += H0 * cs; ds1 += H1 * cs; ds2 += H2 * cs; }
             }
-            Aj[j] = wj * c; Bj[j] = wj * sn;
-            Ar += Aj[j]; Br += Bj[j];
+            Aj[j] = wj * c; Bj[j] = wj * sn; Cj[j] = wi * c; Dj[j] = wi * sn;
+            Ar += Aj[j]; Br += Bj[j]; Cr += Cj[j]; Dr += Dj[j];
             if (grad) {
                 dA[j * 3] = TWO_PI * wj * dc0; dA[j * 3 + 1] = TWO_PI * wj * dc1; dA[j * 3 + 2] = TWO_PI * wj * dc2;
                 dB[j * 3] = TWO_PI * wj * ds0; dB[j * 3 + 1] = TWO_PI * wj * ds1; dB[j * 3 + 2] = TWO_PI * wj * ds2;
+                dC[j * 3] = TWO_PI * wi * dc0; dC[j * 3 + 1] = TWO_PI * wi * dc1; dC[j * 3 + 2] = TWO_PI * wi * dc2;
+                dD[j * 3] = TWO_PI * wi * ds0; dD[j * 3 + 1] = TWO_PI * wi * ds1; dD[j * 3 + 2] = TWO_PI * wi * ds2;
             }
         }
-        F2[k] = Ar * Ar + Br * Br;
+        F2[k] = Ar * Ar + Br * Br + Cr * Cr + Dr * Dr;
         if (grad) {
             for (var g = 0; g < slots.length; g++) {
-                var sl = slots[g], jj = sl.j;
+                var sl = slots[g], jj = sl.j, j3 = jj * 3;
                 if (sl.kind === 'xyz') {
-                    var b = sl.b, dAr = dA[jj * 3] * b[0] + dA[jj * 3 + 1] * b[1] + dA[jj * 3 + 2] * b[2],
-                        dBr = dB[jj * 3] * b[0] + dB[jj * 3 + 1] * b[1] + dB[jj * 3 + 2] * b[2];
-                    G[g][k] = 2 * (Ar * dAr + Br * dBr);
+                    var b = sl.b, dAr = dA[j3] * b[0] + dA[j3 + 1] * b[1] + dA[j3 + 2] * b[2], dBr = dB[j3] * b[0] + dB[j3 + 1] * b[1] + dB[j3 + 2] * b[2],
+                        dCr = dC[j3] * b[0] + dC[j3 + 1] * b[1] + dC[j3 + 2] * b[2], dDr = dD[j3] * b[0] + dD[j3 + 1] * b[1] + dD[j3 + 2] * b[2];
+                    G[g][k] = 2 * (Ar * dAr + Br * dBr + Cr * dCr + Dr * dDr);
                 } else if (sl.kind === 'occ') {
                     var oc = A[jj].occ;
-                    if (Math.abs(oc) > 1e-12) G[g][k] = 2 * (Ar * Aj[jj] + Br * Bj[jj]) / oc;
+                    if (Math.abs(oc) > 1e-12) G[g][k] = 2 * (Ar * Aj[jj] + Br * Bj[jj] + Cr * Cj[jj] + Dr * Dj[jj]) / oc;
                     else {                                     // occ = 0: the contribution per unit occupancy
-                        var w1 = formFactor(A[jj].at.ff, rad, s) * Math.exp(-A[jj].B * s2 / 4) * A[jj].w0, c1 = 0, s1 = 0;
+                        var f1 = formFactor(A[jj].at.ff, rad, s), dw1 = Math.exp(-A[jj].B * s2 / 4);
+                        var w1 = (neutron ? f1 : f1 + A[jj].fp) * dw1 * A[jj].w0, w1i = neutron ? 0 : A[jj].fpp * dw1 * A[jj].w0, c1 = 0, s1 = 0;
                         for (q = 0; q < nR; q++) {
                             var rr = reps[q].r, tt = reps[q].t;
                             var p1 = TWO_PI * ((R.h * rr[0] + R.k * rr[3] + R.l * rr[6]) * A[jj].pos[0] + (R.h * rr[1] + R.k * rr[4] + R.l * rr[7]) * A[jj].pos[1] +
                                                (R.h * rr[2] + R.k * rr[5] + R.l * rr[8]) * A[jj].pos[2] + R.h * tt[0] + R.k * tt[1] + R.l * tt[2]);
                             c1 += Math.cos(p1); s1 += Math.sin(p1);
                         }
-                        G[g][k] = 2 * (Ar * w1 * c1 + Br * w1 * s1);
+                        G[g][k] = 2 * (Ar * w1 * c1 + Br * w1 * s1 + Cr * w1i * c1 + Dr * w1i * s1);
                     }
-                } else G[g][k] = 2 * (Ar * Aj[jj] + Br * Bj[jj]) * (-s2 / 4);
+                } else G[g][k] = 2 * (Ar * Aj[jj] + Br * Bj[jj] + Cr * Cj[jj] + Dr * Dj[jj]) * (-s2 / 4);
             }
         }
     }
@@ -984,13 +1018,16 @@ Model.prototype.wppf = function (di, parts, wp, target, cacheKey) {
     if (!cache.fac || cache.fac.length < set.A.a.length) cache.fac = new Float64Array(set.A.a.length);
     if (!cache.sol || cache.sol.length < m) cache.sol = new Float64Array(m);
     var res = m ? solveSkylineNNLS(set.A, rhs, cache) : { x: new Float64Array(0), bound: [] };
+    if (!res && m) { cache.nnlsReady = false; res = solveSkylineNNLS(set.A, rhs, cache); }   // a stale warm start, retried cold
     var x = res ? res.x : new Float64Array(m), passive = new Uint8Array(m);
     for (j = 0; j < m; j++) passive[j] = (!set.undet[j] && x[j] > 0) ? 1 : 0;
     items.forEach(function (it, jj) { parts[it.pi].height[it.k] = passive[jj] ? x[jj] : 0; parts[it.pi].free[it.k] = passive[jj]; });
     wp.forEach(function (pi) { render(parts[pi], D.n); });
+    // a failed solve leaves every intensity at zero: the callers refuse the evaluation (cost, normal, evaluate)
     set.failed = !res;
     return factorSet(set, passive);
 };
+var WPPF_FAILED = 'The non-negative WPPF intensity solve did not converge (degenerate or non-finite normal matrix): check the cell, the profile widths and the fitted range.';
 
 /**
  * Fill in the intensities of the Le Bail and WPPF phases of a dataset that
@@ -1037,6 +1074,7 @@ Model.prototype.extract = function (di, parts, bkg, projectAll) {
         passive[j] = !set.undet[j] && (ph2.method === 'lebail' || ph2.free[it.k]) ? 1 : 0;
     }
     set.all = true;
+    set.failed = !!(ws && ws.failed);
     return factorSet(set, passive);
 };
 
@@ -1072,7 +1110,7 @@ Model.prototype.evalDataset = function (di, v, opts) {
     }
     var ws = this.extract(di, parts, bkg, !!opts.projectAll), y = Float64Array.from(bkg);
     parts.forEach(function (ph) { addTo(y, ph.y); });
-    return { y: y, bkg: bkg, phases: parts, ws: ws };
+    return { y: y, bkg: bkg, phases: parts, ws: ws, failed: !!(ws && ws.failed) };
 };
 
 /** The areas of the Le Bail phases of an evaluation, to hold them during the step of a cycle. */
@@ -1413,7 +1451,9 @@ function degenerateGroups(ws) {
  * per phase, in the order of the phase's reflections: area (the integrated
  * Ka1 intensity, the convention of the Rietveld model: area = S m Lp P |F|^2),
  * sigma(area), and for WPPF whether the constraint holds it at zero and
- * whether it is exactly coincident with another.
+ * whether it is exactly coincident with another. cov[k] lists [k', cov(area_k,
+ * area_k')] for the earlier free WPPF reflections k' of the phase whose windows
+ * overlap k's (each pair once), with |correlation| above 1e-3.
  *
  * WPPF uncertainties are marginal, the non-linear parameters integrated out,
  * when cov is given: the intensity block of the inverse of the full normal
@@ -1430,7 +1470,8 @@ function intensityTables(ev, s2, cov, D) {
     ev.phases.forEach(function (ph, pi) {
         if (ph.method === 'rietveld') return;
         var nr = ph.cols.length, t = { method: ph.method, area: Float64Array.from(ph.area), sigma: new Float64Array(nr).fill(NaN),
-                                        obs: new Float64Array(nr).fill(NaN), bound: new Uint8Array(nr), group: new Int32Array(nr).fill(-1) };
+                                        obs: new Float64Array(nr).fill(NaN), bound: new Uint8Array(nr), group: new Int32Array(nr).fill(-1),
+                                        cov: new Array(nr).fill(null) };
         if (ph.method === 'lebail') {
             for (var k = 0; k < nr; k++) {
                 if (!ph.cols[k]) continue;
@@ -1454,21 +1495,34 @@ function intensityTables(ev, s2, cov, D) {
     if (ws && ws.m && ws.fac) {
         var m = ws.m, Z = selectedInverse(ws.fac, ws.first, ws.ptr, m), gid = degenerateGroups(ws), sc = s2 > 0 ? s2 : 1;
         var slots = cov && cov.slots ? cov.slots : [], ns = slots.length, inv = cov ? cov.inv : null, ne = cov ? cov.ne : 0;
-        var col = new Float64Array(m);
+        var col = new Float64Array(m), vv = new Float64Array(m).fill(NaN);
+        // the Woodbury term of the covariance of free intensities i and j: Y S^-1 Y', with Y = z of every variable
+        var woodbury = function (i, j) {
+            var add = 0;
+            if (!inv || !ns) return 0;
+            for (var a = 0; a < ns; a++) {
+                var za = slots[a].z[i];
+                if (!za) continue;
+                for (var b = 0; b < ns; b++) add += za * inv[slots[a].e * ne + slots[b].e] * slots[b].z[j];
+            }
+            return add;
+        };
         for (var j = 0; j < m; j++) {
             var it = ws.items[j], t2 = out[it.pi], ph2 = ev.phases[it.pi], v = NaN;
             if (ph2.method === 'lebail') continue;            // its uncertainty is that of the partition
             t2.group[it.k] = gid[j];
             if (ws.passive[j]) {
-                v = Z[ws.ptr[j] + (j - ws.first[j])];
-                if (inv && ns) {
-                    var add = 0;
-                    for (var a = 0; a < ns; a++) {
-                        var za = slots[a].z[j];
-                        if (!za) continue;
-                        for (var b = 0; b < ns; b++) add += za * inv[slots[a].e * ne + slots[b].e] * slots[b].z[j];
-                    }
-                    v += add;
+                v = Z[ws.ptr[j] + (j - ws.first[j])] + woodbury(j, j);
+                vv[j] = v;
+                // covariances with the earlier free reflections of the same phase whose windows overlap this one (the
+                // envelope of the selected inverse), kept once, on the later reflection: what a sum of overlapped
+                // intensities needs for its variance (the Wyckoff search's groups); negligible correlations dropped
+                if (v > 0) for (var q = ws.first[j]; q < j; q++) {
+                    var iq = ws.items[q];
+                    if (!ws.passive[q] || iq.pi !== it.pi || !(vv[q] > 0)) continue;
+                    var cq = Z[ws.ptr[j] + (q - ws.first[j])] + woodbury(q, j);
+                    if (!(Math.abs(cq) > 1e-3 * Math.sqrt(v * vv[q]))) continue;
+                    (t2.cov[it.k] = t2.cov[it.k] || []).push([iq.k, sc * cq * ph2.K[it.k] * ph2.K[iq.k]]);
                 }
             } else if (!ws.undet[j]) {
                 // conditional variance of a reflection held at zero, as if it were free
@@ -1603,6 +1657,7 @@ function* refineSteps(problem, opts) {
             var s = 0, costModel = engine || model;
             for (var d = 0; d < nd; d++) {
                 var ev = costModel.evalDataset(d, vals[d], { held: held ? held[d] : null }), y = costModel.datasets[d].def.y, w = costModel.datasets[d].def.w;
+                if (ev.failed) return Infinity;
                 for (var i = 0; i < ev.y.length; i++) { if (!(w[i] > 0)) continue; var r = y[i] - ev.y[i]; s += w[i] * r * r; }
                 if (!(s < Infinity)) return Infinity;
             }
@@ -1614,6 +1669,7 @@ function* refineSteps(problem, opts) {
             var vals = apply(xv), A = new Float64Array(nv * nv), g = new Float64Array(nv), f = 0, evs = [], projs = [], held = [];
             for (var d = 0; d < nd; d++) {
                 var D = model.datasets[d], ev = model.evalDataset(d, vals[d], { grad: true, projectAll: !!projectAll }), idx = [];
+                if (ev.failed) throw new Error(WPPF_FAILED + (nd > 1 ? ' (dataset ' + (d + 1) + ')' : ''));
                 held[d] = heldAreas(ev);
                 for (var j = 0; j < nv; j++) if (info[j].ds.indexOf(d) >= 0 && (!onlyIdx || onlyIdx.indexOf(j) >= 0)) idx.push(j);
                 var pj = keep ? {} : null;
@@ -1751,7 +1807,7 @@ function* refineSteps(problem, opts) {
         function preparePT() {
             if (ptSetup) return ptSetup;
             var config = problem.pt || {};
-            var sweeps = config.sweeps == null ? 200 : config.sweeps;
+            var sweeps = config.sweeps == null ? 50 : config.sweeps;
             var chains = config.chains == null ? 6 : config.chains;
             var maxTemp = config.maxTemp == null ? 100 : config.maxTemp;
             var seed = config.seed == null ? 12345 : config.seed;
@@ -1803,18 +1859,23 @@ function* refineSteps(problem, opts) {
             progressTotal = sweeps + maxIt * stages;
             for (var sweep = 0; sweep < sweeps; sweep++) {
                 if (opts.shouldStop && opts.shouldStop()) { x = best; ptInfo.bestChi2 = bestCost; return false; }
+                // a sweep is nv single-coordinate proposals per replica (each variable once on average), then one round
+                // of exchanges; pt_gpu.js schedules its sweeps the same way
                 for (r = 0; r < chains; r++) {
                     if (opts.shouldStop && opts.shouldStop()) { x = best; ptInfo.bestChi2 = bestCost; return false; }
-                    var replica = replicas[r], coordinate = Math.floor(random() * nv), proposal = Float64Array.from(replica.x);
-                    proposal[coordinate] = reflect(proposal[coordinate] + gaussian() * scales[coordinate] * Math.sqrt(temperatures[r]), info[coordinate].lo, info[coordinate].hi);
-                    if (!Number.isFinite(proposal[coordinate])) continue;
-                    var candidateCost;
-                    try { candidateCost = cost(apply(proposal), null); } catch (invalidTrial) { candidateCost = Infinity; }
-                    ptInfo.proposals++;
-                    if (Number.isFinite(candidateCost) &&
-                        (candidateCost <= replica.cost || Math.log(random()) < (replica.cost - candidateCost) / (2 * temperatures[r]))) {
-                        replica.x = proposal; replica.cost = candidateCost; ptInfo.accepted++;
-                        if (candidateCost < bestCost) { bestCost = candidateCost; best = Float64Array.from(proposal); }
+                    var replica = replicas[r];
+                    for (var move = 0; move < nv; move++) {
+                        var coordinate = Math.floor(random() * nv), proposal = Float64Array.from(replica.x);
+                        proposal[coordinate] = reflect(proposal[coordinate] + gaussian() * scales[coordinate] * Math.sqrt(temperatures[r]), info[coordinate].lo, info[coordinate].hi);
+                        if (!Number.isFinite(proposal[coordinate])) continue;
+                        var candidateCost;
+                        try { candidateCost = cost(apply(proposal), null); } catch (invalidTrial) { candidateCost = Infinity; }
+                        ptInfo.proposals++;
+                        if (Number.isFinite(candidateCost) &&
+                            (candidateCost <= replica.cost || Math.log(random()) < (replica.cost - candidateCost) / (2 * temperatures[r]))) {
+                            replica.x = proposal; replica.cost = candidateCost; ptInfo.accepted++;
+                            if (candidateCost < bestCost) { bestCost = candidateCost; best = Float64Array.from(proposal); }
+                        }
                     }
                 }
                 // Alternate disjoint adjacent pairs, preserving detailed balance.
@@ -1954,8 +2015,20 @@ function* refineSteps(problem, opts) {
             stats.push(st);
             var slots = [];
             if (inv && ev.ws) fin.projs[d].idx.forEach(function (jj) {
-                var pr = fin.projs[d].p[vars[jj].name];
-                if (pr && posE[jj] != null) slots.push({ e: posE[jj], z: pr.z, b: pr.b });
+                var p = fin.projs[d].p, pr = p[vars[jj].name];
+                if (!pr || posE[jj] == null) return;
+                // the column of a variable carries the columns of the names linked to it (normal), and so do its projections
+                var z = pr.z, b = pr.b;
+                if (constraints) constraints.links.forEach(function (l) {
+                    if (l.d !== d || !p[l.name]) return;
+                    l.terms.forEach(function (t) {
+                        if (t[0] !== jj || !t[1]) return;
+                        if (z === pr.z) { z = Float64Array.from(pr.z); b = Float64Array.from(pr.b); }
+                        var lz = p[l.name].z, lb = p[l.name].b;
+                        for (var q = 0; q < z.length; q++) { z[q] += t[1] * lz[q]; b[q] += t[1] * lb[q]; }
+                    });
+                });
+                slots.push({ e: posE[jj], z: z, b: b });
             });
             var cov = inv ? { inv: inv, ne: ne, S: Ms, slots: slots } : null;
             intensities.push(intensityTables(ev, chi2red, cov, D));
@@ -2005,6 +2078,7 @@ function evaluate(problem, di) {
         problem=Object.assign({},problem,{values:AtomicConstraints.prepare(problem).values});
     }
     var model = new Model(problem), d = di || 0, v = problem.values[d], ev = model.evalDataset(d, v);
+    if (ev.failed) throw new Error(WPPF_FAILED);
     var D = model.datasets[d], nInt = intensityCount(ev), st = datasetStats(D, ev, nInt);
     var s2 = st.n > nInt ? st.chi2 / (st.n - nInt) : 1, tables = intensityTables(ev, s2, null, D);
     return {
@@ -2025,7 +2099,7 @@ function evaluate(problem, di) {
 root.RVCore = {
     VERSION: VERSION, METHODS: METHODS, METHOD_LABELS: METHOD_LABELS, expandOps: expandOps, cosets: cosets, laueRotations: laueRotations, isAllowed: isAllowed,
     cellParams: cellParams, cellOf: cellOf, generateReflections: generateReflections, siteSymmetry: siteSymmetry,
-    sitePosition: sitePosition, formFactor: formFactor, profileParamsFor: profileParamsFor, INSTRUMENT_PROFILE: INSTRUMENT_PROFILE, INSTRUMENT_PROFILE_TYPES:INSTRUMENT_PROFILE_TYPES, ALL_INSTRUMENT_PROFILE: ALL_INSTRUMENT_PROFILE, instrumentProfileParams: instrumentProfileParams, usesSeparatedProfile: usesSeparatedProfile, SAMPLE_PROFILE: SAMPLE_PROFILE, broadeningConfig: broadeningConfig, sampleProfileNames: sampleProfileNames, PROFILE_PARAMS: PROFILE_PARAMS, PROFILE_LABELS: PROFILE_LABELS,
+    sitePosition: sitePosition, formFactor: formFactor, parseAnomalous: parseAnomalous, profileParamsFor: profileParamsFor, INSTRUMENT_PROFILE: INSTRUMENT_PROFILE, INSTRUMENT_PROFILE_TYPES:INSTRUMENT_PROFILE_TYPES, ALL_INSTRUMENT_PROFILE: ALL_INSTRUMENT_PROFILE, instrumentProfileParams: instrumentProfileParams, usesSeparatedProfile: usesSeparatedProfile, SAMPLE_PROFILE: SAMPLE_PROFILE, broadeningConfig: broadeningConfig, sampleProfileNames: sampleProfileNames, PROFILE_PARAMS: PROFILE_PARAMS, PROFILE_LABELS: PROFILE_LABELS,
     classify: classify, defaultLimits: defaultLimits, methodAllows: methodAllows, Model: Model, refine: refine, refineAsync:refineAsync, evaluate: evaluate,
     datasetStats: datasetStats, solveSPD: solveSPD, invSPD: invSPD, normalDependence:normalDependence, fracText: fracText, splineValues: splineValues, MAX_PRECISION_REFLECTIONS:MAX_PRECISION_REFLECTIONS,
     selectedInverse: selectedInverse

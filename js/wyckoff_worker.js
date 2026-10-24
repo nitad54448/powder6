@@ -189,7 +189,7 @@ function wyRawObservationRows(job) {
             h, k, l, Ihkl: I,
             multiplicity: peak.multiplicity,
             d: peak.d, twoTheta: peak.tth,
-            sigma: peak.sigma,
+            sigma: peak.sigma, cov: peak.cov,
             lp: applyLP
                 ? ((Number.isFinite(peak.lp) && peak.lp > 0) ? peak.lp
                                                             : lorentzPolarization(peak.tth, polModel))
@@ -202,10 +202,9 @@ function wyRawObservationRows(job) {
         // it is unmeasured, and the search should not be asked to explain it.
         wySay(`${negative} reflection(s) with a NEGATIVE extracted intensity` +
               (nonFinite ? ` and ${nonFinite} non-numeric` : '') +
-              ` were dropped from the search. A WPPF intensity is a free ` +
-              `parameter with no non-negativity constraint, so weak or ` +
-              `overlapped reflections can refine below zero; |F| is undefined ` +
-              `for them. Applying a French-Wilson correction before the search ` +
+              ` were dropped from the search. The WPPF solve here is ` +
+              `non-negative, but intensities imported from elsewhere can be ` +
+              `below zero; |F| is undefined for them. Applying a French-Wilson correction before the search ` +
               `recovers them as small positive values instead of losing them.`);
     }
     return rows;
@@ -247,7 +246,7 @@ function wyObservationsFromHkl(job, symops) {
         // builders are otherwise identical and both feed normaliseObservations;
         // they differed by this one field.
         const row = { h, k, l, Ihkl: I, multiplicity: peak.multiplicity,
-                      d: peak.d, twoTheta: peak.tth, sigma: peak.sigma };
+                      d: peak.d, twoTheta: peak.tth, sigma: peak.sigma, cov: peak.cov };
         if (applyLP) {
             // Prefer the host's Lp - it was evaluated at the refined 2-theta
             // including the zero shift, and is the same number the map was

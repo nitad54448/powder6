@@ -121,25 +121,14 @@ function crGroupReflections(obsRows, overlapTol, fwhmAt, sepFrac) {
     for (const g of groups) {
         g.Iobs = g.members.reduce((s, r) => s + r.mult * r.Fo2, 0);
 
-        // The group's VARIANCE, summed the same way its intensity is.
-        //
-        // The group is a sum, so its members' variances add. Treating them as
-        // independent understates the true covariance -- reflections this
-        // close in d are correlated in the WPPF decomposition -- but the
-        // off-diagonal terms are not carried this far, and summing variances
-        // is conservative rather than optimistic.
+        // The group's VARIANCE, summed the same way its intensity is: the
+        // members' variances plus twice their WPPF covariances
+        // (obsGroupVariance, the same function the search's weights use).
         //
         // null, not zero, when any member lacks a sigma: a group with no
         // uncertainty is not a group with zero uncertainty, and the caller
         // has to be able to tell the difference to pick a fallback weight.
-        let varSum = 0, haveAll = g.members.length > 0;
-        for (const r of g.members) {
-            if (Number.isFinite(r.sigma) && r.sigma > 0) {
-                const sm = r.mult * r.sigma;
-                varSum += sm * sm;
-            } else { haveAll = false; }
-        }
-        g.varObs = (haveAll && varSum > 0) ? varSum : null;
+        g.varObs = g.members.length > 0 ? obsGroupVariance(g.members) : null;
         // TWO resolution variables, because two conventions are in play and
         // conflating them cost a factor of two.
         //

@@ -723,6 +723,7 @@ RV.cmd = (function () {
       { key: 'monoTth', label: 'Monochromator 2θ /°', type: 'number', value: i.monoTth, when: 'pol:mono', hint: '26.6° for graphite (002) with Cu Kα' },
       { key: 'polFrac', label: 'Polarised fraction', type: 'number', value: i.polFrac, when: 'pol:sync' },
       { key:'radiusMM',label:'Goniometer radius /mm',type:'number',value:i.radiusMM || 0,hint:'Bragg–Brentano radius. 0 = unknown; required for displacement in mm and effective absorption.' },
+      { key: 'anomalous', label: 'Anomalous f′, f″', type: 'text', value: i.anomalous || '', when: 'radiation:xray', hint: 'Per element at λ1, in electrons: Fe -3.36 3.20, O 0.05 0.03. Used in the Rietveld structure factors (Friedel-averaged); an element not listed has none. Take the values from tables (Sasaki, Cromer–Liberman) for this wavelength.' },
       { key: 'tthMin', label: 'Fit from 2θ /°', type: 'number', value: i.tthMin }, { key: 'tthMax', label: 'Fit to 2θ /°', type: 'number', value: i.tthMax, hint: 'Measured: ' + lo.toFixed(2) + ' to ' + hi.toFixed(2) + '°. The background and the excluded regions have their own buttons.' }
     ], 'Apply', (list.length > 1 ? 'For the ' + plural(list.length, 'selected dataset') + ': the fields show the values of ' + RV.ui.esc(d.name) + ', and only the fields you change are applied to all of them. ' : '') +
        'Polarisation does not apply to neutrons.', {
@@ -737,6 +738,7 @@ RV.cmd = (function () {
         if (!(r.lambda1 > 0 && r.lambda1 < 20)) return 'λ1 must be a wavelength in Å.';
         if (!(r.ratio >= 0 && r.ratio <= 1) || (r.ratio > 0 && !(r.lambda2 > 0))) return 'The ratio is from 0 to 1, with a positive λ2.';
         if (r.radiusMM != null && !(r.radiusMM >= 0)) return 'Radius must be positive, or 0 for unknown.';
+        var an = C.parseAnomalous(r.anomalous); if (an.bad.length) return 'Anomalous f′, f″: “' + an.bad[0] + '” is not an element followed by two numbers.';
         if (!(r.tthMin < r.tthMax)) return 'The fitted range must go from a lower to a higher 2θ.';
         if (r.pol === 'sync' && !(r.polFrac > 0 && r.polFrac <= 1)) return 'The polarised fraction is from 0 to 1.';
         return '';
@@ -746,7 +748,7 @@ RV.cmd = (function () {
     // only what was changed is applied, so datasets measured differently keep their own wavelength or range
     var want = { anode: v.anode, lambda1: v.lambda1, lambda2: v.lambda2, ratio: v.ratio, radiation: v.radiation, pol: v.pol,
                  monoTth: Number.isFinite(v.monoTth) ? v.monoTth : i.monoTth, polFrac: Number.isFinite(v.polFrac) ? v.polFrac : i.polFrac,
-                 radiusMM:Number.isFinite(v.radiusMM)?v.radiusMM:i.radiusMM || 0, tthMin: v.tthMin, tthMax: v.tthMax }, changed = {};
+                 radiusMM:Number.isFinite(v.radiusMM)?v.radiusMM:i.radiusMM || 0, anomalous: v.anomalous != null ? C.parseAnomalous(v.anomalous).text : i.anomalous || '', tthMin: v.tthMin, tthMax: v.tthMax }, changed = {};
     if (want.anode === anode) delete want.anode;
     Object.keys(want).forEach(function (k) { if (list.length === 1 || want[k] !== i[k]) changed[k] = want[k]; });
     if (('tthMin' in changed) !== ('tthMax' in changed)) { changed.tthMin = v.tthMin; changed.tthMax = v.tthMax; }
@@ -754,7 +756,7 @@ RV.cmd = (function () {
     if (!keys.length) { ui.toast('Nothing changed.', 'info'); return; }
     snapshot('instrument of ' + plural(list.length, 'dataset'));
     St.setInstrument(list, changed);
-    var LBL = { radiusMM:'goniometer radius /mm', lambda1: 'λ1', lambda2: 'λ2', ratio: 'ratio', radiation: 'radiation', pol: 'polarisation', monoTth: 'monochromator 2θ', polFrac: 'polarised fraction', tthMin: 'from', tthMax: 'to' };
+    var LBL = { radiusMM:'goniometer radius /mm', anomalous: 'anomalous f′, f″', lambda1: 'λ1', lambda2: 'λ2', ratio: 'ratio', radiation: 'radiation', pol: 'polarisation', monoTth: 'monochromator 2θ', polFrac: 'polarised fraction', tthMin: 'from', tthMax: 'to' };
     ui.toast('Instrument of ' + plural(list.length, 'dataset') + ': ' + keys.map(function (k) { return LBL[k] + ' ' + changed[k]; }).join(', ') + '.', 'ok');
   }
   // ---------------------------------------------------------------- background and excluded regions

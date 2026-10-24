@@ -199,7 +199,22 @@ function skylineCholeskyInPlace(a, first, ptr, n, repairedOut) {
             for (let k = k0; k < j; k++) s -= a[pi + (k - fi)] * a[pj + (k - fj)];
             if (i === j) {
                 const orig = Math.abs(a[pi + (j - fi)]);
-                const floor = 1e-14 * Math.max(1, orig);
+                // RELATIVE TO THE PIVOT'S OWN DIAGONAL, AND AT THE REPAIR VALUE.
+                // The floor was 1e-14 * max(1, orig): absolute whenever the
+                // diagonal is below 1, which it is with 1/y weights, so it
+                // depended on the units of the weights. Worse, it accepted
+                // pivots between 1e-14 and 1e-8 of their diagonal -- columns
+                // all but identical to the earlier ones -- whose tiny square
+                // roots multiply the rounding by up to 1e7 in every later row:
+                // the next Schur complements came out negative, were repaired,
+                // and the factor grew to 1e198 and overflowed. A triclinic
+                // pattern whose last reflections are cut by the end of the
+                // range did exactly that, every WPPF solve failed, and the fit
+                // carried zero intensities. A pivot at or below the repair
+                // value (normal equations square the condition number, so this
+                // is a column correlated to better than 1 - 5e-9) is a
+                // dependency and is repaired.
+                const floor = orig > 0 ? WPPF_PIVOT_REPAIR * orig : 0;
                 if (!(s > floor)) {
                     // MODIFIED CHOLESKY (Gill-Murray). The pivot is repaired
                     // IN PLACE and the factorisation continues, rather than

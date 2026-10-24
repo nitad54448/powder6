@@ -31,7 +31,7 @@ RV.state = (function () {
                  Cr: [2.28976, 2.293663, 0.5], Mo: [0.7093, 0.71359, 0.5], Ag: [0.5594075, 0.563798, 0.5] };
   function defaultInst() {
     return { anode: 'Cu', lambda1: 1.540598, lambda2: 1.544426, ratio: 0.5, radiation: 'xray', pol: 'tube', monoTth: 26.6, polFrac: 0.95,
-             radiusMM:0, resolutionType:'tch_aniso', bkgType: 'cheb', bkgN: 6, bkgX: [], excl: [], exclOff: [] };
+             radiusMM:0, anomalous: '', resolutionType:'tch_aniso', bkgType: 'cheb', bkgN: 6, bkgX: [], excl: [], exclOff: [] };
   }
   // arrays of an instrument copied, so a restore point or a copy never shares them
   function instCopy(i) {
@@ -46,6 +46,8 @@ RV.state = (function () {
     var o = Object.assign(defaultInst(), i || {});
     o.resolutionType = own(C.PROFILE_PARAMS,o.resolutionType) ? o.resolutionType : 'tch_aniso';
     o.radiusMM = Number.isFinite(+o.radiusMM) && +o.radiusMM > 0 ? +o.radiusMM : 0;
+    // f' and f'' per element at this wavelength, as text ("Fe -3.36 3.20, O 0.05 0.03"); entries that do not read are dropped
+    o.anomalous = C.parseAnomalous(typeof o.anomalous === 'string' ? o.anomalous : '').text;
     o.bkgType = o.bkgType === 'spline' ? 'spline' : 'cheb';
     o.bkgX = (Array.isArray(o.bkgX) ? o.bkgX : []).map(Number).filter(Number.isFinite).sort(function (a, b) { return a - b; })
       .filter(function (x, k, a) { return k === 0 || x - a[k - 1] > 1e-6; });
@@ -86,7 +88,7 @@ RV.state = (function () {
 
   // ---------------------------------------------------------------- settings
   function defaults() {
-    return { algorithm: 'lm', ptSweeps: 200, ptChains: 6, ptMaxTemp: 100, ptSeed: 12345, maxIter: 30, tol: 1e-5, theme: 'system', yscale: 'lin', showAnchors:true, showBkg: true, showPhases: true, showTicks: true, noBackground:false, plotMode:'overlay', historyMB:100, historyCount:20,
+    return { algorithm: 'lm', ptSweeps: 50, ptChains: 6, ptMaxTemp: 100, ptSeed: 12345, maxIter: 30, tol: 1e-5, theme: 'system', yscale: 'lin', showAnchors:true, showBkg: true, showPhases: true, showTicks: true, noBackground:false, plotMode:'overlay', historyMB:100, historyCount:20,
              maxPlots: 8, bkgN: 6, nAnchors: 12, weight: 'poisson', inst: defaultInst() };
   }
   function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
@@ -1024,13 +1026,13 @@ RV.state = (function () {
   function phaseDefs() {
     return S.phases.map(function (ph) {
       return { key: ph.key, method: ph.method, system: ph.sg.system, uniqueAxis: ph.sg.uniqueAxis, profileType: ph.profileType, separatedProfile: ph.separatedProfile === true, broadening: RVCore.broadeningConfig(ph.broadening), ops: ph.ops, poDir: ph.poDir,
-               constraints:JSON.parse(JSON.stringify(ph.constraints || [])), atoms: ph.atoms.map(function (at) { var f = scatterer(at.type); return { label: at.label, ff: { xray: f.xray, neutron: f.neutron }, site: at.site }; }) };
+               constraints:JSON.parse(JSON.stringify(ph.constraints || [])), atoms: ph.atoms.map(function (at) { var f = scatterer(at.type); return { label: at.label, element: elementOf(at.type), ff: { xray: f.xray, neutron: f.neutron }, site: at.site }; }) };
     });
   }
   function datasetDef(ds) {
     var pts = fitPoints(ds), i = ds.inst;
     return { id: ds.id, tth: pts.tth, y: pts.y, w: pts.w, lambda1: i.lambda1, lambda2: i.ratio > 0 ? i.lambda2 : 0, ratio: i.lambda2 > 0 ? i.ratio : 0,
-             polK: polK(i), radiation: i.radiation, resolutionType:i.resolutionType, bkgType: i.bkgType, bkgN: i.bkgN, bkgX: i.bkgX.slice(), minFwhm: Math.max(1e-4, 2 * (ds.step || 0.01)),
+             polK: polK(i), radiation: i.radiation, anomalous: C.parseAnomalous(i.anomalous).map, resolutionType:i.resolutionType, bkgType: i.bkgType, bkgN: i.bkgN, bkgX: i.bkgX.slice(), minFwhm: Math.max(1e-4, 2 * (ds.step || 0.01)),
              phases: ds.phases.filter(function(k){return !S.disabledPhases.includes(k);}) };
   }
   function problemFor(list) {

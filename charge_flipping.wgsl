@@ -385,10 +385,11 @@ fn symmetrize(@builtin(global_invocation_id) gid3 : vec3<u32>) {
         var a = src[2u * idx];
         var b = src[2u * idx + 1u];
         if ((word & CONJ_BIT) != 0u) { b = -b; }
+        // F(h0) = F(h0 R) conj(exp(2 pi i h0.t)): rho = sum F exp(+2 pi i h.x)
         let cr = phase[2u * p];
         let ci = phase[2u * p + 1u];
-        sr += a * cr - b * ci;
-        si += a * ci + b * cr;
+        sr += a * cr + b * ci;
+        si += b * cr - a * ci;
     }
     let inv = 1.0 / f32(orb.count);
     sr = sr * inv;
@@ -401,9 +402,9 @@ fn symmetrize(@builtin(global_invocation_id) gid3 : vec3<u32>) {
         let idx  = word & IDX_MASK;
         let cr = phase[2u * p];
         let ci = phase[2u * p + 1u];
-        // multiply the orbit mean by conj(Ebar)
-        var a = sr * cr + si * ci;
-        var b = si * cr - sr * ci;
+        // F(h0 R) = F(h0) exp(2 pi i h0.t)
+        var a = sr * cr - si * ci;
+        var b = sr * ci + si * cr;
         if ((word & CONJ_BIT) != 0u) { b = -b; }
         src[2u * idx]      = mix(src[2u * idx],      a, lam);
         src[2u * idx + 1u] = mix(src[2u * idx + 1u], b, lam);

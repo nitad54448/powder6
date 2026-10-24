@@ -92,7 +92,8 @@
  * @property {number} max_d       Truncation half-width, degrees.
  * @property {number} pedestal    Profile value at max_d, subtracted off.
  * @property {number} fwhm_total  Convoluted FWHM, degrees.
- * @property {number} analyticArea Exact area of the UNTRUNCATED shape.
+ * @property {number} analyticArea Exact area of the UNTRUNCATED symmetric shape
+ *                                 (getPseudoVoigtArea adds the asymmetry).
  * @property {number} Cg          4*ln2, the Gaussian exponent coefficient.
  */
 
@@ -744,10 +745,67 @@ function evalVoigt(x, p) {
     return v > 0 ? v : 0.0;
 }
 
+// Gauss-Legendre, 8 points on [-1, 1] (the positive half; the rule is symmetric)
+const GL8_X = [0.1834346424956498, 0.5255324099163290, 0.7966664774136267, 0.9602898564975363];
+const GL8_W = [0.3626837833783620, 0.3137066458778873, 0.2223810344533745, 0.1012285362903763];
+
+/**
+ * How much the SL/HL asymmetry changes the area of a unit-height peak.
+ *
+ * The asymmetry stretches one flank (delta / (1 - t), t = asym delta clamped
+ * at +-0.95) and compresses the other, which does not conserve the area, while
+ * analyticArea is that of the symmetric (TCH, type 3) shape. The difference
+ * (asymmetric - symmetric) is integrated on panels that double in width away
+ * from the centre, out to D = the larger of the window and the clamp point
+ * (at most 4096 FWHM); beyond D the stretch is a constant k = 1 - t and both
+ * tails are closed-form. pt_gpu.js (asymArea) repeats this panel for panel:
+ * the two must agree.
+ *
+ * @param {VoigtPrep} prep
+ * @returns {number} Area to ADD to prep.analyticArea, degrees 2-theta; 0 without asymmetry.
+ */
+function asymmetryAreaCorrection(prep) {
+    if (!prep || !prep.asym_param || !(prep.max_d > 0) || prep.type !== 3) return 0;
+    const asym = Object.assign({}, prep, { x0: 0, max_d: Infinity, pedestal: 0 });
+    const sym = Object.assign({}, asym, { asym_param: 0 });
+    const a = prep.asym_param, H = prep.fwhm, w = Math.max(1e-6, prep.fwhm_total);
+    const clamp = 0.95 / Math.abs(a), D = Math.max(prep.max_d, Math.min(clamp, 4096 * w));
+    const panel = (lo, hi, side) => {
+        const m = 0.5 * (lo + hi), h = 0.5 * (hi - lo);
+        let s = 0;
+        for (let i = 0; i < 4; i++) for (const sg of [-1, 1]) {
+            const d = side * (m + sg * h * GL8_X[i]);
+            s += GL8_W[i] * (evalVoigt(d, asym) - evalVoigt(d, sym));
+        }
+        return s * h;
+    };
+    // area of the unit-height profile beyond |delta| = x (both components have the width H)
+    const erfc = z => { const t = 1 / (1 + 0.5 * z); return t * Math.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 +
+        t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277))))))))); };
+    const tail = x => prep.cL * 0.5 * H * (0.5 * Math.PI - Math.atan(2 * x / H)) + prep.cG * 0.5 * H * Math.sqrt(Math.PI / prep.Cg) * erfc(Math.sqrt(prep.Cg) * x / H);
+    let total = 0;
+    for (const side of [-1, 1]) {
+        let lo = 0, e = 0.25 * w;
+        for (;;) {
+            const hi = Math.min(e, D);
+            if (clamp > lo && clamp < hi) { total += panel(lo, clamp, side); lo = clamp; }
+            total += panel(lo, hi, side);
+            lo = hi;
+            if (hi >= D) break;
+            e *= 2;
+        }
+        const k = 1 - Math.max(-0.95, Math.min(0.95, a * side * D));
+        total += k * tail(D / k) - tail(D);
+    }
+    return total;
+}
+
 /**
  * Integrated area under a UNIT-HEIGHT pseudo-Voigt, free of the truncation
- * bias in the drawn profile. Used to convert peak heights to integrated
- * intensities for reporting.
+ * bias in the drawn profile (the tails cut at the window are counted, as the
+ * background takes them up in the data), and with the change of area the
+ * SL/HL asymmetry makes. Used to convert peak heights to integrated
+ * intensities.
  *
  * @param {number} tth_peak 2-theta, degrees.
  * @param {Reflection} hkl
@@ -766,9 +824,8 @@ function getPseudoVoigtArea(tth_peak, hkl, params) {
     // kept only as a fallback if prepareVoigt is unavailable.
     try {
         const prep = prepareVoigt(tth_peak, tth_peak, hkl, params);
-        if (prep && isFinite(prep.analyticArea) && prep.analyticArea > 0) {
-            return prep.analyticArea;
-        }
+        const area = prep ? prep.analyticArea + asymmetryAreaCorrection(prep) : NaN;
+        if (isFinite(area) && area > 0) return area;
     } catch (e) { /* fall through to the analytic switch */ }
 
     const profileType = params.profileType;
@@ -1068,7 +1125,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         calculatePeakShift,
         gaussianFromSigmaSq, lorentzianFromGamma, softFloor, applyFwhmFloor,
-        calculateProfileWidths, getPeakFWHM, getPseudoVoigtArea,
+        calculateProfileWidths, getPeakFWHM, getPseudoVoigtArea, asymmetryAreaCorrection,
         prepareVoigt, evalVoigt,
         hasRenderablePosition, hasRenderableIntensity,
         buildPeakContributions, accumulatePattern, intensityDerivativeColumn,

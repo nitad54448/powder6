@@ -164,14 +164,14 @@ const SW_DEFAULTS = Object.freeze({
 /**
  * Largest symmetry-expanded atom count the device's workgroup memory allows.
  *
- * The reflection kernel keeps five arrays per generated atom (x, y, z, type, and the
- * reduction scratch) rather than the six of the vector-sum kernel, so 20 bytes
- * per atom is the honest figure. The 0.85 factor leaves room for the compiler's
+ * The reflection kernel keeps six arrays per generated atom (x, y, z, type, the
+ * centring flag and the reduction scratch), so 24 bytes per atom is the honest
+ * figure. The 0.85 factor leaves room for the compiler's
  * own workgroup allocations, which are not visible from here.
  */
 function swMaxGenAtoms(device, floor = 128) {
     try {
-        const BYTES_PER_ATOM = 20, REDUCTION_BYTES = SW_WG * 4 * 6;
+        const BYTES_PER_ATOM = 24, REDUCTION_BYTES = SW_WG * 4 * 6;   // x, y, z, type, centring flag, reduction scratch
         const budget = device?.limits?.maxComputeWorkgroupStorageSize || 16384;
         const cap = Math.floor((budget * 0.85 - REDUCTION_BYTES) / BYTES_PER_ATOM);
         return Math.max(floor, Math.min(4096, cap));
@@ -454,6 +454,8 @@ function swPackReflections(rows, options = {}) {
     const GROUP_STRIDE = 4;
     const groupMeta = new Float32Array(nGroups * GROUP_STRIDE);
     const groupD = new Float32Array(nGroups);
+    // 1/d of every packed reflection: a group spans several d, and the scattering table is per reflection
+    const reflS = new Float32Array(nRefl);
     const problems = [];
     let nUnweighted = 0;
 
@@ -475,21 +477,16 @@ if (Math.abs(r.h) > 511 || Math.abs(r.k) > 511 || Math.abs(r.l) > 511) {
             reflPack[w * 2] = ((r.h + 512) & 0x3FF) | (((r.k + 512) & 0x3FF) << 10)
                             | (((r.l + 512) & 0x3FF) << 20);
             reflPack[w * 2 + 1] = r.mult;
+            reflS[w] = 1 / r.d;
             io += r.mult * r.Fo2;
-            // The group is a SUM, so its variance is the sum of the members'.
-            // Treating them as independent is an approximation -- reflections
-            // this close in d are correlated in the WPPF fit, and the true
-            // covariance is what the report's overlap clusters use -- but the
-            // off-diagonals are not carried this far, and summing variances is
-            // conservative rather than optimistic.
-            if (Number.isFinite(r.sigma) && r.sigma > 0) {
-                const sm = r.mult * r.sigma;
-                varSum += sm * sm;
-            } else {
-                haveSigma = false;
-            }
             w++;
         }
+        // The group is a SUM: its variance is the members' variances plus
+        // twice their covariances from the WPPF fit (obsGroupVariance), which
+        // are large and negative for overlapped lines. Without covariances in
+        // the input it is the independent sum, as before.
+        varSum = obsGroupVariance(g.members);
+        haveSigma = varSum !== null;
         groupMeta[gi * GROUP_STRIDE + 2] = io;
 
         // A GROUP WITHOUT A USABLE SIGMA IS NOT AN UNWEIGHTED OBSERVATION,
@@ -555,7 +552,7 @@ if (Math.abs(r.h) > 511 || Math.abs(r.k) > 511 || Math.abs(r.l) > 511) {
                       `from the effective-observation count as well.`);
     }
 
-    return { reflPack, groupMeta, groupD, nRefl: w, nGroups, overlapTol: tol, groupStride: GROUP_STRIDE,
+    return { reflPack, groupMeta, groupD, reflS, nRefl: w, nGroups, overlapTol: tol, groupStride: GROUP_STRIDE,
              weighted: wN > 0,
              leverage: swCorrelationLeverage(groupMeta, groups, GROUP_STRIDE, nGroups),
              // Which rule actually ran. Reported rather than assumed: the
@@ -654,9 +651,10 @@ function swFitnessOnCpu(args) {
 
     // --- expand the orbit exactly as the kernel's generation loop does
     const gx = new Float64Array(nTot), gy = new Float64Array(nTot),
-          gz = new Float64Array(nTot), gT = new Int32Array(nTot);
+          gz = new Float64Array(nTot), gT = new Int32Array(nTot), gSkip = new Uint8Array(nTot);
     for (let i = 0; i < nTot; i++) {
         const pk = genPack[i];
+        gSkip[i] = (pk >>> 24) & 1;   // a centring translate: left out of the reflection sums, as by the kernel
         const site = pk & 0xFF, op = (pk >>> 8) & 0xFFF, ty = (pk >>> 20) & 0xF;
         const px = proj[site * 3], py = proj[site * 3 + 1], pz = proj[site * 3 + 2];
         const b = op * 12;
@@ -685,6 +683,7 @@ function swFitnessOnCpu(args) {
             const fBase = r * nElem;
             let fr = 0, fi = 0;
             for (let a = 0; a < nTot; a++) {
+                if (gSkip[a]) continue;
                 const q = h * gx[a] + k * gy[a] + l * gz[a];
                 const ph = 2 * Math.PI * (q - Math.floor(q));
                 const f = fTab[fBase + gT[a]];
@@ -848,7 +847,7 @@ function swScatteringTable(refl, demand, options = {}) {
     for (let g = 0; g < refl.nGroups; g++) {
         const gs = refl.groupStride || 3;
         const st = refl.groupMeta[g * gs], c = refl.groupMeta[g * gs + 1];
-        for (let m = 0; m < c; m++) sOf[st + m] = refl.groupD[g];
+        for (let m = 0; m < c; m++) sOf[st + m] = refl.reflS && refl.reflS[st + m] > 0 ? refl.reflS[st + m] : refl.groupD[g];
     }
 
     const missing = new Set();
@@ -1099,14 +1098,22 @@ async function runWyckoffSearch(o) {
 
 
     /* ---- 5. Pack ---- */
-    const T = buildAssignmentTables(assignments, (o.setting.sym_ops || []).length, demand);
+    const T = buildAssignmentTables(assignments, (o.setting.sym_ops || []).length, demand, o.setting.sym_ops || []);
     T.warnings.forEach(say);
+    // The reflection sums run over one image per centring class (genPack bit 24), which is exact only for the
+    // reflections the centring allows; the forbidden ones have Icalc = 0 in the full cell and are left out.
+    let packRows = obs.rows;
+    if (T.centring.length) {
+        packRows = obs.rows.filter(r => T.centring.every(c => { const p = r.h * c[0] + r.k * c[1] + r.l * c[2]; return Math.abs(p - Math.round(p)) < 1e-6; }));
+        if (packRows.length < obs.rows.length) say(`${obs.rows.length - packRows.length} reflection(s) forbidden by the lattice centring left out of the fitness.`);
+        say(`Structure factors summed over one image per centring class (${T.centring.length + 1} classes).`);
+    }
     
     let refl = { reflPack: new Uint32Array(0), groupMeta: new Float32Array(0), groupD: new Float32Array(0), nRefl: 0, nGroups: 0, groupStride: 3 };
     let ftab = { table: new Float32Array(0), missing: [] };
     
     {
-        refl = swPackReflections(obs.rows, {
+        refl = swPackReflections(packRows, {
             overlapTol: o.overlapTol,
             fwhmAt: o.fwhmAt,
             overlapFwhmFrac: o.overlapFwhmFrac

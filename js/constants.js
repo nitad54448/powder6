@@ -686,6 +686,11 @@ const WPPF_VARPRO_EXACT_JACOBIAN = false;
  * exactly as the data determined it. Measured: isolated reflections recover
  * to 1.5e-15 relative, and each coincident group's SUM to 1.9e-15, while the
  * split within a group is arbitrary and reported as such.
+ *
+ * It is also the FLOOR: a pivot at or below this fraction of its own diagonal
+ * is repaired (skylineCholeskyInPlace). Accepting smaller pivots lets their
+ * square roots amplify the rounding of every later row until the factor
+ * overflows.
  * @type {number}
  */
 const WPPF_PIVOT_REPAIR = 1e-8;
