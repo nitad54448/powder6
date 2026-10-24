@@ -233,7 +233,8 @@ textarea.code-area, .sv-form textarea { font-family: var(--font-code); font-size
 .tabs button[aria-selected="true"]::before, .tabs button[aria-selected="true"]:enabled:hover::before { background: var(--blue); }
 .calculation-tabs button { border-bottom-width: 2px; }
 .calculation-tabs button:enabled:hover { color: var(--ink); border-bottom-color: var(--rule); background: none; }
-.calculation-tabs button[aria-selected="true"], .calculation-tabs button[aria-selected="true"]:enabled:hover {
+.calculation-tabs button[aria-selected="true"], .calculation-tabs button[aria-selected="true"]:enabled:hover,
+.calculation-tabs button[aria-checked="true"], .calculation-tabs button[aria-checked="true"]:enabled:hover {
   background: none; color: var(--ink); border-bottom-color: var(--blue); font-weight: 600;
 }
 /* a structure solution running in the Solve tab */

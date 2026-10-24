@@ -63,7 +63,7 @@
     var m = S.calculation || 'lebail';
     document.querySelectorAll('[data-calculation]').forEach(function (b) {
       var on = b.dataset.calculation === m;
-      b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; b.disabled = !!S.busy;
+      b.setAttribute('aria-checked', String(on)); b.tabIndex = on ? 0 : -1; b.disabled = !!S.busy;
     });
     RV.layout.syncResultLayouts();
     var issue=RV.cmd.why('fit'),warning='';
@@ -101,10 +101,10 @@
   function initCalculations() {
     document.querySelectorAll('[data-calculation]').forEach(function (b) { b.addEventListener('click', function () { calculation(b.dataset.calculation); }); });
     $('#method-selector').addEventListener('keydown', function (e) {
-      if (!/^Arrow(Left|Right)$/.test(e.key)) return;
+      if (!/^Arrow(Left|Right|Up|Down)$/.test(e.key)) return;
       var tabs = Array.from(this.querySelectorAll('button')), i = tabs.indexOf(document.activeElement);
       if (i < 0 || S.busy) return;
-      e.preventDefault(); var b = tabs[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+      e.preventDefault(); var b = tabs[(i + (e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1) + tabs.length) % tabs.length];
       b.focus(); calculation(b.dataset.calculation);
     });
     document.querySelectorAll('[data-workflow]').forEach(function (b) { b.addEventListener('click', function () {

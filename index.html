@@ -332,11 +332,11 @@
       <!-- Method -->
       <section id="pane-method" class="pane method-pane" role="tabpanel" aria-labelledby="tab-method">
         <div class="solve-sticky" id="solve-sticky">
-          <nav class="calculation-tabs" role="tablist" aria-label="Calculation method" id="method-selector">
-            <button type="button" role="tab" id="calc-tab-lebail" data-calculation="lebail" aria-controls="calculation-body" aria-selected="true">Le Bail</button>
-            <button type="button" role="tab" id="calc-tab-wppf" data-calculation="wppf" aria-controls="calculation-body" aria-selected="false" tabindex="-1">WPPF</button>
-            <button type="button" role="tab" id="calc-tab-rietveld" data-calculation="rietveld" aria-controls="calculation-body" aria-selected="false" tabindex="-1">Rietveld</button>
-          </nav>
+          <div class="calculation-tabs" role="radiogroup" aria-label="Calculation method" id="method-selector">
+            <button type="button" role="radio" id="calc-tab-lebail" data-calculation="lebail" aria-checked="true">Le Bail</button>
+            <button type="button" role="radio" id="calc-tab-wppf" data-calculation="wppf" aria-checked="false" tabindex="-1">WPPF</button>
+            <button type="button" role="radio" id="calc-tab-rietveld" data-calculation="rietveld" aria-checked="false" tabindex="-1">Rietveld</button>
+          </div>
           <div class="solve-actions" role="toolbar" aria-label="Calculation actions">
             <button type="button" class="primary" data-workflow="fit">Fit selected datasets</button>
           </div>

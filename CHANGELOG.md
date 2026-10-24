@@ -2,6 +2,11 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.22.1 — 24 October 2026
+
+1. **Calculation method accessibility.** The Le Bail, WPPF and Rietveld selector in Commands → Method is now a radio group instead of tabs referring to the separate Results panel. Its appearance is unchanged; all four arrow keys move focus and select the next or previous method, wrapping at either end. The selected result run remains independent.
+2. **Cancellation, Structure tabs and project validation.** Escape stops a running calculation even from inspection controls; Structure result tabs support Left/Right, Home and End; project import rejects uncertainty and weight arrays whose lengths differ from the observations. These corrections were committed immediately before this release.
+
 ## 2.22.0 — 24 October 2026
 
 1. **Le Bail ran twice the maximum iterations.** A Le Bail fit has two stages (a WPPF start, then the cycles) and each was given the whole budget, so 30 iterations could become 60. Maximum iterations is now the budget of the whole fit: the WPPF start uses at most half and the cycles what it left (at least one).
