@@ -1,5 +1,5 @@
 // charge_flipping.wgsl
-// CF_KERNEL_ABI: orbit-weak-hm-v1
+// CF_KERNEL_ABI: orbit-weak-v1
 //
 // WebGPU kernels for dual-space charge flipping on powder data, with the
 // space group applied DIRECTLY inside the iteration loop.
@@ -68,9 +68,7 @@
 //        [1] R numerator
 //        [2] R denominator
 //        [3] best R so far, initialised to +inf by the host
-//        [4] mean, [5] sigma of the real map - written by finalize_moments,
-//            read by histogram matching
-//        [8 + 2*w], [9 + 2*w]  - per-workgroup reduction results
+//        [4 + 2*w], [5 + 2*w]  - per-workgroup reduction results
 //
 //  orbitIdx[] packs a grid index in bits 0..30 and a "this member stores the
 //  Friedel mate, so the stored value is the complex conjugate" flag in bit 31.
@@ -151,9 +149,7 @@ const P_DELTA : u32 = 0u;
 const P_RNUM  : u32 = 1u;
 const P_RDEN  : u32 = 2u;
 const P_BESTR : u32 = 3u;
-const P_MEAN  : u32 = 4u;
-const P_SIGMA : u32 = 5u;
-const P_BASE  : u32 = 8u;
+const P_BASE  : u32 = 4u;
 
 const IDX_MASK : u32 = 0x7fffffffu;
 const CONJ_BIT : u32 = 0x80000000u;
@@ -334,8 +330,6 @@ fn finalize_moments(@builtin(local_invocation_id) lid3 : vec3<u32>) {
         let mean = wg_a[0] / total;
         let varr = max(0.0, wg_b[0] / total - mean * mean);
         partials[P_DELTA] = P.delta_sigma * sqrt(varr);
-        partials[P_MEAN] = mean;
-        partials[P_SIGMA] = sqrt(varr);
     }
 }
 
@@ -349,80 +343,6 @@ fn flip(@builtin(global_invocation_id) gid3 : vec3<u32>) {
     if (re < delta) { re = -re; }
     src[2u * i]      = re;
     src[2u * i + 1u] = 0.0;    // the density is real by construction
-}
-
-// ===========================================================================
-//  Histogram matching, in place of the flip on some cycles (the host decides
-//  which). The same arithmetic as cfHistogramMatch() in the worker: a
-//  histogram over [mean + HM_LO sigma, mean + HM_HI sigma], ranks from the
-//  cumulative count with linear interpolation inside a bin, and the target
-//  value of that rank from the quantile table (zero mean, unit sigma), put
-//  back at the map's own mean and sigma.
-//
-//  Its own bind group, group 3: one (group, binding) pair belongs to one
-//  resource in the whole module, and groups 1 and 2 are taken. Three storage
-//  buffers on top of group 0's three, within the guaranteed eight; groups 1
-//  and 2 are bound empty for these pipelines.
-// ===========================================================================
-const HM_BINS : u32 = 8192u;   // must match CF_HM_BINS in the worker
-const HM_LO : f32 = -8.0;      // must match CF_HM_LO
-const HM_HI : f32 = 32.0;      // must match CF_HM_HI
-
-@group(3) @binding(0) var<storage, read_write> hmHist  : array<atomic<u32>>;
-@group(3) @binding(1) var<storage, read_write> hmCum   : array<u32>;
-@group(3) @binding(2) var<storage, read>       hmQuant : array<f32>;
-
-fn hm_position(v : f32) -> vec2<f32> {
-    let mean = partials[P_MEAN];
-    let sd = max(partials[P_SIGMA], 1e-30);
-    let t = (v - (mean + HM_LO * sd)) / ((HM_HI - HM_LO) * sd) * f32(HM_BINS);
-    let b = clamp(floor(t), 0.0, f32(HM_BINS - 1u));
-    return vec2<f32>(b, clamp(t - b, 0.0, 1.0));
-}
-
-@compute @workgroup_size(64)
-fn hm_clear(@builtin(global_invocation_id) gid3 : vec3<u32>) {
-    let i = gid3.x;
-    if (i < HM_BINS) { atomicStore(&hmHist[i], 0u); }
-}
-
-@compute @workgroup_size(64)
-fn hm_count(@builtin(global_invocation_id) gid3 : vec3<u32>) {
-    let total = P.n * P.n * P.n;
-    let i = gid3.x;
-    if (i >= total) { return; }
-    let b = u32(hm_position(src[2u * i]).x);
-    atomicAdd(&hmHist[b], 1u);
-}
-
-// One lane walks the bins: 8192 additions, negligible next to a transform.
-@compute @workgroup_size(64)
-fn hm_cumulate(@builtin(local_invocation_id) lid3 : vec3<u32>) {
-    if (lid3.x != 0u) { return; }
-    var acc : u32 = 0u;
-    hmCum[0] = 0u;
-    for (var b = 0u; b < HM_BINS; b = b + 1u) {
-        acc = acc + atomicLoad(&hmHist[b]);
-        hmCum[b + 1u] = acc;
-    }
-}
-
-@compute @workgroup_size(64)
-fn hm_apply(@builtin(global_invocation_id) gid3 : vec3<u32>) {
-    let total = P.n * P.n * P.n;
-    let i = gid3.x;
-    if (i >= total) { return; }
-    let pos = hm_position(src[2u * i]);
-    let b = u32(pos.x);
-    let rank = (f32(hmCum[b]) + pos.y * f32(atomicLoad(&hmHist[b]))) / f32(total);
-    let nq = arrayLength(&hmQuant);
-    let q = clamp(rank * f32(nq) - 0.5, 0.0, f32(nq - 1u));
-    let q0 = u32(floor(q));
-    let q1 = min(nq - 1u, q0 + 1u);
-    let w = q - f32(q0);
-    let value = hmQuant[q0] * (1.0 - w) + hmQuant[q1] * w;
-    src[2u * i]      = partials[P_MEAN] + partials[P_SIGMA] * value;
-    src[2u * i + 1u] = 0.0;
 }
 
 // ===========================================================================

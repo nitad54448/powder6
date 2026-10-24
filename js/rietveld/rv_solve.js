@@ -28,7 +28,7 @@ RV.solve = (function () {
   // ---------------------------------------------------------------- options (kept in localStorage)
   function defaults() {
     return { formula: '', z: '', tab: 'sgt', sgtN: 0, sgtAuto:true,
-             cf: { adaptive:false, histogram:false, grid: 'auto', threshold: CFD.thresholdSigma, iterations: CFD.maxIterations, trials: CFD.randomStarts, symLambda: CFD.symLambda,
+             cf: { adaptive:false, grid: 'auto', threshold: CFD.thresholdSigma, iterations: CFD.maxIterations, trials: CFD.randomStarts, symLambda: CFD.symLambda,
                    densityLevel: 3, densityStride: 1, densityCell: true, densitySites: true, weakFraction: CFD.weakFraction, weakGrouping: CFD.weakGrouping, overlapTol: CFD.overlapTolTth, peakMerge: CFD.peakMerge },
              wy: { maxSites: '', maxRepeat: '', rhoMin: WD.rhoMin, rhoMax: WD.rhoMax, maxZ: WD.maxZ, particles: WD.particles, particlesAuto:true, iterations: WD.iterations, restarts: WD.restarts, minContact: WD.minContact, shapeWeight: WD.shapeWeight, constraints: '' } };
   }
@@ -502,38 +502,6 @@ RV.solve = (function () {
     return r;
   }
   function cfAssessment(I){return CFAdaptive.assess(I,SV.opts.cf,function(r){return reflectionWidth(I,r);});}
-  /* Z for the histogram target when the field is on Auto: the Z of the Wyckoff solution of these intensities when there
-     is one, else the Wyckoff search's own Auto choice (inside its density window, a multiple the positions allow,
-     nearest WL.vpaTypical Å³ per atom, favouring divisors and multiples of the group order). */
-  function cfAutoZ(comp,I){
-    var wy=SV.wy,sol=wy && wy.sols && wy.I && wy.I.stamp===I.stamp && wy.I.phaseKey===I.phaseKey?(wy.sols[wy.pick] || wy.sols[0]):null;
-    if(sol && Number.isFinite(sol.z) && sol.z>=1)return {Z:sol.z,how:'the Z of the Wyckoff solution of these intensities'};
-    var V=cellVolume(I.cell),M=formulaMass(comp),atoms=Math.max(1,comp.reduce(function(s,c){return s+c.n;},0)),st=zStep(comp),nOps=(I.symops || []).length,w=wyOptions(),best=null;
-    for(var z=st;z<=WL.zMax;z+=st){
-      var rho=M>0?AMU_A3*z*M/V:NaN;
-      if(Number.isFinite(rho) && (rho<w.rhoMin || rho>w.rhoMax))continue;
-      var fav=!nOps || nOps%z===0 || z%nOps===0,score=Math.abs(Math.log(V/(z*atoms)/WL.vpaTypical))-(fav?WL.zFavouredBonus:0);
-      if(!best || score<best.score)best={Z:z,score:score};
-    }
-    if(best)return {Z:best.Z,how:'the Auto rule of the Wyckoff search (density '+w.rhoMin+'–'+w.rhoMax+' g/cm³, near '+WL.vpaTypical+' Å³ per atom)'};
-    return {Z:Math.max(st,st*Math.round(V/(WL.vpaTypical*atoms)/st)),how:WL.vpaTypical+' Å³ per atom (no Z inside the density window)'};
-  }
-  /* The cell contents histogram matching builds its target from: the formula unit times Z, with the scattering factor of
-     each element. Histograms depend little on Z. */
-  function histogramAtoms(I){
-    var comp=parseFormula(SV.opts.formula);
-    if(!comp)return {error:'Histogram matching needs the formula unit (Commands → Structure).'};
-    var typed=typedZ(),auto=typed?null:cfAutoZ(comp,I);
-    var Z=typed || auto.Z,neutron=I.radiation==='neutron',missing=[];
-    var atoms=comp.map(function(c){
-      var f=St.scatterer(c.el),count=c.n*Z;
-      if(neutron){if(!Number.isFinite(f.neutron)){missing.push(c.el);return null;}return {element:c.el,count:count,bCoh:f.neutron};}
-      if(!f.xray){missing.push(c.el);return null;}
-      return {element:c.el,count:count,a:f.xray.a.slice(),b:f.xray.b.slice(),c:f.xray.c};
-    }).filter(Boolean);
-    if(missing.length)return {error:'Histogram matching: no '+(neutron?'neutron scattering length':'X-ray scattering factor')+' for '+missing.join(', ')+'.'};
-    return {atoms:atoms,Z:Z,estimated:!typed,note:'Histogram target: '+comp.map(function(c){return c.el+(c.n===1?'':c.n);}).join('')+' × '+Z+(typed?' (Z as typed)':' (Z on Auto: '+auto.how+')')+' = '+atoms.reduce(function(s,a){return s+Math.round(a.count);},0)+' atoms per cell.'};
-  }
   function cfQualityText(q){
     return q.count+' intensities; '+q.clusters+' profile overlap groups; '+(q.dMin?'d min '+f(q.dMin,2)+' Å; ':'')+
       'median resolved I/σ '+f(q.medianISigma,1)+'; '+q.strongCount+' resolved entries at I/σ ≥ 3. I/σ by resolution shell (low/middle/high): '+q.shells.map(function(s){return f(s.medianISigma,1);}).join(' / ')+'.';
@@ -541,9 +509,6 @@ RV.solve = (function () {
   function renderCfPlan(){
     var host=$('#sv-cf-quality');if(!host)return;var adaptive=SV.opts.cf.adaptive===true;
     $('#sv-cf-adaptive').checked=adaptive;
-    var hmNote=$('#sv-cf-histogram-note');
-    if(hmNote){var hmOn=SV.opts.cf.histogram===true,hmPlan=hmOn && SV.ints?histogramAtoms(SV.ints):null;$('#sv-cf-histogram').checked=hmOn;hmNote.hidden=!hmOn;
-      hmNote.textContent=!hmOn?'':!SV.ints?'Extract the intensities to see the histogram target.':hmPlan.error || hmPlan.note;hmNote.classList.toggle('warn',!!(hmPlan && hmPlan.error));}
     ['threshold','symLambda','weakFraction','weakGrouping','overlapTol'].forEach(function(k){var input=$('#sv-cf-'+k),box=input.parentElement;box.hidden=adaptive;box.previousElementSibling.hidden=adaptive;});
     if(!SV.ints){host.textContent='Extract WPPF intensities to assess the data and preview adaptive settings.';return;}
     var assessment=cfAssessment(SV.ints),q=assessment.quality;
@@ -584,15 +549,11 @@ RV.solve = (function () {
     if(grid>gpuBudget.maxGrid){ui.toast('This CF grid exceeds the current '+gpuBudget.maxGrid+'³ memory budget. Reduce the grid or the extracted reflection range.','warn');return;}
     if(!ag.fits){ui.toast('Reflections exceed the supported CF grid. Reduce the extracted range.','warn');return;}
     if (!I.symops) ui.toast(I.symErr + ' Charge flipping runs in P1, without the symmetry in the loop, and no sites can be placed.', 'warn');
-    var hm=SV.opts.cf.histogram?histogramAtoms(I):null;
-    if(hm && hm.error){ui.toast(hm.error,'warn');return;}
     try { W = new Worker('js/charge_flipping_worker.js'); } catch (e) { ui.toast('Could not start js/charge_flipping_worker.js: ' + e.message, 'err'); return; }
     var run = SV.cfRun = { worker: W, trial: 0, done: 0, best: null, structure: null, stopped: false, stage: 'flip', o: o, grid: grid, auto: o.grid === 'auto', ag: ag, inp: inp, I: I, t0: performance.now(), infos: [],search:search,trialLog:[],candidates:[],seed:Date.now()>>>0,compareIndex:0 };
     var job = { type: 'run-charge-flipping', gridSize: grid, maxIterations: o.iterations, thresholdSigma: o.threshold, cell: I.cell, system: I.sg.system, hklList: inp.hklList,
                 symops: I.symops, laueClass: rec ? rec.laue_class : null, centering: rec ? rec.centering : 'P', symLambda: I.symops ? o.symLambda : 0, overlapTolTth: o.overlapTol,
-                applyLP: true, polarization: I.pol, minPeakSeparation: o.peakMerge, maxPeaks: 40, peakHeightCutoff: 0.04, weakFraction: o.weakFraction, weakGrouping: o.weakGrouping,overlapFwhmFraction:search?search.grouping.overlapFwhmFraction:0,
-                histogramMatching: !!hm, histogramAtoms: hm ? hm.atoms : null };
-    if(hm)ui.log('Charge flipping: histogram matching every 5 cycles from cycle 10. '+hm.note,'info');
+                applyLP: true, polarization: I.pol, minPeakSeparation: o.peakMerge, maxPeaks: 40, peakHeightCutoff: 0.04, weakFraction: o.weakFraction, weakGrouping: o.weakGrouping,overlapFwhmFraction:search?search.grouping.overlapFwhmFraction:0 };
     function trial() {
       try{run.current=search?search.trials[run.trial]:{threshold:o.threshold,weakFraction:o.weakFraction,symLambda:o.symLambda,seedSlot:run.trial};run.trial++;
         run.currentSeed=(run.seed+run.current.seedSlot*7919)>>>0;
@@ -1129,7 +1090,6 @@ RV.solve = (function () {
           formulaRow('cf') +
           '<p class="hint">Charge flipping (Oszlányi and Sütő 2004) on the extracted intensities, in the worker of powder5: GPU where there is one. The peaks of the map, put on the origin of the space group and reduced to the asymmetric unit, become sites; the formula unit names them.</p>' +
           '<p><label class="chk"><input type="checkbox" id="sv-cf-adaptive" data-cf="adaptive"'+(o.cf.adaptive?' checked':'')+'> Adapt search to data quality</label></p>' +
-          '<p><label class="chk" title="Every 5 cycles from cycle 10, the flip is replaced by matching the map to the density histogram expected for the formula unit (Baerlocher, McCusker and Palatinus 2007)"><input type="checkbox" id="sv-cf-histogram" data-cf="histogram"'+(o.cf.histogram?' checked':'')+'> Apply histogram matching</label></p><p class="hint" id="sv-cf-histogram-note"></p>' +
           '<div class="form-grid sv-form">' +
             select('sv-cf-grid', 'Grid', o.cf.grid, [['auto', 'Auto'], ['32', '32³'], ['64', '64³'], ['128', '128³']], 'Points per axis; Auto: the smallest power of two that holds every reflection.', 'data-cf="grid"') +
             field('sv-cf-threshold', 'Threshold δ (σ)', o.cf.threshold, 'Density below δ, in standard deviations of the map, is flipped.', 'class="num" data-cf="threshold" inputmode="decimal"') +
@@ -1304,7 +1264,7 @@ RV.solve = (function () {
     var b = R.best, st = R.structure, rep = b.reflections || {};
     el.innerHTML = '<h3>Map' + (R.stopped ? ' <span class="sv-warn">stopped</span>' : '') + '</h3>' +
       '<dl class="sv-dl"><dt>Best R</dt><dd>' + f(b.bestR, 4) + ' at cycle ' + b.bestIter + ' of start ' + R.bestTrial + ' (' + R.trialsDone + ' of ' + R.trials + ' run, ' + R.seconds + ' s)</dd>' +
-        '<dt>Map</dt><dd>' + b.gridSize + '³ on ' + (b.backend === 'gpu' ? 'the GPU' : 'the CPU') + (R.auto ? ' (auto)' : '') + ', symmetry in the loop ' + f(b.symLambda, 2) + ', weak fraction ' + f(b.weakFraction, 2) + (b.histogramMatching ? ', histogram matching every ' + b.histogramMatching.every + ' cycles from ' + b.histogramMatching.start + ' (' + b.histogramMatching.nAtoms + ' atoms, B ' + f(b.histogramMatching.B, 2) + ' Å²)' : '') + '</dd>' +
+        '<dt>Map</dt><dd>' + b.gridSize + '³ on ' + (b.backend === 'gpu' ? 'the GPU' : 'the CPU') + (R.auto ? ' (auto)' : '') + ', symmetry in the loop ' + f(b.symLambda, 2) + ', weak fraction ' + f(b.weakFraction, 2) + '</dd>' +
         '<dt>Reflections</dt><dd>' + R.n + ' given, ' + (rep.unique != null ? rep.unique + ' used in ' + rep.clusters + ' clusters' : '') + (rep.droppedOutOfRange ? ', <span class="sv-warn">' + rep.droppedOutOfRange + ' beyond the grid (largest index ' + rep.maxIndex + ': grid ' + rep.minGridForAll + ' or more)</span>' : '') +
           (rep.multiplicityMismatch ? ', <span class="sv-warn">' + rep.multiplicityMismatch + ' multiplicities differ from the operators</span>' : '') + '</dd>' +
         '<dt>Intensities</dt><dd>' + esc(R.note) + '</dd>' +
@@ -1492,7 +1452,6 @@ RV.solve = (function () {
     }
     if ((k = t.getAttribute('data-cf'))) {
       if(k==='adaptive'){SV.opts.cf.adaptive=t.checked;if(t.checked){SV.opts.cf.trials=Math.min(CFAdaptive.MAX_STARTS,Math.max(CFAdaptive.MIN_STARTS,Math.round(ui.parseNum(SV.opts.cf.trials)) || 6));$('#sv-cf-trials').value=SV.opts.cf.trials;}}
-      else if(k==='histogram')SV.opts.cf.histogram=t.checked;
       else SV.opts.cf[k] = t.tagName === 'SELECT' ? t.value : t.value.trim();
       saveOpts();renderCfPlan();syncAble();return;
     }
@@ -1536,8 +1495,6 @@ RV.solve = (function () {
     if ((!kind || kind==='cf') && SV.cf && SV.cf.best) {
       L.push('', '### Charge flipping: best R = ' + f(SV.cf.best.bestR, 4) + ', grid ' + SV.cf.best.gridSize + '^3, ' + SV.cf.trialsDone + ' of ' + SV.cf.trials + ' starts' + (SV.cf.structure ? ', symmetry correlation ' + f(SV.cf.structure.symmetryCorrelation, 3) : ''));
       L.push(SV.cf.note);
-      var hmB=SV.cf.best.histogramMatching;
-      if(hmB)L.push('Histogram matching\tevery '+hmB.every+' cycles from cycle '+hmB.start+', target of '+hmB.nAtoms+' atoms per cell, Wilson B '+f(hmB.B,2)+' A^2');
       if(SV.cf.search){L.push('Adaptive search\t'+cfQualityText(SV.cf.search.quality),'Selection\t'+SV.cf.search.selectionRule,'start\tseed\tdelta/sigma\tweak fraction\tsymmetry\tCF R\tmap correlation');SV.cf.search.trials.forEach(function(r){L.push([r.start,r.seed,r.threshold,r.weakFraction,r.symLambda,r.error || r.bestR,r.mapCorrelation==null?'not compared':r.mapCorrelation].join('\t'));});}
       if (cf) sites('site\telement\tWyckoff\tx\ty\tz\tmult', labelled(cf.sites));
     }

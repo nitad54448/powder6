@@ -25,7 +25,7 @@ const WY_LIMITS = Object.freeze({
   // Z typed or scanned, at most (the largest general multiplicity).
   zMax: 192,
   // How Z on Auto is ranked inside the density window: nearest this volume per atom (A^3), with a nudge for a Z
-  // that divides, or is a multiple of, the group order. Charge flipping uses the same rule for its histogram target.
+  // that divides, or is a multiple of, the group order.
   vpaTypical: 16,
   zFavouredBonus: 0.10,
   maxAtomsPerCell: 512,

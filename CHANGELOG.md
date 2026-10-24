@@ -2,6 +2,11 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.15.0 — 24 October 2026
+
+1. Histogram matching (added in 2.13.0) is removed from charge flipping: the option, its worker and GPU code, its tests and its documentation. Measured atom by atom on PbSO₄ powder-like data with a known answer, charge flipping already finds every Pb and S and 14–16 of the 16 O without it, and with it finds 11–15 O; on small P1 test structures it changed nothing. Its higher map correlation came from a smoother map, not a more correct one. In 2.13 a matched cycle could also become the kept map, because its R is lower without the map being better. The charge-flipping worker and kernel are back to their 2.12.1 state.
+2. Kept from 2.13: the volume per atom (16 Å³) and the group-order preference of the Wyckoff Auto Z live in `js/wyckoff_limits.js`.
+
 ## 2.14.1 — 23 October 2026
 
 1. Read structures (CIF)… is now **Read CIF…**, in the Phases toolbar and the File menu, to save space; messages asking for a phase say the same. Atomic constraints… keeps its name: "Constraints" alone would be confused with the parameter links between datasets and the Wyckoff distance constraints.

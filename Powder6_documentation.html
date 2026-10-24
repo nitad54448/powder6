@@ -710,15 +710,7 @@ B_S = Q_ff + diag(1/τ_f²),   b_S = (Q·Î)_f      (f = reflections the group a
 <tr><td>Grouping</td><td>clusters</td><td>Whether the weak fraction counts unresolved peak <em>clusters</em> (default) or individual reflection orbits (see rule 5).</td></tr>
 <tr><td>Overlap (° 2θ)</td><td>0.05</td><td>Reflections closer than this share one observation: their sum is kept, the split is free. Roughly half the FWHM of a mid-angle peak. Too small imposes intensities the data never determined; too large lets resolved reflections trade intensity. Broad peaks or high-symmetry cells with many coincidences want 0.10–0.15°. If the number of reflections sharing a peak is close to the total, it is too large.</td></tr>
 <tr><td>Peak merge (Å)</td><td>0.9</td><td>Density peaks closer than this are one site.</td></tr>
-<tr><td>Apply histogram matching</td><td>off</td><td>Every 5 cycles from cycle 10, replaces the flip by matching the map to the density histogram expected for the formula unit (next subsection). Needs the formula; uses the typed Z, else the Z of the Wyckoff solution, else the Wyckoff Auto rule.</td></tr>
 </table></div>
-<h4 id="s-cf-hm">Histogram matching</h4>
-<p>The distribution of density values of a map of atoms at a given resolution depends on the composition and the resolution, hardly on where the atoms are (Zhang and Main 1990). Imposing that distribution pulls the map towards atomic density; combined with charge flipping it helps complex structures from powder data (Baerlocher, McCusker and Palatinus 2007). It is an option to try, not a default: whether it helps depends on the structure and the data.</p>
-<ul>
-  <li><b>The target</b> is built once per run: two random structures of the cell contents (formula unit × Z, with the X-ray scattering factors or neutron lengths of the elements), calculated on exactly the reflections of the run (no F(000)) with the overall B of a Wilson plot of the data, their map values sorted and normalised to zero mean and unit σ. With Z on Auto it takes the Z of the Wyckoff solution of the same intensities when there is one, else the Wyckoff search's own Auto rule: inside its density window, a multiple of Z the positions allow, nearest 16 Å³ per atom, favouring a Z that divides or is a multiple of the group order. The Log and the note under the checkbox say which. The histogram depends little on Z.</li>
-  <li><b>The matching</b>, every 5 cycles from cycle 10 in place of the flip, gives each grid point the target value of the same rank and keeps the map's own mean and σ, so only the shape of the distribution changes. GPU and CPU do the same arithmetic (a histogram of 8192 bins, ranks by cumulative count).</li>
-  <li>The Log names the target (cell contents and Z), and the results give the schedule, the atom count and the Wilson B.</li>
-</ul>
 <h4 id="s-cf-adapt">Adapting the search to data quality</h4>
 <p>Enable <b>Adapt search to data quality</b> for an optional parameter scan. Manual parameter values are retained. A preview shows the data assessment and three candidate settings before Run; Random starts sets a total budget of 6–128 (manual mode 1–128), with at least two starts per setting. Only the twelve lowest-R maps are kept for the map-agreement check, so large budgets do not hold every density map in memory. Enabling the mode brings a smaller budget up to six. Grid, cycles per start and peak merge remain under your control. The density threshold is expressed in the map's standard deviation, which is distinct from intensity uncertainty.</p>
 <p>The assessment uses raw WPPF intensities and their uncertainties, measured d<sub>min</sub>, and three equal-width shells in 1/d². It reports median I/σ in each shell. Guidance from I/σ is considered usable only if the extraction reports a valid nonlinear covariance and at least four noncoincident intensities have usable uncertainties, with finite positive σ for at least 80% of noncoincident entries. Exact-overlap partitions are excluded from I/σ guidance, while remaining in the CF input. Missing or conditional uncertainties are shown explicitly. Reflection widths are retained at extraction from the dataset's actual instrument and sample profile; older extractions can reconstruct them from their stored profile.</p>
@@ -1026,9 +1018,8 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
 
 <section id="corrections">
 <h2>Recent changes</h2>
-<p>Version 2.14.1, 23 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
+<p>Version 2.15.0, 24 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 <ul>
-  <li>Charge flipping can apply histogram matching to the composition (an option, off by default).</li>
   <li>Wyckoff distance constraints can give a coordination shell a shape (tetrahedron, octahedron, square, triangle, linear, or tet, oct, sq, tri, lin), restraining its angles with an adjustable Shape weight.</li>
   <li>Dataset groups are removed: datasets are chosen with the selection alone.</li>
   <li>Convert… shows the standard setting of each space group in bold, marked “standard”.</li>
@@ -1089,7 +1080,6 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
   <li>Oszlányi, G., Sütő, A. (2008). The charge flipping algorithm. <i>Acta Cryst.</i> A64, 123–134.</li>
   <li>Palatinus, L., Chapuis, G. (2007). SUPERFLIP: a computer program for the solution of crystal structures by charge flipping in arbitrary dimensions. <i>J. Appl. Cryst.</i> 40, 786–790.</li>
   <li>Baerlocher, C., McCusker, L. B., Palatinus, L. (2007). Charge flipping combined with histogram matching to solve complex crystal structures from powder diffraction data. <i>Z. Kristallogr.</i> 222, 47–53.</li>
-  <li>Zhang, K. Y. J., Main, P. (1990). Histogram matching as a new density modification technique for phase refinement and extension of protein molecules. <i>Acta Cryst.</i> A46, 41–46.</li>
   <li>French, S., Wilson, K. (1978). On the treatment of negative intensity observations. <i>Acta Cryst.</i> A34, 517–525.</li>
   <li>Brown, I. D., Altermatt, D. (1985). Bond-valence parameters obtained from a systematic analysis of the Inorganic Crystal Structure Database. <i>Acta Cryst.</i> B41, 244–247.</li>
   <li>Brese, N. E., O'Keeffe, M. (1991). Bond-valence parameters for solids. <i>Acta Cryst.</i> B47, 192–197.</li>

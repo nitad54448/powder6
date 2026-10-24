@@ -66,14 +66,6 @@
     check(wy2 && !wy2.error && wy2.sols && wy2.sols.length && !/marker not found|WGSL|validation/i.test(log2),'The shaped search failed: '+(wy2 && wy2.error)+'\n'+log2.slice(-1200));
     record('a shaped coordination shell compiles and runs on the GPU',{assignment:wy2.sols[0].assignment});
 
-    // charge flipping's histogram target takes the Z the Wyckoff search used when Z is on Auto
-    set('#sv-z-wy','');const hmBox=q('#sv-cf-histogram');hmBox.checked=true;hmBox.dispatchEvent(new w.Event('change',{bubbles:true}));await frame();
-    const note=q('#sv-cf-histogram-note').textContent,usedZ=(wy2.sols[wy2.pick] || wy2.sols[0]).z;
-    check(new RegExp('× '+usedZ+' \\(Z on Auto: the Z of the Wyckoff solution').test(note),'Histogram target ignored the Wyckoff Z '+usedZ+': '+note);
-    set('#sv-z-cf','3');await frame();
-    check(/× 3 \(Z as typed\)/.test(q('#sv-cf-histogram-note').textContent),'A typed Z was not used: '+q('#sv-cf-histogram-note').textContent);
-    record('the histogram target uses a typed Z, else the Z of the Wyckoff solution',{note});
-
     check(!errors.length,'Browser errors: '+errors.join('; '));record('no browser errors');
     window.browserTestResult={ok:true,results};
   }catch(e){results.push({name:'failure',pass:false,error:String(e && e.stack || e)});out.textContent=JSON.stringify(results,null,2);window.browserTestResult={ok:false,results};}
