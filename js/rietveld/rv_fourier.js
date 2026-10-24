@@ -9,11 +9,11 @@ RV.fourier = (function(){
   var St=RV.state,S=St.S,ui=RV.ui,esc=ui.esc,FM=FourierMap;
   var TYPES=[['diff','Difference  Fo − Fc  (what the model lacks)'],['obs','Observed  Fo  (all the atoms)'],['2fofc','2 Fo − Fc'],['calc','Calculated  Fc  (the model itself)']];
   var saved=St.load('fourier')||{};
-  var FO={opts:{type:saved.type||'diff',dmin:saved.dmin||'',fine:saved.fine!==false,from:saved.from||'dataset',level:saved.level>0?saved.level:3,negative:false,cell:saved.cell!==false,atoms:saved.atoms!==false},result:null};
+  var FO={opts:{type:saved.type||'diff',dmin:saved.dmin||'',fine:saved.fine!==false,from:saved.from||'dataset',level:saved.level>0?saved.level:3,minSigma:saved.minSigma>0?saved.minSigma:4,negative:false,cell:saved.cell!==false,atoms:saved.atoms!==false},result:null};
   function $(q){return document.querySelector(q);}
   function SV(){return RV.solve.state;}
-  function saveOpts(){var o=FO.opts;St.store('fourier',{type:o.type,dmin:o.dmin,fine:o.fine,from:o.from,level:o.level,cell:o.cell,atoms:o.atoms});}
-  var HELP={type:'The phases always come from the model.',dmin:'Blank: the smallest d of the extracted reflections.',fine:'Twice as many points per axis: smoother maps and better peak positions, a little slower.',from:'Which values of the atoms give the phases of F.'};
+  function saveOpts(){var o=FO.opts;St.store('fourier',{type:o.type,dmin:o.dmin,fine:o.fine,from:o.from,level:o.level,minSigma:o.minSigma,cell:o.cell,atoms:o.atoms});}
+  var HELP={type:'The phases always come from the model.',dmin:'Blank: the smallest d of the extracted reflections.',fine:'Twice as many points per axis: smoother maps and better peak positions, a little slower.',from:'Which values of the atoms give the phases of F.',minSigma:'Peaks weaker than this, in standard deviations of the map, are not listed. Peaks of 3σ or less are usually noise in a powder map.'};
   function row(key,label,control,help){return '<label for="f_'+key+'" title="'+esc(help)+'">'+esc(label)+'</label><div>'+control+'</div>';}
   function typeLabel(t){return (TYPES.filter(function(x){return x[0]===t;})[0]||[t,t])[1].split('  ')[0].trim();}
 
@@ -24,6 +24,7 @@ RV.fourier = (function(){
       '<div class="form-grid sv-form">'+
         row('fo-type','Map','<select id="f_fo-type" data-key="fo-type" title="'+esc(HELP.type)+'">'+TYPES.map(function(t){return '<option value="'+t[0]+'"'+(t[0]===o.type?' selected':'')+'>'+esc(t[1])+'</option>';}).join('')+'</select>',HELP.type)+
         row('fo-dmin','Resolution d (Å)','<input id="f_fo-dmin" data-key="fo-dmin" class="num" value="'+esc(o.dmin)+'" placeholder="Auto" inputmode="decimal" autocomplete="off" title="'+esc(HELP.dmin)+'">',HELP.dmin)+
+        row('fo-minsigma','Peaks above (σ)','<input id="f_fo-minsigma" data-key="fo-minsigma" class="num" value="'+esc(String(o.minSigma))+'" inputmode="decimal" autocomplete="off" title="'+esc(HELP.minSigma)+'">',HELP.minSigma)+
         row('fo-fine','Finer grid','<input type="checkbox" id="f_fo-fine" data-key="fo-fine"'+(o.fine?' checked':'')+' title="'+esc(HELP.fine)+'">',HELP.fine)+
         row('fo-from','Atoms from','<select id="f_fo-from" data-key="fo-from" title="'+esc(HELP.from)+'"><option value="dataset"'+(o.from==='dataset'?' selected':'')+'>the dataset (its current values)</option><option value="model"'+(o.from==='model'?' selected':'')+'>the starting model of the phase</option></select>',HELP.from)+
       '</div>'+
@@ -60,7 +61,7 @@ RV.fourier = (function(){
     var inRange=I.refl.filter(function(r){return r.inRange&&Number.isFinite(r.area);});
     var dmin=ui.parseNum(o.dmin);if(!(dmin>0))dmin=Math.max(0.5,Math.min.apply(null,inRange.map(function(r){return r.d;}).filter(function(d){return d>0;})));
     try{
-      res=FM.build({cell:I.cell,ops:I.ops,atoms:atomsOf(ph,v),radiation:I.radiation||'xray',formFactor:RVCore.formFactor,refl:I.refl,type:o.type,dmin:dmin,oversample:o.fine?2:1});
+      res=FM.build({cell:I.cell,ops:I.ops,atoms:atomsOf(ph,v),radiation:I.radiation||'xray',formFactor:RVCore.formFactor,refl:I.refl,type:o.type,dmin:dmin,oversample:o.fine?2:1,minSigma:o.minSigma});
     }catch(e){status(e.message,true);return;}
     FO.result={res:res,phaseKey:ph.key,phaseName:ph.name,dsName:ds.name,dsId:ds.id,type:o.type,radiation:I.radiation||'xray',cell:I.cell,ops:I.ops,atoms:atomsOf(ph,v),from:v===ds.p?ds.name:'starting model',neg:null};
     status('Map computed: '+res.N+'³ points, '+res.nRefl+' reflections to '+res.dmin.toFixed(2)+' Å ('+res.nObs+' with observed intensity).'+(res.notes.length?' '+res.notes.join(' '):''));
@@ -72,12 +73,12 @@ RV.fourier = (function(){
   function unit(R){return R.radiation==='neutron'?'fm/Å³':'e/Å³';}
   function peaksHTML(R){
     var res=R.res;
-    if(!res.peaks.length)return '<p class="hint">No peak above 2.5 σ in the '+esc(typeLabel(R.type))+' map.'+(R.type==='diff'?' The model accounts for the data at this resolution.':'')+'</p>';
+    if(!res.peaks.length)return '<p class="hint">No peak above '+R.res.minSigma+' σ in the '+esc(typeLabel(R.type))+' map.'+(R.type==='diff'?' The model accounts for the data at this resolution.':'')+'</p>';
     var rows=res.peaks.map(function(p,i){
       return '<tr><td>'+(p.sign>0?'+':'−')+'</td><td class="n">'+[p.x,p.y,p.z].map(function(x){return x.toFixed(4);}).join('</td><td class="n">')+'</td><td class="n">'+Math.abs(p.sigmas).toFixed(1)+'</td><td class="n">'+p.height.toFixed(2)+'</td><td>'+esc(p.atom||'')+'</td><td class="n">'+p.distance.toFixed(2)+'</td><td class="n">'+p.copies+'</td><td>'+(p.sign>0?'<button type="button" class="mini" data-fo-add="'+i+'">Add atom…</button>':'')+'</td></tr>';
     }).join('');
     return '<div class="table-wrap"><table class="grid compact"><thead><tr><th></th><th>x</th><th>y</th><th>z</th><th>σ</th><th>Height ('+unit(R)+')</th><th>Nearest atom</th><th>d (Å)</th><th>Copies</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
-      '<p class="hint">Peaks of the '+esc(typeLabel(R.type))+' map above 2.5 σ, one per set of symmetry-equivalent positions (Copies: how many were found). Heights are approximate: the observed amplitudes are put on the scale of Fc by one factor. A positive peak of a difference map far from every atom (≳ 1 Å) is a candidate atom: Add atom… puts it into the phase with the scatterer you name, on its special position if it is on one. Negative peaks mark atoms that are too heavy, misplaced or have too large an occupancy.</p>';
+      '<p class="hint">Peaks of the '+esc(typeLabel(R.type))+' map above '+R.res.minSigma+' σ, one per set of symmetry-equivalent positions (Copies: how many were found). Heights are approximate: the observed amplitudes are put on the scale of Fc by one factor. A positive peak of a difference map far from every atom (≳ 1 Å) is a candidate atom: Add atom… puts it into the phase with the scatterer you name, on its special position if it is on one. Negative peaks mark atoms that are too heavy, misplaced or have too large an occupancy.</p>';
   }
   function render(){
     var R=FO.result,none=$('#sv-fo-none'),host=$('#sv-fo-density'),peaks=$('#sv-fo-peaks'),sum=$('#sv-fo-sum'),n=$('#sv-fo-peaks-n');
@@ -86,7 +87,7 @@ RV.fourier = (function(){
     if(none)none.hidden=true;if(host)host.hidden=false;
     if(peaks)peaks.innerHTML=peaksHTML(R);
     if(sum)sum.textContent=typeLabel(R.type)+', '+R.res.peaks.length+(R.res.peaks.length===1?' peak':' peaks');
-    if(n)n.textContent=R.res.peaks.length?R.res.peaks.length+' above 2.5 σ':'';
+    if(n)n.textContent=R.res.peaks.length?R.res.peaks.length+' above '+R.res.minSigma+' σ':'';
     var neg=$('#sv-fo-neg-l');if(neg)neg.hidden=R.type!=='diff';
     show();
   }
@@ -152,6 +153,7 @@ RV.fourier = (function(){
     switch(k){
       case 'fo-type':o.type=t.value;break;
       case 'fo-dmin':o.dmin=t.value.trim();break;
+      case 'fo-minsigma':{var m=ui.parseNum(t.value);if(m>0)o.minSigma=m;else t.value=String(o.minSigma);break;}
       case 'fo-fine':o.fine=t.checked;break;
       case 'fo-from':o.from=t.value;break;
       case 'fo-level':{var v=ui.parseNum(t.value);if(v>0)o.level=v;else t.value=String(o.level);show();break;}

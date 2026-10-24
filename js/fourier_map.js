@@ -11,6 +11,7 @@
  * opts.refl       the reflections of the extraction [{h, k, l, m, lp, area, group, inRange}]
  * opts.type       'diff' (Fo - Fc), 'obs' (Fo), '2fofc' (2 Fo - Fc) or 'calc' (Fc); all with the phases of Fc
  * opts.dmin       the resolution limit (Å); raised when the grid would exceed 128 points
+ * opts.minSigma   the lowest peak listed, in sigma of the map (default 4)
  * opts.oversample 1 or 2: points per axis relative to the Nyquist minimum
  *
  * A powder pattern gives |F|^2 of a line, not of a reflection. The observed intensity of each overlap group of the
@@ -163,8 +164,8 @@ var FourierMap = (function () {
   // 3-point parabola: the offset of the extremum from the centre sample, in samples
   function vertex(m, c, p) { var den = m - 2 * c + p; return den ? Math.max(-0.5, Math.min(0.5, 0.5 * (m - p) / den)) : 0; }
 
-  function peaks(map, N, mean, sigma, cell, G, orbits, atoms, sign, limit) {
-    var N2 = N * N, found = [], thr = 2.5 * sigma;
+  function peaks(map, N, mean, sigma, cell, G, orbits, atoms, sign, limit, minSigma) {
+    var N2 = N * N, found = [], thr = minSigma * sigma;
     function at(i, j, k) { return map[((i + N) % N) + N * (((j + N) % N) + N * ((k + N) % N))]; }
     for (var k = 0; k < N; k++) for (var j = 0; j < N; j++) for (var i = 0; i < N; i++) {
       var v = sign * (map[i + N * j + N2 * k] - mean);
@@ -189,7 +190,7 @@ var FourierMap = (function () {
     if (!atoms.length) throw new Error('A Fourier map takes its phases from the model: the phase has no atoms.');
     if (!(opts.refl || []).length) throw new Error('No extracted intensities.');
     var type = opts.type || 'diff', G = metric(cell), V = volume(G), dmin = Math.max(0.3, opts.dmin > 0 ? opts.dmin : 1), rots = rotations(ops);
-    var over = opts.oversample === 2 ? 2 : 1, N, hkl;
+    var minSigma = opts.minSigma > 0 ? opts.minSigma : 4, over = opts.oversample === 2 ? 2 : 1, N, hkl;
     for (;;) {
       var hm = Math.max(Math.floor(cell.a / dmin), Math.floor(cell.b / dmin), Math.floor(cell.c / dmin));
       N = pow2((2 * hm + 1) * over);
@@ -213,8 +214,8 @@ var FourierMap = (function () {
     var mean = sum / map.length, sigma = Math.sqrt(Math.max(0, sum2 / map.length - mean * mean));
     var orbits = atoms.map(function (a) { return orbit(ops, a.pos); }), list = [];
     if (sigma > 0) {
-      list = peaks(map, N, mean, sigma, cell, G, orbits, atoms, 1, 40);
-      if (type === 'diff') list = list.concat(peaks(map, N, mean, sigma, cell, G, orbits, atoms, -1, 40));
+      list = peaks(map, N, mean, sigma, cell, G, orbits, atoms, 1, 40, minSigma);
+      if (type === 'diff') list = list.concat(peaks(map, N, mean, sigma, cell, G, orbits, atoms, -1, 40, minSigma));
     }
     // one entry per set of equivalent positions: keep the strongest, count the others
     var kept = [];
@@ -226,7 +227,7 @@ var FourierMap = (function () {
       if (dup) dup.copies = (dup.copies || 1) + 1; else { p.copies = 1; kept.push(p); }
     });
     kept.sort(function (a, b) { return Math.abs(b.sigmas) - Math.abs(a.sigmas); });
-    return { N: N, map: map, sigma: sigma, mean: mean, type: type, nRefl: hkl.length, nObs: obs.nObs, dmin: dmin, scale: obs.scale, peaks: kept.slice(0, 40), notes: notes, volume: V };
+    return { N: N, map: map, sigma: sigma, mean: mean, type: type, nRefl: hkl.length, nObs: obs.nObs, dmin: dmin, scale: obs.scale, peaks: kept.slice(0, 40), notes: notes, volume: V, minSigma: minSigma };
   }
   return { build: build, sphere: sphere, calcF: calcF, canonical: canonical, rotations: rotations, orbit: orbit, fft3: fft3, metric: metric };
 })();

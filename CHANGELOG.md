@@ -2,6 +2,10 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.26.2 — 24 October 2026
+
+1. **Fourier peak threshold.** The peak list of a Fourier map starts at a setting, Peaks above (σ), default 4 instead of the fixed 2.5 σ, which listed mostly noise in powder maps. The setting is remembered.
+
 ## 2.26.1 — 24 October 2026
 
 1. **Set on a structure-solution run.** Restoring a saved charge-flipping or Wyckoff run from History put its intensities back marked out of date (`stale` was saved with the record), so the Structure tab dropped them and the run showed without its extraction. They are now marked current when adopted, and are kept under the phase-and-dataset key as well. `tests/history-stop.html` passes again.
