@@ -1703,7 +1703,8 @@ function* refineSteps(problem, opts) {
          * found: the partition hands every count under a reflection to it, so a background refined in the same cycles
          * can sink while the peaks broaden to take up the difference, a little more at every cycle.
          */
-        var itTotal = 0, nStages = 1, msg = only ? 'evaluated at the current values' : 'iteration limit reached', a, b, j;
+        var itTotal = 0, nStages = 1, lmUsed = 0, msg = only ? 'evaluated at the current values' : 'iteration limit reached', a, b, j;
+        // lmUsed: the iterations (steps tried) of the last lm() call, so the stages of a Le Bail fit share one budget
         function lm(stage, maxIter) {
             var cycle = stage === 'lebail', f = cost(apply(x), null), held = null, it, out = 'iteration limit reached';
             if (!(f < Infinity)) throw new Error('the model gives non-finite values at the start values');
@@ -1796,6 +1797,7 @@ function* refineSteps(problem, opts) {
                     if (mu > 1e20) { out = grad < 1e-3 ? 'converged: projected gradient below tolerance' : 'stalled: no improving LM step; inspect correlated parameters and limits'; break; }
                 }
             }
+            lmUsed = it;
             return out;
         }
 
@@ -1897,7 +1899,9 @@ function* refineSteps(problem, opts) {
         if(!only && !nv)msg=originalVariableCount?'converged: all ticked parameters are fixed by exact constraints':'converged: WPPF intensities refined; no other parameter is ticked';
         if (!only && nv) {
             var hasLB = model.phases.some(function (P) { return P.method === 'lebail'; }), maxIt = opts.maxIter || problem.maxIter || 20;
-            nStages = hasLB ? 2 : 1;
+            // Maximum iterations is the budget of the whole fit: a Le Bail fit gives its first (WPPF) stage at most half of
+            // it and its cycles what that stage left, so it never runs twice the number asked for
+            nStages = 1;
             // a Le Bail fit starts as a WPPF one: variable projection is exact and does not need a good start, the
             // partition does -- from a poor cell or profile it extracts intensities at the wrong places and the
             // cycles can settle on a profile that only fits them. The cycles then take over from there.
@@ -1949,10 +1953,10 @@ function* refineSteps(problem, opts) {
                 model = new Model(Object.assign({}, problem, {values:apply(x)}));
                 model.lbAsWppf = hasLB;
             }
-            msg = continueFit ? lm('vp', maxIt) : 'stopped';
+            msg = continueFit ? lm('vp', hasLB ? Math.max(1, Math.ceil(maxIt / 2)) : maxIt) : 'stopped';
             model.lbAsWppf = false;
             if (hasLB && msg !== 'stopped') {
-                var m2 = lm('lebail', maxIt);
+                var m2 = lm('lebail', Math.max(1, maxIt - lmUsed));
                 msg = m2 === 'iteration limit reached' && /^converged/.test(msg) ? 'Le Bail cycles: iteration limit reached' : m2;
             }
         }

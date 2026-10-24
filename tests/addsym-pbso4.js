@@ -79,13 +79,10 @@
     check(JSON.stringify(ds.p)===JSON.stringify(wppfBefore),'ADDSYM mutated WPPF values');
     record('After switching to WPPF, ADDSYM takes both coordinates and cell from the saved Rietveld model');
 
+    // Convert in the symmetry report converts at once, from the fitted model it reported on
     q('#dlg .btns .primary').click();
-    await until(()=>q('[data-convert-preview]')?.textContent.includes('24 → 5'),'PbSO4 conversion preview did not open');
-    check(field('source').value===String(ds.id),'Conversion lost the fitted atomic source');
-    check(!q('[data-convert-preview]').textContent.includes('Not converted'),'Distorted starting atoms vetoed the fitted model');
-    check(q('[data-convert-preview]').textContent.includes('starting model will use Dataset PbSO4 fitted model'),'Adopting the fitted starting model was not disclosed');
-    q('#dlg .btns .primary').click();await wait(50);
-    check(!q('#dlg').open && ph.sg.number===62 && ph.atoms.length===5,'Fitted PbSO4 was not converted to Pnma');
+    await until(()=>!q('#dlg').open && ph.sg.number===62,'PbSO4 was not converted from the symmetry report');
+    check(ph.atoms.length===5,'Fitted PbSO4 was not converted to Pnma');
     const contents={};ph.atoms.forEach(a=>contents[a.type]=(contents[a.type] || 0)+a.site.mult*ph.v[ph.key+'.'+a.label+'.occ']);
     check(contents.Pb===4 && contents.S===4 && contents.O===16,'Conversion changed PbSO4 stoichiometry: '+JSON.stringify(contents));
     ['a','b','c'].forEach(c=>check(Math.abs(ph.v[ph.key+'.'+c]-cell[c])<1e-7 && Math.abs(ds.calculations.rietveld.p[ph.key+'.'+c]-cell[c])<1e-7,'Conversion used the wrong '+c+' cell'));

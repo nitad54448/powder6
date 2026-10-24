@@ -36,8 +36,11 @@
     check(RV.solve.state.wyRun,'The Wyckoff search did not start: '+q('#status-msg').textContent);
     const end=Date.now()+200000;
     while(RV.solve.state.wyRun){if(Date.now()>end)throw Error('The Wyckoff search did not finish: '+((q('#sv-wy-prog')||{}).textContent || ''));await wait(250);}
-    const log=RV.ui.logEntries().slice(before).map(e=>e.msg).join('\n'),wy=RV.solve.state.wy;
-    check(wy && !wy.error && wy.sols && wy.sols.length,'No Wyckoff result: '+(wy && wy.error)+'\n'+log.slice(-1500));
+    const shown=RV.ui.logEntries().slice(before).map(e=>e.msg).join('\n'),wy=RV.solve.state.wy;
+    check(wy && !wy.error && wy.sols && wy.sols.length,'No Wyckoff result: '+(wy && wy.error)+'\n'+shown.slice(-1500));
+    // the Log gets a summary; the whole search log is kept with the result (History → Search log)
+    const log=(wy.log || []).join('\n');
+    check(!/Screening \d+ assignments/.test(shown) && /lines of search log in History/.test(shown) && /^\s*Z = \d+: /m.test(shown),'The Log is not a summary: '+shown.slice(0,1500));
     check(/Screening \d+ assignments/.test(log) && /Screening done/.test(log),'The search did not screen: '+log.slice(0,1500));
     check(/left out as equivalent/.test(log),'Equivalent assignments were not removed');
     check(!/marker not found|exceed the kernel/.test(log),'Kernel capacity error: '+log);
@@ -60,7 +63,7 @@
     check(RV.solve.state.wyRun,'The shaped search did not start: '+q('#status-msg').textContent);
     const end2=Date.now()+200000;
     while(RV.solve.state.wyRun){if(Date.now()>end2)throw Error('The shaped search did not finish');await wait(250);}
-    const log2=RV.ui.logEntries().slice(before2).map(e=>e.msg).join('\n'),wy2=RV.solve.state.wy;
+    const wy2=RV.solve.state.wy,log2=RV.ui.logEntries().slice(before2).map(e=>e.msg).join('\n')+'\n'+((wy2 && wy2.log) || []).join('\n');
     check(/octahedral shell/.test(log2),'The constraint log does not name the shape');
     check(/angle errors weighted 2 x/.test(log2),'The Shape weight did not reach the search');
     check(wy2 && !wy2.error && wy2.sols && wy2.sols.length && !/marker not found|WGSL|validation/i.test(log2),'The shaped search failed: '+(wy2 && wy2.error)+'\n'+log2.slice(-1200));

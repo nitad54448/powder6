@@ -110,7 +110,7 @@ Set and Keep are independent: use both to restore a run and retain it for later.
 
 Project format 3 uses a compressed archive saved as `.project`; `.archive`, `.powder6` (versions before 2.8) and any zip holding `project.json` are opened. Observation columns are binary 64-bit values and are stored once, with JSON model and history metadata. Full saves include retained history; compact saves include current results and kept records. CF sites and candidates are retained; density grids are optional. The completed save reports its compressed size.
 
-Opening a project replaces the previous session’s datasets, instrument parameters (including both wavelengths and their ratio), model, saved method states, numerical options, profile defaults and structure-search settings, and clears every restore point: the project is read as it was saved and cannot be undone. The active method’s intensities, remembered parameter values and a hand-loaded absorption table come back with it. Old extraction and display caches are cleared. Fields absent from older projects use clean defaults rather than values from the previous session.
+Reading a project (File → Read project) replaces the previous session’s datasets, instrument parameters (including both wavelengths and their ratio), model, saved method states, numerical options, profile defaults and structure-search settings, and clears every restore point: the project is read as it was saved and cannot be undone. The active method’s intensities, remembered parameter values and a hand-loaded absorption table come back with it. Old extraction and display caches are cleared. Fields absent from older projects use clean defaults rather than values from the previous session.
 
 ## Bundled Moyo code
 

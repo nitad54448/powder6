@@ -1333,7 +1333,7 @@ RV.cmd = (function () {
     var doc;
     try { doc = typeof text==='object'?text:JSON.parse(text); } catch (e) { throw new Error('the project file is not valid JSON'); }
     var pj = St.prepareProject(doc);
-    if ((S.datasets.length || S.phases.length) && !(await ui.confirm('Opening a project replaces the ' + plural(S.phases.length, 'phase') + ' and the ' + plural(S.datasets.length, 'dataset') + ' in memory and clears their restore points: it cannot be undone. Save the current project first if you need it.', 'Open project', false, 'Open project'))) return;
+    if ((S.datasets.length || S.phases.length) && !(await ui.confirm('Reading a project replaces the ' + plural(S.phases.length, 'phase') + ' and the ' + plural(S.datasets.length, 'dataset') + ' in memory and clears their restore points: it cannot be undone. Save the current project first if you need it.', 'Read project', false, 'Read project'))) return;
     // a project is read as it was saved: nothing of the session before it can be restored into it
     if (RV.history && RV.history.clear) RV.history.clear();
     if(RV.solve && RV.solve.restoreArchive)RV.solve.restoreArchive(null,{silent:true});
@@ -1566,7 +1566,7 @@ RV.cmd = (function () {
   function init() {
     var M = {
       file: [['Read patterns…', readData0, 'read'], ['Read CIF…', readStructure, 'phase'], ['Load calibration or sample-broadening preset…', loadPreset, 'havePhase'], null,
-             ['Open project…', openProjectFile, 'read'], ['Save project', saveProject, 'saveProject'], null,
+             ['Read project…', openProjectFile, 'read'], ['Save project', saveProject, 'saveProject'], null,
              ['Report (PDF)…', function () { RV.pdf.report(); }, 'report'],
              ['Save results of selected…', function () { RV.results.save('save'); }, 'selection'],
              ['Save reflections and intensities of selected…', function () { RV.results.save('refl'); }, 'selection'],

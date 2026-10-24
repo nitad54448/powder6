@@ -771,7 +771,7 @@ RV.solve = (function () {
       if (run !== SV.wyRun) return;
       if (m.type === 'wy-error' || m.type === 'cf-error') finishWy(m.message);
       else if (m.type === 'wy-info' || m.type === 'cf-info') ui.log('Wyckoff search: ' + m.message, 'info');
-      else if (m.type === 'wy-log') { run.log.push(m.message); ui.log('  ' + m.message, 'info'); }
+      else if (m.type === 'wy-log') run.log.push(m.message);   // kept whole for the History; the Log gets a summary at the end (wyLogSummary)
       else if (m.type === 'wy-start' || m.type === 'cf-wyckoff-start') progress('wy', -1, zTag(m) + 'preparing…');
       else if (m.type === 'wy-partial') { if (m.solution) run.partials.push(m.solution); }
       else if (m.type === 'wy-refining') { var rl = 'Refining the best structure' + (Number.isFinite(m.z) ? ' (Z = ' + m.z + ')' : '') + '… please wait'; progress('wy', -1, rl); busyLabel(rl); }
@@ -827,6 +827,14 @@ RV.solve = (function () {
     return { sites: s0.sites, refinement: s0.refinement, z: s0.z, solutions: sols, stopped: true, salvaged: why || 'Stopped.',
              wyckoffResult: { assignment: s0.assignment, searchCC: s0.searchCC, ranked: s0.ranked }, distanceConstraints: run.vc ? run.vc.windows : [] };
   }
+  // The search reports every Z, wave, restart and assignment; the Log keeps what a user acts on: the result of each Z,
+  // the ranking, the values of Z that failed and the warnings. The whole log stays in History (Search log).
+  function wyLogSummary(run) {
+    var keep = /^Z = \S+: |solutions found|^\s+\d+\. Z = |Values of Z that produced nothing|^Warning|WARNING|dropped|refused|UNRANKED|failed/;
+    var lines = run.log.filter(function (l) { return keep.test(l); });
+    lines.forEach(function (l) { ui.log('  ' + l, /^Warning|WARNING|dropped|refused|failed/.test(l) ? 'warn' : 'info'); });
+    if (run.log.length) ui.log('  ' + plural(run.log.length, 'line') + ' of search log in History (Search log).', 'info');
+  }
   function finishWy(err) {
     var run = SV.wyRun;
     if (!run) return;
@@ -835,6 +843,7 @@ RV.solve = (function () {
     try { run.worker.terminate(); } catch (e) { /* gone */ }
     progress('wy', 0);
     syncRun();
+    wyLogSummary(run);
     var dt = ((performance.now() - run.t0) / 1000).toFixed(1), r = run.results;
     if (err || !r) {
       var kept = salvagedWy(run, err);

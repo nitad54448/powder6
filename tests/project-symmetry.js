@@ -68,10 +68,10 @@
     const tolerance=w.document.querySelector('#dlg [data-key="tol"]');tolerance.value='.03';
     tolerance.dispatchEvent(new w.Event('input',{bubbles:true}));
     tolerance.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+    // Enter submits Convert, which converts at once with the result at the submitted tolerance
     const convertDeadline=Date.now()+5000;
-    while(!w.document.querySelector('[data-convert-preview]')?.textContent.includes('Pnma')){if(Date.now()>convertDeadline)throw Error('Conversion preview did not open: '+w.document.querySelector('#status-msg').textContent+' | '+w.document.querySelector('#dlg').textContent);await wait(20);}
-    check(+w.document.querySelector('#dlg [data-key="tol"]').value===.03,'Conversion uses a stale symmetry tolerance');
-    w.document.querySelector('#dlg .btns .primary').click();await wait(50);
+    while(phase.sg.number!==62){if(Date.now()>convertDeadline)throw Error('Conversion did not happen: '+w.document.querySelector('#status-msg').textContent+' | '+w.document.querySelector('#dlg').textContent);await wait(20);}
+    check(!w.document.querySelector('#dlg').open,'The dialog stayed open after converting');
     check(phase.sg.number===62 && phase.atoms.length===4,'Pnma conversion failed');
     record('Find higher symmetry dialog identifies Pnma and converts the phase');
     const empty=St.makePhase({name:'Cell only',sg:P1,cell:pnma[1],atoms:[]});St.addPhase(empty);RV.app.showTab('structure');

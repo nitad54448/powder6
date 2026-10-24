@@ -69,6 +69,18 @@
         const saveResult=()=>{ds.stats={ok:true,msg:'converged',n:ds.tth.length,nVar:0,Rp:0,Rwp:0,Rexp:0,chi2red:0,phases:[]};RV.fitHistory.complete(RV.fitHistory.begin([ds],false),[ds]);};saveResult();RV.layout.showResult(S.calculation);RV.results.render();let atomTable=q('.calc-layout[data-layout="lebail"] [data-res-part="atoms"]');near(Number(atomTable.querySelector('tbody tr').lastElementChild.textContent),1.75,'Le Bail results show stale B');check(atomTable.textContent.includes('Rietveld atomic model'),'Le Bail results model label missing');
         St.setCalculation('wppf');RV.phasesTab.values();near(Number(q('#ph-atoms [data-at="B"]').value),S.phases[0].v[b],'WPPF changes phase starting B');
         saveResult();RV.layout.showResult('wppf');RV.results.render();atomTable=q('.calc-layout[data-layout="wppf"] [data-res-part="atoms"]');near(Number(atomTable.querySelector('tbody tr').lastElementChild.textContent),1.75,'WPPF results show stale B');record('Solve atom tables agree with the Rietveld model');
+        // Phases: the Structure block draws the starting model; the starting model and a dataset exchange values on request
+        St.setCalculation('rietveld');q('#tab-phases').click();await frame();
+        const sacc=q('details[data-acc="phase-structure"]');check(sacc,'Phases has no Structure block');sacc.open=true;await frame();await frame();
+        check(q('#ph-struct').childElementCount>0 && q('#ph-struct-src').options.length>=2,'The phase structure was not drawn, or offers no dataset model');
+        const startB=S.phases[0].v[b];ds.p[b]=1.33;
+        q('[data-act="model-from-dataset"]').click();await frame();q('#dlg [data-key="source"]').value=String(ds.id);q('#dlg .btns .primary').click();await frame();
+        near(S.phases[0].v[b],1.33,'Dataset → starting model did not take the dataset B');
+        ds.p[b]=1.75;S.phases[0].v[b]=0.66;
+        q('[data-act="model-to-datasets"]').click();await frame();q('#dlg .btns .primary').click();await frame();
+        near(ds.p[b],0.66,'Starting model → datasets did not copy B');
+        S.phases[0].v[b]=startB;St.setParam(b,1.75,[ds]);   // restored by hand: Undo would replace the dataset objects this page holds
+        record('Phases: a Structure block, Starting model → datasets and Dataset → starting model');
         St.setCalculation('rietveld');RV.phasesTab.values();atomic=q('#ph-atoms [data-at="B"]');near(Number(atomic.value),S.phases[0].v[b],'Dataset B changed the phase definition');q('#tab-datasets').click();await frame();atomic=q('.prow[data-name="'+b+'"] .pv');check(!atomic.readOnly,'Dataset atomic B is read only');near(Number(atomic.value),1.75,'Rietveld dataset B changed');record('dataset atomic values and phase starting models have separate ownership');
         // no panel headings, no help line: the mouse controls are behind a round "i" at the right of the first toolbar row
         q('#tab-pattern').click();await frame();

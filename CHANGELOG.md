@@ -2,6 +2,16 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.22.0 — 24 October 2026
+
+1. **Le Bail ran twice the maximum iterations.** A Le Bail fit has two stages (a WPPF start, then the cycles) and each was given the whole budget, so 30 iterations could become 60. Maximum iterations is now the budget of the whole fit: the WPPF start uses at most half and the cycles what it left (at least one).
+2. **Phases: starting model and datasets.** A phase holds the starting model and each dataset its own values (a fit changes the dataset's, an edit in Phases the starting model's), which is by design but left no way to carry one into the other. Under the atoms: **Starting model → datasets…** copies the cell and/or the atoms of the starting model into every dataset holding the phase, or one of them (fit results cleared, flags kept; the atoms also go into the saved Rietveld model of a dataset fitted by another method now); **Dataset → starting model…** makes a dataset's values (its fitted ones after a fit) the starting model. Both are undone with Ctrl+Z.
+3. **Phases: a Structure block** (an accordion under the atoms) draws the structure of the phase with the viewer of Results and Structure (picture, coordination, distances), for the starting model or a dataset's model, chosen in Model.
+4. **Find higher symmetry converts at once.** Its button is **Convert** and it applies the conversion it reported (setting, axes, origin, tolerance, atomic source) instead of opening the Convert… dialog again with an empty Find box; the dialog opens only when the conversion needs a look (atoms off the new symmetry, a dataset whose positions lack it), and then with the reason.
+5. **Wyckoff search: a summary in the Log.** The Log no longer lists every Z, wave, restart and assignment as the search runs; at the end it shows the result of each Z, the ranking, the values of Z that failed and the warnings, and says how many lines the whole search log has. The whole log is kept in History (Search log).
+6. File → **Read project…** (was Open project…), like Read patterns… and Read CIF….
+7. Tests: the Le Bail iteration budget; the Phases Structure block and both copy buttons; the ADDSYM pages follow the direct conversion; the Wyckoff page checks that the Log is a summary and reads the whole search log from the result.
+
 ## 2.21.0 — 24 October 2026
 
 A review of the refinement, charge-flipping and Wyckoff mathematics.

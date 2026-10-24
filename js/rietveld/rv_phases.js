@@ -106,7 +106,11 @@ RV.phasesTab = (function () {
         '<p class="hint">x, y, z are fractional. A coordinate in grey is set by the site of the atom (shown on the right); typing a value there moves the atom off that site. Occ. is the fraction of the site occupied.</p></section>' +
       (ph.atoms.length ? '<section class="pblock constraints-block"><h2>Atomic constraints <span class="sub" id="ph-ac-n"></span></h2>' +
         '<p class="hint">GSAS-II relationships between the atomic parameters of ' + esc(ph.name) + ': hold, equivalence and constraint equation. Rietveld applies them exactly in every dataset' + (ph.method === 'rietveld' ? '' : '; ' + esc(ph.name) + ' is fitted by ' + esc(C.METHOD_LABELS[ph.method]) + ' now, so they are kept but unused') + '. Constrained parameters are marked in Parameters.</p>' +
-        '<div id="ph-ac"></div></section>' : '');
+        '<div id="ph-ac"></div></section>' : '') +
+      (ph.atoms.length ? '<details class="acc" data-acc="phase-structure"' + RV.acc.attr('phase-structure') + '><summary><span class="acc-t">Structure</span><span class="acc-s">picture, coordination and distances</span></summary>' +
+        '<div class="acc-body"><p class="buttons"><label>Model <select id="ph-struct-src" aria-label="Atomic model shown"></select></label></p><div id="ph-struct"></div></div></details>' : '') +
+      '<p class="buttons phase-model-copy"><button type="button" data-act="model-to-datasets" title="Copy the cell and the atoms of this starting model into the datasets that hold the phase">Starting model → datasets…</button>' +
+        '<button type="button" data-act="model-from-dataset" title="Make a dataset’s cell and atoms (its fitted values) the starting model of this phase">Dataset → starting model…</button></p>';
     if ($('#ph-ac')) $('#ph-ac').innerHTML='<p class="hint">'+(ph.constraints || []).map(function(c){return esc(AtomicConstraints.text(c));}).join('; ')+'</p><button type="button" data-edit-method>Edit constraints in Datasets →</button>';
     var acn = $('#ph-ac-n'); if (acn) acn.textContent = ph.constraints && ph.constraints.length ? ph.constraints.length + (ph.constraints.length === 1 ? ' relationship' : ' relationships') : '';
     renderBar();
@@ -166,6 +170,7 @@ RV.phasesTab = (function () {
       if (lb !== act) lb.value = at.label;
       tr.querySelector('.site').innerHTML = '<span class="wy">' + esc(at.site.wyck) + '</span> <code>' + esc(at.site.expr) + '</code>';
     });
+    renderStructure(false);
   }
 
   // ---------------------------------------------------------------- edits
@@ -292,6 +297,8 @@ RV.phasesTab = (function () {
     else if (a === 'sg-convert' && ph && !busy()) convertDialog(ph);
     else if (a === 'preset-load' && ph && !busy()) {RV.app.showTab('datasets');RV.cmd.loadPreset();}
     else if (a === 'preset-save' && ph) RV.cmd.savePreset();
+    else if (a === 'model-to-datasets' && ph && !busy()) modelToDatasets(ph);
+    else if (a === 'model-from-dataset' && ph && !busy()) modelFromDataset(ph);
     else if (a === 'del-atom' && ph && !busy()) {
       var label = b.closest('tr').getAttribute('data-atom');
       RV.history.take('deleting atom ' + label);
@@ -439,7 +446,11 @@ RV.phasesTab = (function () {
     if (!res || !last || last.error) return;
     ph = St.phaseByKey(key);
     if (!ph || busy()) return;
-    var plan = last, from = St.sgText(ph.sg);
+    applyConversion(ph, last);
+  }
+  // the conversion itself, once a plan is accepted (Convert… or Find higher symmetry)
+  function applyConversion(ph, plan) {
+    var from = St.sgText(ph.sg);
     RV.history.take('convert ' + ph.name + ' to ' + plan.sg.symbol);
     if(plan.model.dataset){
       ['a','b','c','alpha','beta','gamma'].forEach(function(c){ph.v[ph.key+'.'+c]=plan.model.cell[c];});
@@ -448,7 +459,8 @@ RV.phasesTab = (function () {
     var r = St.convertPhase(ph, plan.sg, plan.conv, plan.t.P, plan.t.p);
     var msg = ph.name + ' converted from ' + from + ' to ' + St.sgText(plan.sg) + ' (a′, b′, c′ = ' + SGConvert.formatBasis(plan.t.P) + '; origin ' + SGConvert.formatShift(plan.t.p) + '): ' +
       ph.atoms.length + ' site' + (ph.atoms.length === 1 ? '' : 's') + ', ' + (r.datasets ? r.datasets + ' dataset' + (r.datasets === 1 ? '' : 's') + (r.banks ? ' and ' + r.banks + ' saved calculation' + (r.banks === 1 ? '' : 's') : '') + ' converted' : 'starting model converted') +
-      (r.constraintsDropped ? '; ' + r.constraintsDropped + ' atomic constraint(s) removed' : '') + (r.linksDropped ? '; ' + r.linksDropped + ' parameter link(s) to the old atoms removed' : '') + '. Fit again.';
+      (r.constraintsDropped ? '; ' + r.constraintsDropped + ' atomic constraint(s) removed' : '') + (r.linksDropped ? '; ' + r.linksDropped + ' parameter link(s) to the old atoms removed' : '') + '.' +
+      (plan.model.dataset ? ' The starting model now uses ' + plan.model.name + '.' : '') + ' Fit again.';
     ui.toast(msg, r.constraintsDropped || r.linksDropped ? 'warn' : 'ok');
   }
 
@@ -596,7 +608,7 @@ RV.phasesTab = (function () {
         if(submit && last.higher)body.parentElement.querySelector('.btns .primary').click();
       }).catch(function(e){if(closed || id!==serial || e.name==='AbortError')return;job=null;runningInput=null;last=null;submitWhenReady=false;out.innerHTML='<p class="warn">The search failed: '+esc(e.message)+'</p>';});
     }
-    var res = await ui.prompt('Find higher symmetry of ' + ph.name, fields, 'Convert…',
+    var res = await ui.prompt('Find higher symmetry of ' + ph.name, fields, 'Convert',
       'Search the selected model’s atomic coordinates and cell: the starting model, a dataset’s Rietveld model, or after a Le Bail or WPPF fit the dataset’s refined cell with its atoms. Any symmetry change is previewed before applying it.',
       { wide: true, after: '<div class="convert-preview" data-symmetry-report aria-live="polite"></div>',
         onOpen: function (body) {
@@ -625,7 +637,17 @@ RV.phasesTab = (function () {
     if (!res || !last || !last.higher) return;
     ph = St.phaseByKey(key);
     if (!ph || busy()) return;
-    convertDialog(ph, { hall: last.r.group.hall, basis: SGConvert.formatBasis(last.r.P), shift: SGConvert.formatShift(last.r.p), tol: last.tol,source:last.source,occTol:res.occTol });
+    // the report above was the preview: convert at once with what was found; only a plan that still needs attention
+    // (atoms off the new symmetry, a dataset whose own positions do not have it) opens Convert… to show why
+    var preset = { hall: last.r.group.hall, basis: SGConvert.formatBasis(last.r.P), shift: SGConvert.formatShift(last.r.p), tol: last.tol, source: last.source, occTol: res.occTol }, plan;
+    try { plan = convertPlan(ph, { target: preset.hall, mode: 'manual', basis: preset.basis, shift: preset.shift, tol: preset.tol, source: preset.source, occTol: preset.occTol }); }
+    catch (e) { plan = { error: e.message }; }
+    if (plan.error || plan.conv.violations.length || plan.dsBad.length) {
+      ui.toast('The conversion to ' + St.sgText(last.r.group) + ' needs a look: ' + (plan.error || (plan.conv.violations.length ? plan.conv.violations[0] : plan.dsBad[0])), 'warn');
+      convertDialog(ph, preset);
+      return;
+    }
+    applyConversion(ph, plan);
   }
 
   // the space-group browser (spacegroup_ui.js); Apply sets the space group of the phase it was opened for
@@ -648,9 +670,99 @@ RV.phasesTab = (function () {
     ui.toast('Space group of ' + ph.name + ': ' + sg.symbol + ' (' + sg.number + '), ' + sg.system + (sg.setting ? ', setting ' + sg.setting : '') + '. Sites of the ' + ph.atoms.length + ' atoms worked out again.', 'ok');
   }
 
+  // ---------------------------------------------------------------- the structure of the phase (wyckoff_report.js, the viewer of Results and Structure)
+  var structSource = {}, structKey = '';
+  function phaseStructure(ph, model) {
+    var v = model.values;
+    return { cell: model.cell, spaceGroup: { number: ph.sg.number, symbol: ph.sg.symbol, hall: ph.sg.hall }, opMatrices: ph.ops, source: 'phase', label: ph.name + ' · ' + model.name,
+      sites: ph.atoms.map(function (at, i) {
+        var pre = ph.key + '.' + at.label + '.', val = function (c) { return Number.isFinite(v[pre + c]) ? v[pre + c] : ph.v[pre + c]; };
+        var pos = C.sitePosition(at.site, [val('x'), val('y'), val('z')]);
+        return { rank: i + 1, label: at.label, element: St.elementOf(at.type), x: pos[0], y: pos[1], z: pos[2], occupancy: val('occ'), B: val('B'), wyckoff: at.site.wyck, multiplicity: at.site.mult };
+      }) };
+  }
+  // drawn only while the block is open, and again only when the model changes (the view keeps its rotation otherwise)
+  function renderStructure(force) {
+    var ph = St.currentPhase(), host = $('#ph-struct'), sel = $('#ph-struct-src');
+    if (!ph || !host || !sel) return;
+    var opts = modelOptions(ph), want = structSource[ph.key] || 'start';
+    if (!opts.some(function (o) { return o[0] === want; })) want = 'start';
+    var html = opts.map(function (o) { return '<option value="' + esc(o[0]) + '">' + esc(o[1]) + '</option>'; }).join('');
+    if (sel.innerHTML !== html) sel.innerHTML = html;
+    sel.value = want;
+    if (!RV.acc.isShown(host)) return;
+    var model;
+    try { model = symmetryModel(ph, { source: want }); } catch (e) { host.textContent = e.message; structKey = ''; return; }
+    if (!model.cell) { host.textContent = 'The cell of this model is not valid.'; structKey = ''; return; }
+    var st = phaseStructure(ph, model), key = JSON.stringify(st);
+    if (!force && key === structKey && host.childElementCount) return;
+    structKey = key;
+    if (typeof WyckoffReport === 'undefined') { host.textContent = 'The structure viewer is not loaded.'; return; }
+    try { WyckoffReport.render(host, st); } catch (e) { host.textContent = 'Structure unavailable: ' + e.message; }
+  }
+
+  // ---------------------------------------------------------------- the starting model and the datasets
+  // A phase holds the starting model; each dataset holds its own values of it, edited in Datasets and refined there.
+  // These two copy the cell and the atoms between them, on request.
+  function modelNames(ph, what) {
+    var out = [];
+    if (what.cell) C.cellParams(ph.sg.system, ph.sg.uniqueAxis).forEach(function (c) { out.push(ph.key + '.' + c); });
+    if (what.atoms) ph.atoms.forEach(function (a) { ['x', 'y', 'z', 'occ', 'B'].forEach(function (c) { out.push(ph.key + '.' + a.label + '.' + c); }); });
+    return out;
+  }
+  async function modelToDatasets(ph) {
+    var held = St.holdersOf(ph);
+    if (!held.length) { ui.toast(ph.name + ' is in no dataset: assign it first (Used in datasets).', 'warn'); return; }
+    var key = ph.key, v = await ui.prompt('Starting model of ' + ph.name + ' → datasets', [
+      { key: 'targets', label: 'Datasets', type: 'select', value: 'all', options: [['all', 'Every dataset holding ' + ph.name + ' (' + held.length + ')']].concat(held.map(function (d) { return [String(d.id), d.name]; })) },
+      { key: 'cell', label: 'Cell', type: 'checkbox', value: true },
+      { key: 'atoms', label: 'Atoms (x, y, z, occupancy, B)', type: 'checkbox', value: ph.atoms.length > 0 }
+    ], 'Copy', 'The values of the starting model (shown in Phases) replace those of the datasets, whose fit results are cleared; the refinement flags are kept. The atoms also go into the saved Rietveld model of a dataset fitted by another method now. Ctrl+Z undoes it.');
+    if (!v || busy()) return;
+    ph = St.phaseByKey(key);
+    if (!ph) return;
+    var list = v.targets === 'all' ? St.holdersOf(ph) : [St.byId(+v.targets)].filter(Boolean), names = modelNames(ph, v);
+    if (!list.length || !names.length) { ui.toast('Nothing to copy.', 'info'); return; }
+    RV.history.take('starting model of ' + ph.name + ' to datasets');
+    list.forEach(function (d) {
+      var bank = S.calculation !== 'rietveld' && d.calculations && d.calculations.rietveld;
+      names.forEach(function (n) {
+        if (!Number.isFinite(ph.v[n])) return;
+        if (Object.prototype.hasOwnProperty.call(d.p, n)) d.p[n] = ph.v[n];
+        if (bank && bank.p && C.classify(n).kind === 'atom') { bank.p[n] = ph.v[n]; bank.stats = null; bank.esd = {}; bank.ints = null; }
+      });
+      d.stats = null; d.esd = {}; d.ints = null; St.syncSites(d); St.invalidate(d);
+    });
+    RV.bus.emit('params', {});
+    ui.toast('Starting model of ' + ph.name + ' (' + [v.cell ? 'cell' : '', v.atoms ? 'atoms' : ''].filter(Boolean).join(' and ') + ') copied to ' + list.map(function (d) { return d.name; }).join(', ') + '. Fit again.', 'ok');
+  }
+  async function modelFromDataset(ph) {
+    var opts = modelOptions(ph).filter(function (o) { return o[0] !== 'start'; });
+    if (!opts.length) { ui.toast(ph.name + ' is in no dataset: there is nothing to take.', 'warn'); return; }
+    var key = ph.key, v = await ui.prompt(ph.name + ': dataset → starting model', [
+      { key: 'source', label: 'From', type: 'select', value: opts[0][0], options: opts },
+      { key: 'cell', label: 'Cell', type: 'checkbox', value: true },
+      { key: 'atoms', label: 'Atoms (x, y, z, occupancy, B)', type: 'checkbox', value: ph.atoms.length > 0 }
+    ], 'Take', 'The dataset’s values (its fitted values, after a fit) become the starting model of the phase, which a new dataset starts from and Starting model → datasets copies. The datasets themselves are not changed. Ctrl+Z undoes it.');
+    if (!v || busy()) return;
+    ph = St.phaseByKey(key);
+    if (!ph) return;
+    var model;
+    try { model = symmetryModel(ph, { source: v.source }); } catch (e) { ui.toast(e.message, 'warn'); return; }
+    var names = modelNames(ph, v);
+    if (!names.length) { ui.toast('Nothing to take.', 'info'); return; }
+    RV.history.take('starting model of ' + ph.name + ' from ' + model.name);
+    names.forEach(function (n) { if (Number.isFinite(model.values[n])) ph.v[n] = model.values[n]; });
+    if (v.atoms) St.syncTemplate(ph);
+    RV.bus.emit('params', {});
+    ui.toast('The starting model of ' + ph.name + ' now has the ' + [v.cell ? 'cell' : '', v.atoms ? 'atoms' : ''].filter(Boolean).join(' and ') + ' of ' + model.name + '.', 'ok');
+  }
+
   function init() {
     var pane = $('#pane-phases');
     if (typeof SGM !== 'undefined') SGM.wire(applyBrowsed);
+    RV.bus.on('acc', function (k) { if (k === 'phase-structure') renderStructure(true); });
+    pane.addEventListener('change', function (e) { if (e.target.id !== 'ph-struct-src') return; var ph = St.currentPhase(); if (ph) { structSource[ph.key] = e.target.value; renderStructure(true); } });
     RV.bus.on('phaseStyle', function () { renderBar(); values(); });
     pane.addEventListener('change', onChange);
     pane.addEventListener('click', onClick);

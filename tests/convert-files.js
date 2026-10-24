@@ -83,18 +83,17 @@
     fs.click();await wait(900);
     const report=()=>dlg.querySelector('[data-symmetry-report]').textContent;
     check(dlg.open && /Fm-3m \(225\)/.test(report()) && /higher than P1/.test(report()) && /8 → 2/.test(report()) && /4 lattice points per cell/.test(report()) && /operations the structure has and P1 does not use/.test(report()) && /At other tolerances/.test(report()),'Symmetry report: '+report().slice(0,500));
-    [...dlg.querySelectorAll('.btns button')].find(b=>b.textContent==='Convert…').click();await wait(400);
-    check(dlg.open && /225 · Fm-3m/.test(field('target').selectedOptions[0].textContent) && field('mode').value==='manual' && /A supergroup|Another setting/.test(preview()),'Convert did not open with the group found: '+preview().slice(0,200));
-    [...dlg.querySelectorAll('.btns button')].find(b=>b.textContent==='Convert').click();await frame();
+    // Convert in the symmetry report converts at once (the report was the preview)
+    [...dlg.querySelectorAll('.btns button')].find(b=>b.textContent==='Convert').click();await wait(400);
     const done=St.phaseByKey(flat.key);check(!dlg.open && done.sg.number===225 && done.atoms.length===2 && done.atoms.every(x=>x.site.mult===4),'Not converted to Fm-3m: '+done.sg.number+' '+done.atoms.length);
     // nothing beyond Fm-3m: reported, and Convert… refused
     q('#sv-addsym').click();await wait(900);
     check(/no symmetry beyond Fm-3m/.test(report()),'Full symmetry not recognised: '+report().slice(0,300));
-    [...dlg.querySelectorAll('.btns button')].find(b=>b.textContent==='Convert…').click();await frame();
+    [...dlg.querySelectorAll('.btns button')].find(b=>b.textContent==='Convert').click();await frame();
     check(dlg.open && /nothing to convert to/.test(status()),'Convert… should be refused with nothing higher');
     [...dlg.querySelectorAll('.btns button')].find(b=>b.textContent==='Cancel').click();await frame();
     St.removePhase(flat.key);St.selectPhase(ph.key);RV.app.showTab('phases');await frame();
-    record('Find higher symmetry reports Fm-3m for NaCl written in P1, hands it to Convert, and has nothing to add afterwards');
+    record('Find higher symmetry reports Fm-3m for NaCl written in P1, converts it at once, and has nothing to add afterwards');
 
     // 4. project files: saved as .project; .archive, .powder6 and a renamed zip open; a zip without project.json does not
     let written=null;

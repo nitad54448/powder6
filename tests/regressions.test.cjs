@@ -1198,6 +1198,17 @@ test('the WPPF solve factors a near-singular normal matrix (reflections cut by t
   assert.ok(r.stats[0].nInt > 100 && r.stats[0].Rwp < 0.01, 'intensities extracted: ' + r.stats[0].nInt + ', Rwp ' + r.stats[0].Rwp);
 });
 
+test('a Le Bail fit keeps to Maximum iterations for both of its stages together', () => {
+  const a = model(); a.state.setCalculation('lebail');
+  const ds = a.ds; ds.p['p1.a'] = 5.01; Object.keys(ds.fit).forEach(n => { ds.fit[n] = n === 'p1.a' || n === 'bkg0'; });
+  for (const maxIter of [1, 4, 9]) {
+    const job = a.state.jobFor(ds); job.maxIter = maxIter; job.tol = 1e-30;
+    const r = a.core.refine(job);
+    assert.equal(r.ok, true, r.msg);
+    assert.ok(r.iter <= Math.max(2, maxIter), 'maxIter ' + maxIter + ' ran ' + r.iter);
+  }
+});
+
 test('transparency estimates carry the physical sign: a penetrating beam moves the peaks to lower angle', () => {
   const src = read('js/rietveld/rv_absorption.js');
   assert.match(src, /transparency90:R>0\?-1\/\(2\*R\*mu90\)/);
