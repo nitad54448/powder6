@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.16.3 — 24 October 2026
+
+1. Opening a project checks the archive before using it: `project.json` must be valid JSON and a plain object, observation sets must carry their column lists, a column's declared length must be a plain non-negative number that matches the stored data (and is refused before any memory is allocated when absurd), and the numbers of sets and the size of `project.json` are bounded. A damaged or hostile file now fails with a message instead of a `TypeError` or an out-of-memory error. Observation keys are held in a prototype-free map, so a key such as `constructor` or `__proto__` is an ordinary key.
+2. Two errors that were swallowed silently are now reported: a failing result callback of the ADDSYM symmetry sweep goes to the browser console, and a symmetry result that cannot be drawn while the other tolerances are checked is written to the Log.
+3. Tests: `tests/numerics.test.cjs` checks cell volumes, d-spacings (cubic, hexagonal, orthorhombic, monoclinic), the Lorentz and polarisation factors and the skyline Cholesky, product and non-negative least-squares solvers against closed-form values; `tests/project-unpack.test.cjs` checks the archive validation. A GitHub Actions workflow (`.github/workflows/tests.yml`) runs the Node suites on every push.
+
 ## 2.16.2 — 24 October 2026
 
 1. The View / Inspect line under the plot toolbar is hidden unless two or more datasets are selected (and on the Plots tab): with one dataset, Overlay, Overview and Inspect one dataset are the same picture, so its selector, its stepping arrows and its "1 dataset(s) selected" note were only noise. It returns as soon as a second dataset is selected.

@@ -23,9 +23,21 @@ RV.project = (function(){
     zip.file('project.json',JSON.stringify(doc));
     return zip.generateAsync({type:'uint8array',compression:'DEFLATE',compressionOptions:{level:3}},function(p){if(opts.progress)opts.progress(p.percent);});
   }
-  async function unpack(buffer){if(typeof JSZip==='undefined')throw new Error('Project compression library is unavailable.');var zip=await JSZip.loadAsync(buffer),entry=zip.file('project.json');if(!entry)throw new Error('This archive is not a Powder 6 project.');var doc=JSON.parse(await entry.async('string'));if(doc.format!=='powder6-project' || doc.version!==3)throw new Error('Unsupported project format.');var pool={},rows=doc.observations;if(!Array.isArray(rows))throw new Error('Missing project observations.');
-    for(var row of rows){if(!row || typeof row.key!=='string' || pool[row.key])throw new Error('Invalid observation identifier.');var raw={key:row.key};for(var c of columns){var field=row.columns[c];if(!field){raw[c]=null;continue;}var file=zip.file(field.path);if(!file)throw new Error('Missing observation column '+field.path);var array=values(await file.async('uint8array'));if(array.length!==field.length)throw new Error('Observation column length mismatch.');raw[c]=array;}if(!raw.tth||!raw.y||raw.tth.length!==raw.y.length)throw new Error('Invalid powder observations.');pool[row.key]=raw;}
-    doc.datasets.forEach(function(d){var raw=pool[d.dataKey];if(!raw)throw new Error('Missing observations for '+d.name);columns.forEach(function(c){d[c]=raw[c] || null;});});
+  // Limits on what an archive may claim, so a damaged or hostile file fails with a message instead of exhausting memory.
+  var LIMITS={json:256e6,column:8e8,rows:100000,files:2000000};
+  function declaredSize(entry){var d=entry && entry._data;return d && Number.isFinite(d.uncompressedSize)?d.uncompressedSize:null;}
+  function plain(x){return !!x && typeof x==='object' && !Array.isArray(x);}
+  async function unpack(buffer){if(typeof JSZip==='undefined')throw new Error('Project compression library is unavailable.');var zip=await JSZip.loadAsync(buffer),entry=zip.file('project.json');if(!entry)throw new Error('This archive is not a Powder 6 project.');
+    var size=declaredSize(entry);if(size!==null && size>LIMITS.json)throw new Error('project.json is too large to be a Powder 6 project.');
+    var doc;try{doc=JSON.parse(await entry.async('string'));}catch(e){throw new Error('project.json is not valid JSON.');}
+    if(!plain(doc) || doc.format!=='powder6-project' || doc.version!==3)throw new Error('Unsupported project format.');
+    var pool=Object.create(null),rows=doc.observations;if(!Array.isArray(rows))throw new Error('Missing project observations.');if(rows.length>LIMITS.rows)throw new Error('Too many observation sets.');if(!Array.isArray(doc.datasets))throw new Error('Missing project datasets.');
+    for(var row of rows){if(!plain(row) || typeof row.key!=='string' || row.key in pool || !plain(row.columns))throw new Error('Invalid observation identifier.');var raw={key:row.key};for(var c of columns){var field=row.columns[c];if(!field){raw[c]=null;continue;}
+        if(!plain(field) || typeof field.path!=='string' || !Number.isSafeInteger(field.length) || field.length<0 || field.length*8>LIMITS.column)throw new Error('Invalid observation column.');
+        var file=zip.file(field.path);if(!file)throw new Error('Missing observation column '+field.path);var declared=declaredSize(file);if(declared!==null && declared!==field.length*8)throw new Error('Observation column length mismatch.');
+        var array=values(await file.async('uint8array'));if(array.length!==field.length)throw new Error('Observation column length mismatch.');raw[c]=array;}
+      if(!raw.tth || !raw.y || raw.tth.length!==raw.y.length)throw new Error('Invalid powder observations.');pool[row.key]=raw;}
+    doc.datasets.forEach(function(d){var raw=plain(d) && typeof d.dataKey==='string'?pool[d.dataKey]:null;if(!raw)throw new Error('Missing observations for '+(plain(d) && d.name || 'a dataset'));columns.forEach(function(c){d[c]=raw[c] || null;});});
     if(doc.fitHistory)doc.fitHistory.observations=Object.values(pool).map(function(raw){var o={key:raw.key};columns.forEach(function(c){o[c]=raw[c] || null;});return o;});
     return doc;
   }

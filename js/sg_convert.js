@@ -452,7 +452,7 @@
       var row={tol:message.tol,error:message.error || null,dataset:message.dataset};
       if(!row.error)try{row.r=symmetryFromWasm(input,cell,groups,Object.assign({},opts,{reportAll:true}),message.dataset,message.hall);}catch(e){row.error=e.message;}
       rows.push(row);
-      if(opts.onRow)try{opts.onRow(row);}catch(e){}
+      if(opts.onRow)try{opts.onRow(row);}catch(e){if(typeof console!=='undefined')console.warn('Symmetry search: the result callback failed:',e);}
     }
     function onError(event){finish(new Error(event.message || 'The public WASM symmetry worker could not load.'),true);}
     var job={promise:promise,cancel:function(){var error=new Error('Symmetry search cancelled.');error.name='AbortError';finish(error,true);}};

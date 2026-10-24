@@ -575,7 +575,7 @@ RV.phasesTab = (function () {
         // the chosen tolerance comes first and is shown at once; the sweep follows
         var onRow=function(row){
           if(closed || id!==serial || row.tol!==f.tol || row.error)return;
-          try{out.innerHTML=symmetryHTML(p,f,symmetrySearch(p,f,model,row.r,row.tol),null)+'<p class="hint">Checking the other tolerances…</p>';}catch(e){}
+          try{out.innerHTML=symmetryHTML(p,f,symmetrySearch(p,f,model,row.r,row.tol),null)+'<p class="hint">Checking the other tolerances…</p>';}catch(e){ui.log('Symmetry result could not be shown for tolerance '+row.tol+': '+e.message,'warn');}
         };
         runningInput=input;
         job=SGConvert.symmetryJob(model.atoms,p.ops,model.cell,groupsForSearch(),{tol:f.tol,tolerances:tolerances,lenTol:f.cellTol/100,angTol:f.cellTol,occTol:f.occTol,onRow:onRow});
