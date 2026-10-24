@@ -11,7 +11,7 @@ RV.layout=(function(){
     $('#result-tabs').querySelectorAll('button').forEach(function(b){var on=b.dataset.resultMethod?result==='solve' && b.dataset.resultMethod===method:b.dataset.tab===result;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;});
     $('.results-panel').querySelectorAll(':scope > .pane').forEach(function(p){p.classList.toggle('on',p.id==='pane-'+result);});
     if(result==='about')$('#tab-pattern').tabIndex=0;
-    $('#ptools').hidden=result!=='pattern';$('#plot-selection').hidden=result!=='pattern';$('#btn-about').setAttribute('aria-expanded',String(result==='about'));
+    $('#ptools').hidden=result!=='pattern';$('#plot-selection').hidden=result!=='pattern' || RV.state.selected().length<2;$('#btn-about').setAttribute('aria-expanded',String(result==='about'));
     $('#pane-solve').setAttribute('aria-labelledby','tab-result-'+method);
     syncResultLayouts();if(RV.plots)RV.plots.show(result==='pattern');
   }

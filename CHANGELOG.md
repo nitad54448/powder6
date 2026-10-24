@@ -2,6 +2,21 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.16.2 — 24 October 2026
+
+1. The View / Inspect line under the plot toolbar is hidden unless two or more datasets are selected (and on the Plots tab): with one dataset, Overlay, Overview and Inspect one dataset are the same picture, so its selector, its stepping arrows and its "1 dataset(s) selected" note were only noise. It returns as soon as a second dataset is selected.
+2. The documentation now says what the three views are: Overlay (datasets on the same axes, each with fit and difference, a sample of them beyond the Maximum plots setting), Overview (one thin normalised trace per dataset, stacked, without fit curves or anchors, for long series) and Inspect one dataset (full detail of one).
+
+## 2.16.1 — 24 October 2026
+
+1. The plot toolbar checkbox **Backgnd subtract** is now **Subtract** (its tooltip still says what it subtracts), so the row with the Save PNG button is shorter. Three sentences of the start page, the documentation and the README that still offered "saved groups" (removed in 2.12.0) now point to All datasets and Shift+click ranges.
+
+## 2.16.0 — 24 October 2026
+
+1. A cleaner window. The **Commands** and **Results** headings above the two tab rows are removed (the tabs already name each panel; the panels keep their accessible names). The plot's help line ("Drag: zoom; Shift-drag: pan…") is removed from under the toolbar and replaced by a small round **i** at the right end of the first toolbar row, on the line of Linear / √I / log I. Hovering it, or tabbing to it, opens a tooltip listing every mouse control of the plot: drag, wheel and Alt+wheel, Shift-drag and right-drag, double-click, Ctrl+click anchors, right-drag an anchor, Ctrl+Shift+drag exclusions, legend clicks. The icon stays at the top right when the toolbar wraps.
+2. Every session starts as a Cu X-ray tube (Kα1 1.540598 Å, Kα2 1.544426 Å, ratio 0.5, tube polarisation). The instrument of the previous session, kept in the browser, used to become the start of the next one, so after a Co tube, neutrons or an opened project a new pattern began with that instrument. The other remembered settings are kept. A pattern whose file gives a wavelength or radiation, the Instrument dialog and an opened project still set it as before.
+3. Tests: the plot "i" (position on the first row, right edge, accessibility, tooltip text, hidden until hover or focus, inside its panel) and the absence of the headings and of the help line; a stored neutron instrument does not survive a restart.
+
 ## 2.15.0 — 24 October 2026
 
 1. Histogram matching (added in 2.13.0) is removed from charge flipping: the option, its worker and GPU code, its tests and its documentation. Measured atom by atom on PbSO₄ powder-like data with a known answer, charge flipping already finds every Pb and S and 14–16 of the 16 O without it, and with it finds 11–15 O; on small P1 test structures it changed nothing. Its higher map correlation came from a smoother map, not a more correct one. In 2.13 a matched cycle could also become the kept map, because its R is lower without the map being better. The charge-flipping worker and kernel are back to their 2.12.1 state.

@@ -130,6 +130,10 @@ RV.state = (function () {
   function restore() {
     var st = load('settings');
     if (!st) { try { st = JSON.parse(localStorage.getItem('powder5-rietveld.settings') || 'null'); } catch (e) { st = null; } }
+    // The source, wavelength and polarisation describe a measurement, not the user: whatever the last session ended with
+    // (a Co tube, neutrons, an opened project) must not become the start of the next one. Every session begins as a Cu
+    // X-ray tube; a pattern's own wavelength, the Instrument dialog or a project change it from there.
+    if (st && typeof st === 'object') { st = Object.assign({}, st); delete st.inst; }
     S.settings = cleanSettings(st);
   }
   function setSetting(k, v) {

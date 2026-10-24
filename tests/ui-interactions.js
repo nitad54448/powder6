@@ -70,7 +70,20 @@
         St.setCalculation('wppf');RV.phasesTab.values();near(Number(q('#ph-atoms [data-at="B"]').value),S.phases[0].v[b],'WPPF changes phase starting B');
         saveResult();RV.layout.showResult('wppf');RV.results.render();atomTable=q('.calc-layout[data-layout="wppf"] [data-res-part="atoms"]');near(Number(atomTable.querySelector('tbody tr').lastElementChild.textContent),1.75,'WPPF results show stale B');record('Solve atom tables agree with the Rietveld model');
         St.setCalculation('rietveld');RV.phasesTab.values();atomic=q('#ph-atoms [data-at="B"]');near(Number(atomic.value),S.phases[0].v[b],'Dataset B changed the phase definition');q('#tab-datasets').click();await frame();atomic=q('.prow[data-name="'+b+'"] .pv');check(!atomic.readOnly,'Dataset atomic B is read only');near(Number(atomic.value),1.75,'Rietveld dataset B changed');record('dataset atomic values and phase starting models have separate ownership');
-        check(q('.phint').textContent.includes('right-drag anchor'),'Pattern instructions omit right drag');record('pattern toolbar describes the new gesture');
+        // no panel headings, no help line: the mouse controls are behind a round "i" at the right of the first toolbar row
+        q('#tab-pattern').click();await frame();
+        check(!q('.panel-heading') && !q('.phint'),'A panel heading or the plot help line is still there');
+        const info=q('#ptools .info-btn'),pop=q('#plot-help'),firstRow=q('#ptools [data-yscale="lin"]'),tools=q('#ptools').getBoundingClientRect(),ib=info.getBoundingClientRect(),fr=firstRow.getBoundingClientRect();
+        check(info.textContent==='i' && info.getAttribute('aria-describedby')==='plot-help' && pop.getAttribute('role')==='tooltip','The info icon is not an accessible "i" with a tooltip');
+        check(Math.abs((ib.top+ib.height/2)-(fr.top+fr.height/2))<8,'The "i" is not on the line of the intensity scale: '+ib.top+' vs '+fr.top);
+        check(tools.right-ib.right<24 && tools.right-ib.right>=0,'The "i" is not at the right of the toolbar: '+(tools.right-ib.right));
+        check(w.getComputedStyle(pop).display==='none','The tooltip is shown without hover');
+        info.focus();await frame();
+        check(w.getComputedStyle(pop).display!=='none' && /Drag/.test(pop.textContent) && /Shift-drag/.test(pop.textContent) && /Right-drag an anchor/.test(pop.textContent) && /Ctrl\+Shift\+drag/.test(pop.textContent) && /Double-click/.test(pop.textContent),'The tooltip is empty or lacks a gesture: '+pop.textContent);
+        const pr=pop.getBoundingClientRect(),pl=q('.results-panel').getBoundingClientRect();
+        check(pr.right<=pl.right+1 && pr.left>=pl.left && pr.bottom<=pl.bottom,'The tooltip is clipped by its panel');
+        info.blur();await frame();check(w.getComputedStyle(pop).display==='none','The tooltip stays open after focus leaves');
+        record('the plot help is a round "i" at the right of the toolbar, with the gestures in its tooltip; panel headings are gone');
         St.selectIds([ds.id]);RV.workspace.inspectDataset(ds.id);
         Object.assign(ds.p,{'inst.U':3.96361,'inst.V':-43.01288,'inst.W':18.71003});
         const diagnosticJob=St.problemFor([ds]);diagnosticJob.vars=['zero','inst.X','p1.size'].map(name=>({d:0,name}));

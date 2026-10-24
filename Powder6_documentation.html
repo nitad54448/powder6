@@ -176,10 +176,10 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 
 <section id="tour">
 <h2>The window</h2>
-<p>One window with independent <b>Commands</b> and <b>Results</b> panels, following the separation used in Powder5 and extending it to Rietveld. Drag their divider to resize them, or double-click it to reset. The header’s <b>⇄ Panels</b> button swaps their positions and remembers your choice.</p>
+<p>One window with independent command and results panels (left: Datasets, Phases, Method, Structure, Settings; right: Plots, the three methods, Structure, Log, History), following the separation used in Powder5 and extending it to Rietveld. The tabs name each panel; there is no heading above them. Drag their divider to resize them, or double-click it to reset. The header’s <b>⇄ Panels</b> button swaps their positions and remembers your choice.</p>
 <dl class="defs">
   <dt>Header</dt><dd>File, Data, Refine, Report and FIT, plus the panel swap and theme controls. The panel tabs navigate independently: changing commands keeps the selected results visible.</dd>
-  <dt>Plots</dt><dd>Observed and calculated curves and differences for the fit selection. Toggle Anchors, Backgnd, Phases, Refl and Backgnd subtract independently. Chebyshev backgrounds have polynomial coefficients, with no anchors. Anchors is greyed out if no plotted dataset uses spline anchors, during background subtraction, or in a multi-dataset Overview; its checked preference is preserved. Overlay shows a labelled sample of a large selection; Overview represents every selected dataset with bounded drawing cost; Inspect one dataset keeps the fit membership.</dd>
+  <dt>Plots</dt><dd>Observed and calculated curves and differences for the fit selection. Toggle Anchors, Backgnd, Phases, Refl and Subtract independently. Chebyshev backgrounds have polynomial coefficients, with no anchors. Anchors is greyed out if no plotted dataset uses spline anchors, during background subtraction, or in a multi-dataset Overview; its checked preference is preserved. The View and Inspect line under the toolbar appears only when two or more datasets are selected. <b>Overlay</b> draws the selected datasets on the same axes, each in its colour with its fit and difference, and a labelled sample of them (at most the Maximum plots setting) when the selection is large; <b>Overview</b> draws every selected dataset as one thin normalised trace, stacked in a waterfall, without fit curves or anchors, for series of tens or hundreds; <b>Inspect one dataset</b> shows only the dataset chosen in Inspect (← → step through the selection) in full detail. Overview represents every selected dataset with bounded drawing cost; Inspect one dataset keeps the fit membership.</dd>
   <dt>Datasets</dt><dd>Each dataset has a tab using its plot colour. Edit that dataset’s values and refine/fixed flags together, including acquisition corrections, instrument resolution, geometry, background X/Y, phase contributions, cell and atoms. Group toggles affect only that tab’s dataset. Bounds, sharing and links are edited here too. Switching tabs preserves fit/plot membership; setup dialogs default to the active dataset and import dialogs identify their targets.</dd>
   <dt>Phases</dt><dd>Edit shared crystallographic definitions, atoms, broadening models and starting values. These starting-model edits do not rewrite existing dataset values. The used-in list opens the corresponding dataset tab.</dd>
   <dt>Method</dt><dd>Select Le Bail, WPPF or Rietveld and the included phases, then start FIT. FIT runs that method directly. Dataset parameter values and refinement flags are edited in Datasets; numerical conditions are in Settings.</dd>
@@ -187,7 +187,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
   <dt>Structure</dt><dd>Commands contains intensity extraction, Space group with separate Test · powder intensities and ADDSYM · atomic model sections, charge-flipping and Wyckoff search settings and actions. Results contains the space-group test output, CF density/sites and Wyckoff candidates, with a previous-solution selector for CF and Wyckoff. Atomic-model symmetry is reported in its own dialog.</dd>
   <dt>History</dt><dd>Completed calculations grouped by method, showing one chosen run with Set, Keep and storage accounting. Global sets restore together.</dd>
   <dt>Log</dt><dd>Verbose messages and diagnostics. Ctrl+Z separately undoes recent editing.</dd>
-  <dt>Fit selection</dt><dd>The expandable Datasets for fitting and plotting list in Commands → Datasets defines the plot/fit selection. Coloured tabs independently choose the dataset to inspect. Use All datasets or a saved group for large batches. With multiple datasets, Copy transfers matching parameter values and refinement flags from the named active dataset; observations, phase assignments and instrument metadata are retained by the destinations. Copy controls are hidden for a single dataset.</dd>
+  <dt>Fit selection</dt><dd>The expandable Datasets for fitting and plotting list in Commands → Datasets defines the plot/fit selection. Coloured tabs independently choose the dataset to inspect. Use All datasets, or a range with Shift+click, for large batches. With multiple datasets, Copy transfers matching parameter values and refinement flags from the named active dataset; observations, phase assignments and instrument metadata are retained by the destinations. Copy controls are hidden for a single dataset.</dd>
   <dt>Settings</dt><dd>Numerical conditions (algorithm, PT controls, iteration limit, tolerance and weighting), application preferences and history budget. The About button immediately left of Panels opens application information and help.</dd>
 </dl>
 <p>The theme follows the system and can be switched at any time. A busy calculation locks editing and shows a <b>Stop</b> button. The difference plot is scaled relative to the main pattern for visibility.</p>
@@ -277,7 +277,7 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <p>Several files can be read at once. New datasets appear at the top of the list.</p>
 
 <h3 id="instrument">Instrument</h3>
-<p><b>Datasets → Instrument…</b> (also in the Data menu) sets, for the selected datasets:</p>
+<p>Every session starts as a <b>Cu X-ray tube</b> (Kα<sub>1</sub> 1.540598 Å, Kα<sub>2</sub> 1.544426 Å, ratio 0.5, no monochromator); the source of the last session is not remembered, and a pattern whose file states a wavelength or radiation takes that instead. <b>Datasets → Instrument…</b> (also in the Data menu) sets, for the selected datasets:</p>
 <ul>
   <li><b>Radiation</b>: X-rays or neutrons (constant wavelength). Polarisation does not apply to neutrons.</li>
   <li><b>Source</b>: Cu, Co, Fe, Cr, Mo, Ag with the tabulated Kα<sub>1</sub>, Kα<sub>2</sub> and intensity ratio, or your own λ<sub>1</sub>, λ<sub>2</sub> and ratio I(λ<sub>2</sub>)/I(λ<sub>1</sub>). The ratio runs from 0 to 1; set it to 0 for a monochromatic beam or synchrotron (no Kα<sub>2</sub>).</li>
@@ -884,7 +884,7 @@ O  O      2.40          # keep the tetrahedra from interpenetrating</code></pre>
 <div class="tablewrap"><table class="wrapfirst">
 <tr><th>Where</th><th>Action</th></tr>
 <tr><td>Anywhere</td><td><kbd>F9</kbd> fit · <kbd>Ctrl</kbd>+<kbd>S</kbd> save the project · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo (not while typing in a field or with a dialog open). On a Mac, <kbd>⌘</kbd> works in place of <kbd>Ctrl</kbd>.</td></tr>
-<tr><td>Plots</td><td>Drag to zoom. Shift-drag or right-drag to pan. Wheel zooms 2θ about the cursor (<kbd>Alt</kbd>: intensity). A thin box zooms one axis only. Double-click autoscales. The difference plot follows.</td></tr>
+<tr><td>Plots</td><td>The round <b>i</b> at the right of the plot toolbar lists these controls when you hover or tab to it. Drag to zoom. Shift-drag or right-drag to pan. Wheel zooms 2θ about the cursor (<kbd>Alt</kbd>: intensity). A thin box zooms one axis only. Double-click autoscales. The difference plot follows.</td></tr>
 <tr><td>Background and regions</td><td><kbd>Ctrl</kbd>+click adds or removes an anchor. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+drag marks an excluded region.</td></tr>
 <tr><td>Parameter value</td><td>Mouse wheel or arrow keys change it; <kbd>Shift</kbd> for larger steps, <kbd>Alt</kbd> for smaller.</td></tr>
 <tr><td>Parameters panel</td><td>← → beside the dataset name show the previous or next dataset. A group header folds the group; its box ticks the whole group. In Global mode a padlock shares a parameter; right-click it for more.</td></tr>
@@ -1018,9 +1018,10 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
 
 <section id="corrections">
 <h2>Recent changes</h2>
-<p>Version 2.15.0, 24 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
+<p>Version 2.16.2, 24 October 2026. The complete version history and regression details are in <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 <ul>
   <li>Wyckoff distance constraints can give a coordination shell a shape (tetrahedron, octahedron, square, triangle, linear, or tet, oct, sq, tri, lin), restraining its angles with an adjustable Shape weight.</li>
+  <li>The Commands and Results headings and the plot help line are gone; the plot's mouse controls are in the tooltip of a round “i” at the right of its toolbar. Every session starts as a Cu X-ray tube.</li>
   <li>Dataset groups are removed: datasets are chosen with the selection alone.</li>
   <li>Convert… shows the standard setting of each space group in bold, marked “standard”.</li>
   <li>The Wyckoff search screens long lists of assignments before the full search, searches equivalent assignments once, accepts up to 32 distance rules and 256 coordination slots, and reports its live best structure and the progress of the whole run.</li>

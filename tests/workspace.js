@@ -110,6 +110,14 @@
     St.setInstrument([ds],{bkgType:'cheb',bkgN:1});await frame();
     check(!q('#dataset-detail [data-anchor-x]') && q('#dataset-detail .prow[data-name="bkg0"] .pv'),'Chebyshev editor did not return');
     const scope=q('#sp-datasets [data-dataset-scope]');change(scope,'all');await frame();check(S.sel.size===2,'All selection');change(q('#inspect-dataset'),String(second.id));await frame();check(St.first().id===second.id && S.sel.size===2,'Inspection changed fit scope');record('inspection preserves the fit and plot selection');
+    // the View / Inspect line exists only for two or more selected datasets on the Plots tab
+    q('#tab-pattern').click();await frame();
+    check(!q('#plot-selection').hidden && q('#plot-selection').offsetParent,'The View / Inspect line is missing with two datasets selected');
+    St.selectIds([second.id]);await frame();check(q('#plot-selection').hidden,'The View / Inspect line is shown for a single dataset');
+    St.selectAll();await frame();check(!q('#plot-selection').hidden,'The View / Inspect line did not come back with two datasets');
+    q('#tab-log').click();await frame();check(q('#plot-selection').hidden,'The View / Inspect line is shown outside the Plots tab');
+    q('#tab-pattern').click();await frame();check(!q('#plot-selection').hidden,'The View / Inspect line is not back on the Plots tab');
+    record('the View / Inspect line appears only with two or more selected datasets on the Plots tab');
     check([...q('#sp-datasets [data-dataset-scope]').options].every(o=>!/^group:/.test(o.value)),'Dataset groups are still offered');record('the dataset scope offers the selection and all datasets');
     q('#tab-datasets').click();await frame();q('[data-add-link]').click();await frame();change(q('#dlg [data-key="sourceDs"]'),String(ds.id));change(q('#dlg [data-key="sourceName"]'),'p1.a');change(q('#dlg [data-key="targetDs"]'),String(second.id));change(q('#dlg [data-key="targetName"]'),'p1.a');q('#dlg .btns .primary').click();await frame();check(S.parameterLinks.length===1,'Parameter link not created');St.setFocus(second.id);await frame();check(q('.prow[data-name="p1.a"] .pf').disabled,'Dependent refine flag is enabled');q('[data-remove-link]').click();await frame();check(!S.parameterLinks.length,'Parameter link not removed');record('Datasets creates links and disables dependent refinement flags');
     St.setFocus(second.id);q('#tab-datasets').click();await frame();const value=q('#dataset-detail .prow[data-name="bkg0"] .pv'),before=ds.p.bkg0;change(value,'25');await frame();check(St.first().p.bkg0===25 && ds.p.bkg0===before,'Value edit did not target the inspected dataset');RV.layout.showResult(S.calculation);await frame();check(!q('#pane-solve .pv,#pane-solve .pf'),'Methods duplicates numeric editing');record('dataset values and refinement choices have one editor');

@@ -85,7 +85,6 @@
 <main class="work dual-panels" id="work">
   <!-- ================================================================ Results -->
   <section class="stage results-panel" aria-label="Results">
-    <div class="panel-heading">Results</div>
     <nav id="result-tabs" class="tabs panel-tabs" role="tablist" aria-label="Result views">
       <button type="button" role="tab" id="tab-pattern" data-tab="pattern" aria-controls="pane-pattern" aria-selected="true" title="Observed and calculated patterns, reflections, background anchors, excluded regions and difference">Plots</button><button type="button" role="tab" id="tab-result-lebail" data-result-method="lebail" aria-controls="pane-solve" aria-selected="false" tabindex="-1">Le Bail</button><button type="button" role="tab" id="tab-result-wppf" data-result-method="wppf" aria-controls="pane-solve" aria-selected="false" tabindex="-1">WPPF</button><button type="button" role="tab" id="tab-result-rietveld" data-result-method="rietveld" aria-controls="pane-solve" aria-selected="false" tabindex="-1">Rietveld</button><button type="button" role="tab" id="tab-structure-results" data-tab="structure-results" aria-controls="pane-structure-results" aria-selected="false" tabindex="-1">Structure</button><button type="button" role="tab" id="tab-log" data-tab="log" aria-controls="pane-log" aria-selected="false" tabindex="-1">Log</button><button type="button" role="tab" id="tab-history" data-tab="history" aria-controls="pane-history" aria-selected="false" tabindex="-1">History</button>
     </nav>
@@ -98,12 +97,24 @@
       <label class="chk" title="Background of each dataset, dashed. Spline anchors: filled magenta squares are refinable; hollow grey squares are fixed."><input type="checkbox" id="show-bkg"> Backgnd</label>
       <label class="chk" title="The pattern of each phase on top of the background, in the colour of the phase"><input type="checkbox" id="show-phases"> Phases</label>
       <label class="chk" title="One row of reflection ticks per phase, at the bottom of the plot"><input type="checkbox" id="show-ticks"> Refl</label>
-      <label class="chk" title="Subtract the calculated background from all plotted observations and curves. Display only; fits retain the original observations. Linear scale keeps negative intensities visible."><input type="checkbox" id="no-background"> Backgnd subtract</label>
+      <label class="chk" title="Subtract the calculated background from all plotted observations and curves. Display only; fits retain the original observations. Linear scale keeps negative intensities visible."><input type="checkbox" id="no-background"> Subtract</label>
       <span class="tool-sep" aria-hidden="true"></span>
       <button type="button" data-plot-action="auto">Autoscale</button>
       <button type="button" data-plot-action="png">Save PNG</button>
-      <span class="phint" title="Right-drag a background anchor to move it; right-drag elsewhere or Shift-drag pans. Ctrl+click places an anchor at the cursor or removes an anchor under it. Ctrl+Shift+drag selects an excluded region. Alt + wheel zooms intensity.">Drag: zoom; Shift-drag: pan; double-click: reset. Ctrl+click: anchor; right-drag anchor: move; Ctrl+Shift+drag: exclusion.</span>
       <span class="note" id="plot-note"></span>
+      <span class="info-tip">
+        <button type="button" class="info-btn" aria-label="Mouse controls of the plot" aria-describedby="plot-help">i</button>
+        <span class="info-pop" id="plot-help" role="tooltip">
+          <b>Drag</b><span>zoom to a box; a thin box zooms one axis</span>
+          <b>Wheel</b><span>zoom; Alt + wheel zooms the intensity</span>
+          <b>Shift-drag</b><span>pan (right-drag pans too)</span>
+          <b>Double-click</b><span>reset the view</span>
+          <b>Ctrl+click</b><span>add a background anchor at the cursor, or remove the one under it</span>
+          <b>Right-drag an anchor</b><span>move it; Esc cancels</span>
+          <b>Ctrl+Shift+drag</b><span>select an excluded region</span>
+          <b>Click a legend entry</b><span>hide or show it</span>
+        </span>
+      </span>
     </div>
     <div id="plot-selection" class="plot-selection">
       <label>View <select id="plot-mode"><option value="overlay">Overlay fit selection</option><option value="overview">Overview of fit selection</option><option value="focus">Inspect one dataset</option></select></label>
@@ -147,7 +158,7 @@
         <p class="sub" id="about-version"></p>
         <h1>About Powder 6</h1>
         <p><b>Commands</b> and <b>Results</b> have independent tabs. Each coloured <b>Datasets</b> tab contains that dataset’s values and refine/fixed controls, including background X/Y, resolution and phase contributions. Bounds, sharing and links are edited there too. <b>Phases</b> contains shared definitions and starting models; <b>Method</b> chooses the next calculation; <b>Settings</b> contains numerical conditions. Results has separate <b>Le Bail</b>, <b>WPPF</b> and <b>Rietveld</b> tabs showing one selected run. Choosing a previous run preserves the working setup; <b>Use as start</b> restores it explicitly. Press <b>FIT</b> or F9 from any view. Use <b>⇄ Panels</b> to swap the two panels.</p>
-        <p>The dataset checkboxes define both the fit and plot selection. Choose All datasets or a saved group for large batches. Clicking a selected dataset inspects it without changing that selection. Plots offers Overlay, Overview and Inspect one dataset. Anchors, Backgnd, Phases, Refl and Backgnd subtract have independent display controls.</p>
+        <p>The dataset checkboxes define both the fit and plot selection. Choose All datasets, or a range with Shift+click, for large batches. Clicking a selected dataset inspects it without changing that selection. Plots offers Overlay, Overview and Inspect one dataset. Anchors, Backgnd, Phases, Refl and Subtract have independent display controls.</p>
         <p>Ctrl+click places an anchor at both cursor coordinates; right-drag moves it, Escape cancels the move. Edit exact X (2θ), Y (intensity) and the Y refinement checkbox in <b>Datasets → dataset tab → Background</b>. Magenta filled anchors are refinable; grey hollow anchors are fixed. A yellow line identifies the anchor being edited. Ctrl+Shift+drag edits exclusions.</p>
         <p>Each method retains its own setup and current result. <b>History</b> stores completed fits by method, with grouped individual batches and complete global fits, and every charge-flipping and Wyckoff solution. For the chosen run it lists everything: settings, phases, statistics, every parameter with its uncertainty, instrument, and for solutions their sites. Set restores a record; Keep protects it from automatic pruning; Delete asks first. <b>Save History…</b> and the report buttons write the records, with all their results, as JSON or text. The default automatic budget is 100 MB, with 20 recent unkept records for each method and, separately, for charge flipping and for the Wyckoff search; current and kept results are protected. Ctrl+Z undoes recent editing. Log contains detailed messages.</p>
         <p>Save a compressed <b>.project</b> file (projects saved as .powder6 or .archive open too) to retain observations, model definitions, method states, groups, history and structure candidates. Observations are stored once. Compact history and CF density-map inclusion are optional. Open the file later using File or drag and drop; this is how History is read back.</p>
@@ -208,7 +219,6 @@
 
   <!-- ================================================================ Commands -->
   <aside class="side command-panel" aria-label="Commands">
-    <div class="panel-heading">Commands</div>
     <nav id="command-tabs" class="tabs panel-tabs" role="tablist" aria-label="Command views">
       <button type="button" role="tab" id="tab-datasets" data-tab="datasets" aria-controls="pane-datasets" aria-selected="false" tabindex="-1" title="Dataset assignments, instrument, background, exclusions and batch refinement">Datasets</button><button type="button" role="tab" id="tab-phases" data-tab="phases" aria-controls="pane-phases" aria-selected="false" tabindex="-1" title="Shared phase definitions and starting model: name, colour, space group, cell and atoms">Phases</button><button type="button" role="tab" id="tab-method" data-tab="method" aria-controls="pane-method" aria-selected="false" tabindex="-1" title="Choose the next calculation">Method</button><button type="button" role="tab" id="tab-structure" data-tab="structure" aria-controls="pane-structure" aria-selected="false" tabindex="-1">Structure</button><button type="button" role="tab" id="tab-settings" data-tab="settings" aria-controls="pane-settings" aria-selected="false" tabindex="-1" class="settings-btn" title="Numerical conditions, plot settings and history storage"><svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M11.3 1.5l.4 2.3c.6.2 1.1.5 1.6.9l2.2-.8 1.3 2.2-1.8 1.5c.1.6.1 1.2 0 1.8l1.8 1.5-1.3 2.2-2.2-.8c-.5.4-1 .7-1.6.9l-.4 2.3H8.7l-.4-2.3c-.6-.2-1.1-.5-1.6-.9l-2.2.8-1.3-2.2L5 9.4c-.1-.6-.1-1.2 0-1.8L3.2 6.1l1.3-2.2 2.2.8c.5-.4 1-.7 1.6-.9l.4-2.3h2.6zM10 6.3a2.2 2.2 0 100 4.4 2.2 2.2 0 000-4.4z" transform="translate(0 1.5)"/></svg><span>Settings</span></button>
     </nav>

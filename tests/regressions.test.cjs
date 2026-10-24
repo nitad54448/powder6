@@ -485,6 +485,18 @@ test('pdCIF export/reimport preserves radiation, wavelengths, zero, weights and 
   assert.equal(b.S.datasets[1].p.zero, -0.07);
 });
 
+test('every session starts as a Cu X-ray tube, whatever instrument the last one ended with', () => {
+  const a = app();
+  const neutron = { anode: '', lambda1: 1.54, lambda2: 0, ratio: 0, radiation: 'neutron', pol: 'none', monoTth: 26.6, polFrac: .95, radiusMM: 0, resolutionType: 'tch_aniso', bkgType: 'cheb', bkgN: 6, bkgX: [], excl: [] };
+  a.storage.set('powder6.settings', JSON.stringify({ weight: 'unit', yscale: 'sqrt', inst: neutron }));
+  a.state.restore();
+  const i = a.S.settings.inst;
+  assert.deepEqual([i.anode, i.lambda1, i.lambda2, i.ratio, i.radiation, i.pol], ['Cu', 1.540598, 1.544426, 0.5, 'xray', 'tube']);
+  assert.equal(a.S.settings.weight, 'unit', 'the other remembered settings must survive');
+  assert.equal(a.S.settings.yscale, 'sqrt');
+  const ds = a.state.makeDataset({ name: 'new', tth: [10, 11, 12], y: [1, 2, 3] });
+  assert.deepEqual([ds.inst.anode, ds.inst.radiation, ds.inst.pol], ['Cu', 'xray', 'tube'], 'a new pattern starts as the Cu tube');
+});
 test('opening a project clears every restore point and reads the project as saved', async () => {
   const a = fitted(), H = a.context.RV.history;
   H.take('an edit before'); H.take('another edit');
