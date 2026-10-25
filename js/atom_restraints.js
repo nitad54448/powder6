@@ -16,6 +16,7 @@
  *     (N+1)th nearest B beyond dmax
  *   - a shape: every angle B-A-B' of the N neighbours against the ideal angle of the shape (the nearest of 90 and
  *     180 for the square and the octahedron): (angle - ideal) / sigmaA
+ * Optional Rietveld suffix "angle=3" gives shape angles a flat +/-3 degree window.
  * multiplied by sqrt(weight). A phase held by several datasets of one fit counts once, shared between them.
  *
  *    page    :  <script defer src="js/atom_restraints.js">
@@ -37,7 +38,20 @@ var AtomRestraints = (function () {
     return { on: r.on !== false, text: String(r.text == null ? '' : r.text), weight: positive(r.weight, DEFAULTS.weight), sigmaD: positive(r.sigmaD, DEFAULTS.sigmaD), sigmaA: positive(r.sigmaA, DEFAULTS.sigmaA) };
   }
   function geometries() { return typeof WY_LIMITS !== 'undefined' ? WY_LIMITS.geometries : {}; }
-  function parse(text) { return DistanceRules.parse(text, geometries(), { keepCase: true }); }
+  function parse(text) {
+    var out={windows:[],bad:[],warn:[]};
+    String(text || '').split(/\r?\n/).forEach(function(line,i){
+      var m=/\s+angle=([^\s]+)\s*$/i.exec(line),tol=m?Number(m[1]):null;
+      if(m)line=line.slice(0,m.index);
+      var p=DistanceRules.parse(line,geometries(),{keepCase:true});
+      p.bad.forEach(function(t){out.bad.push(t.replace(/^line 1:/,'line '+(i+1)+':'));});
+      p.warn.forEach(function(t){out.warn.push(t.replace(/^line 1:/,'line '+(i+1)+':'));});
+      p.windows.forEach(function(w){
+        if(m && (!w.geometry || !Number.isFinite(tol) || tol<0 || tol>180)){out.bad.push('line '+(i+1)+': angle= needs a geometry and a tolerance from 0 to 180 degrees');return;}
+        if(m)w.angleTol=tol;out.windows.push(w);
+      });
+    });return out;
+  }
   function hasRules(r) { return !!r && /^\s*[^#\s]/m.test(String(r.text || '')); }
   function active(r) { return !!r && r.on !== false && hasRules(r); }
 
@@ -57,8 +71,22 @@ var AtomRestraints = (function () {
       if (b == null) unknown[w.b] = true;
       return Object.assign({}, w, { a: a == null ? w.a : a, b: b == null ? w.b : b, ok: a != null && b != null });
     });
+    var seen={};rules.forEach(function(w){if(!w.ok)return;var key=ruleKey(w);if(seen[key])errors.push('Duplicate restraint for '+[w.a,w.b].sort().join(' - ')+': keep one distance or geometry rule for this atom pair.');seen[key]=true;});
     Object.keys(unknown).forEach(function (n) { errors.push('"' + n + '" is not an atom label of this phase (' + (labels.length ? labels.join(', ') : 'no atoms') + ')'); });
     return { rules: rules, errors: errors, warnings: warnings };
+  }
+
+  function ruleKey(w){return JSON.stringify([w.a,w.b].sort());}
+  // Keep the current rule for an atom pair; helpers append only previously unrestrained pairs.
+  function merge(atoms,current,addition){
+    var base=check(atoms,{text:current});if(base.errors.length)throw new Error(base.errors[0]);
+    var seen={},lines=String(current || '').trim()?[String(current).trim()]:[],added=0,skipped=0;
+    base.rules.forEach(function(w){seen[ruleKey(w)]=true;});
+    String(addition || '').split(/\r?\n/).forEach(function(line){
+      if(!line.trim() || /^\s*#/.test(line))return;
+      var c=check(atoms,{text:line});if(c.errors.length)throw new Error(c.errors[0]);
+      c.rules.forEach(function(w){var key=ruleKey(w);if(seen[key]){skipped++;return;}seen[key]=true;lines.push(line.trim());added++;});
+    });return {text:lines.join('\n'),added:added,skipped:skipped};
   }
 
   function metric(cell) {
@@ -123,7 +151,8 @@ var AtomRestraints = (function () {
         var ideal = IDEAL[w.geometry];
         for (var i = 0; i < w.count; i++) for (var j = i + 1; j < w.count; j++) {
           var th = nb[i] && nb[j] ? angle(G, nb[i].v, nb[j].v) : 0, t0 = ideal.reduce(function (best, q) { return Math.abs(q - th) < Math.abs(best - th) ? q : best; }, ideal[0]);
-          rows.push({ rule: ri, kind: 'ang', text: name + ' angle #' + (i + 1) + '–#' + (j + 1), val: th, lo: t0, hi: t0, dev: th - t0, sigma: rs.sigmaA });
+          var tol=w.angleTol || 0,lo=Math.max(0,t0-tol),hi=Math.min(180,t0+tol),dev=th<lo?th-lo:th>hi?th-hi:0;
+          rows.push({ rule: ri, kind: 'ang', text: name + ' angle #' + (i + 1) + '–#' + (j + 1), val: th, lo: lo, hi: hi, dev: dev, sigma: rs.sigmaA });
         }
       }
     });
@@ -152,7 +181,7 @@ var AtomRestraints = (function () {
   }
   function describe(row) {
     var unit = row.kind === 'ang' ? '°' : ' Å', n = row.kind === 'ang' ? 1 : 3;
-    var want = row.kind === 'ang' ? fmt(row.lo, 1) + unit : row.lo != null && row.hi != null ? fmt(row.lo, 2) + ' – ' + fmt(row.hi, 2) + unit : row.lo != null ? '≥ ' + fmt(row.lo, 2) + unit : row.hi != null ? '≤ ' + fmt(row.hi, 2) + unit : '';
+    var want = row.kind === 'ang' ? fmt(row.lo, 1)+(row.hi!==row.lo?' - '+fmt(row.hi,1):'')+unit : row.lo != null && row.hi != null ? fmt(row.lo, 2) + ' – ' + fmt(row.hi, 2) + unit : row.lo != null ? '≥ ' + fmt(row.lo, 2) + unit : row.hi != null ? '≤ ' + fmt(row.hi, 2) + unit : '';
     return row.text + ': ' + fmt(row.val, n) + unit + (want ? ' (' + want + ')' : '');
   }
 
@@ -187,6 +216,6 @@ var AtomRestraints = (function () {
       prefixes: list.map(function (e) { return e.def.key + '.'; })
     };
   }
-  return { DEFAULTS: DEFAULTS, normalize: normalize, hasRules: hasRules, active: active, check: check, rows: rows, contacts: contacts, describe: describe, prepare: prepare, parse: parse };
+  return { DEFAULTS: DEFAULTS, normalize: normalize, hasRules: hasRules, active: active, check: check, rows: rows, contacts: contacts, describe: describe, prepare: prepare, parse: parse, merge: merge };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = AtomRestraints;

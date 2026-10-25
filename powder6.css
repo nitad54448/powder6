@@ -850,7 +850,11 @@ table.grid.ac-list input.ac-m { width: 64px; min-width: 0; max-width: 64px; padd
 .rs-rules textarea, .rs-guide-body textarea { width: 100%; }
 .rs-set { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); }
 .rs-set label { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--ink-2); }
-.rs-set input.num { width: 72px; }
+.rs-set input.num { width: 72px; flex: none; }
+.rs-set input[type=checkbox] { flex: none; }
+.rs-neighbours { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.rs-neighbours label { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.rs-shape-help { margin: 0; }
 .rs-guide { margin-top: var(--sp-3); }
 .rs-err { margin: 0; }
 .rs-err:empty { display: none; }
@@ -974,8 +978,7 @@ select:has( > option.sg-std:checked) option:not(.sg-std) { font-weight: 400; }
 .phase-members { display: flex; gap: 6px; flex-wrap: wrap; }
 .phase-workspace h2 { margin-top: 18px; }
 .result-state { padding: var(--sp-3) var(--inset); }
-.ac-host { margin-top: 22px; }
-.ac-host:before { content: 'Atomic constraints'; font-size: var(--fs-h); font-weight: 600; }
+.ac-host { margin-top: var(--sp-2); }
 .history-pane button { cursor: pointer; }
 .phase-controls fieldset { border: 0; border-top: 1px solid var(--rule); padding: 10px 0; }
 .phase-controls .chk { display: inline-flex; gap: 6px; margin: 6px 16px 6px 0; }

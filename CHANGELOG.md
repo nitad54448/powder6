@@ -2,6 +2,25 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.29.1 — 25 October 2026
+
+1. **Unique restraint pairs.** Allow one distance or geometry rule per unordered atom-label pair, resolving label aliases before checking. Direct text edits and refinement validation reject repeated pairs even with different windows, counts, shapes or angular tolerances. Geometry helpers, molecule guides and structure suggestions omit repeated pairs; Add keeps existing rules and reports skipped duplicates. Generated angle-distance rules share the same check, so overlapping fragments and repeated additions cannot double-weight those distances. Regression and browser checks cover reversed pairs, aliases, conflicting geometry rules, overlapping fragments and repeated Add.
+
+## 2.29.0 — 25 October 2026
+
+1. **Restraints editor flow.** Show the editable active-restraints textbox first and keep Geometry helper collapsed below it. The helper proposes rules automatically from the chosen settings; Add validates and appends them directly to the active textbox, preserving existing rules and Undo. Remove the separate Preview rules / Add these rules steps. Numeric-field edits preserve the Add button so leaving a field cannot cancel the pending click. Browser checks cover the ordering, automatic proposals, direct append, validation, Undo and button stability.
+
+## 2.28.1 — 25 October 2026
+
+1. **Wyckoff formula help.** Remove both question-mark help markers beside Formula unit. The label and textbox carry the formula explanation and dynamically updated composition, Z and density guidance as tooltips; warnings remain highlighted on the field and label.
+
+## 2.28.0 — 25 October 2026
+
+1. **Dataset restraints and geometry helper.** Rename Atomic Constraints to Constraints, remove the duplicate internal heading, and add Restraints immediately below it and above Links. Each phase of the inspected dataset has the existing rules, weights, geometry checks, molecule guide and structure suggestions available inline.
+2. **Generate fragment rules.** Select a central atom and ordered neighbours, choose a bond, angle, tetrahedron, octahedron, square planar, triangle or linear geometry, and enter distance and angle tolerances. Preview the generated rules and deviations before adding them; edits support Undo. Distinct-label angles become 1-3 distance windows at the target bond lengths, so their angular tolerance is approximate when bond lengths vary.
+3. **Symmetry-related shells.** Geometry presets can instead use symmetry copies of one neighbour label. Counted shape rules accept an optional Rietveld-only angular window, e.g. `Si1 O1 4 1.59/1.65 tet angle=3`. Angles inside the window add no penalty; deviations outside use the phase's angle sigma and weight. Existing rules without the suffix retain their previous behavior. Windows are stored in the rule text and follow existing project, report and Undo handling.
+4. **Validation.** Regression coverage checks all presets, angular-window conversion, invalid selections, ideal and distorted tetrahedra, and symmetry-shell windows. Browser coverage checks section placement, previews, applying rules, Undo, symmetry modes, validation and disabled controls during calculations; the existing molecule-guide and restrained-fitting browser checks also pass.
+
 ## 2.27.0 — 25 October 2026
 
 1. **Constraint refinement and edits.** Sum-constraint refine checkboxes enable or fix all terms together, with one fewer independent refinement variable than terms. Partial flags are shown as mixed, tooltips explain the relationship, and equations at their parameter-limit extremes show when no refinement freedom remains. Valid edits update related values while typing; either end of an equivalence or dataset parameter link can be edited, updating its source and dependents while preserving limits. Invalid edits leave all values unchanged.

@@ -1040,9 +1040,10 @@ RV.solve = (function () {
       wy: 'The Wyckoff search places these atoms and no others: count × Z of each element per cell, on the Wyckoff positions of the space group. Z = Auto tries every Z with a plausible density. Charge flipping above uses the same values to name its peaks.'
     };
     function formulaRow(k) {
-      return '<div class="sv-row"><label class="sv-lbl" for="sv-formula-' + k + '">Formula unit</label><input id="sv-formula-' + k + '" class="sv-formula" data-opt="formula" value="' + esc(o.formula) + '" placeholder="e.g. PbSO4" spellcheck="false" autocomplete="off">' +
+      var help=k==='wy'?tip(FORMULA_USE[k]):'';
+      return '<div class="sv-row"><label class="sv-lbl" for="sv-formula-' + k + '"'+help+'>Formula unit</label><input id="sv-formula-' + k + '"'+help+' data-formula-help="'+esc(FORMULA_USE[k])+'" class="sv-formula" data-opt="formula" value="' + esc(o.formula) + '" placeholder="e.g. PbSO4" spellcheck="false" autocomplete="off">' +
         '<label class="sv-lbl" for="sv-z-' + k + '">Z</label><input id="sv-z-' + k + '" class="num sv-z" data-opt="z" value="' + esc(o.z) + '" placeholder="Auto" inputmode="numeric" autocomplete="off">' +
-        '<span class="hint sv-dens" data-k="' + k + '"></span><button type="button" class="mini"'+tip(FORMULA_USE[k])+' aria-label="Formula unit help">?</button></div>';
+        (k==='wy'?'':'<span class="hint sv-dens" data-k="' + k + '"></span><button type="button" class="mini"'+tip(FORMULA_USE[k])+' aria-label="Formula unit help">?</button>')+'</div>';
     }
     function structBlock(k) {
       return block(k + '-struct', '3D structure', '<div class="sv-st-head" id="sv-' + k + '-st-head"></div><div class="sv-struct sv-struct-host" id="sv-' + k + '-st" data-src="' + k + '"></div>', false, null, 'sub');
@@ -1181,6 +1182,7 @@ RV.solve = (function () {
       '<span class="sub">Extracted ' + esc(I.stamp) + (I.pre ? ', precision block of the ' + I.pre.n + ' lowest-angle' : '') + '.</span></p>' + (why ? '<p class="sv-warn">' + esc(why) + '</p>' : '');
   }
   function renderDensity() {
+    var wyFormula=$('#sv-formula-wy');if(wyFormula){var hint=densityHint('wy'),help=wyFormula.getAttribute('data-formula-help')+(hint.text?' '+hint.text:''),label=$('label[for="sv-formula-wy"]');wyFormula.title=help;wyFormula.classList.toggle('sv-warn',!!hint.warn);if(label){label.title=help;label.classList.toggle('sv-warn',!!hint.warn);}}
     document.querySelectorAll('#solve .sv-dens').forEach(function (el) { var h = densityHint(el.getAttribute('data-k') === 'cf' ? 'cf' : 'wy'); el.textContent = h.text ? '?' : ''; el.title=h.text; el.tabIndex=0; el.classList.toggle('sv-warn', !!h.warn); });
   }
   function chipsOf(recs, max) {

@@ -130,6 +130,30 @@ var MoleculeRules = (function () {
     }
     return { text: lines.join('\n'), bonds: nBonds, angles: nAngles, skipped: skipped };
   }
-  return { read: read, rules: rules, radius: radius, elementOf: elementOf };
+  // Explicit fragment geometry, encoded as bond and 1-3 distance windows like the molecule guide.
+  var SHAPES={linear:[[1,0,0],[-1,0,0]],triangle:[[1,0,0],[-.5,Math.sqrt(3)/2,0],[-.5,-Math.sqrt(3)/2,0]],
+    tetrahedron:[[1,1,1],[1,-1,-1],[-1,1,-1],[-1,-1,1]],square:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0]],
+    octahedron:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]};
+  function geometryRules(o){
+    var kind=o.kind,nb=o.neighbours || [],center=o.center,d=Number(o.distance),tol=Number(o.distanceTol),at=Number(o.angleTol),shape=SHAPES[kind],need=kind==='bond'?1:kind==='angle'?2:shape?shape.length:0;
+    if(!need)throw new Error('Choose a geometry.');
+    if(!center || nb.length!==(o.mode==='symmetry' && shape?1:need) || new Set([center].concat(nb)).size!==nb.length+1)throw new Error('Choose a central atom and exactly '+need+' distinct neighbours.');
+    if(!(d>0) || !Number.isFinite(d) || !(tol>=0) || !Number.isFinite(tol) || tol>=d)throw new Error('Give a positive bond distance and a smaller, nonnegative distance tolerance.');
+    if(kind!=='bond' && (!(at>=0) || at>180 || !Number.isFinite(at)))throw new Error('Give an angle tolerance between 0 and 180 degrees.');
+    if(o.mode==='symmetry' && shape)return {text:center+' '+nb[0]+' '+shape.length+' '+(d-tol).toFixed(4)+'/'+(d+tol).toFixed(4)+' '+kind+' angle='+at,bonds:shape.length,angles:shape.length*(shape.length-1)/2,pairs:[],symmetry:true};
+    var second=kind==='angle'?Number(o.secondDistance):d,target=Number(o.angle),lines=[],pairs=[];
+    if(kind==='angle' && (!(second>0) || !Number.isFinite(second) || tol>=second || !(target>0 && target<=180)))throw new Error('Give a positive second bond distance and an angle above 0 and at most 180 degrees.');
+    function window(a,b,lo,hi){lines.push(a+' '+b+' - '+lo.toFixed(4)+'/'+hi.toFixed(4));}
+    nb.forEach(function(b,i){var r=kind==='angle' && i===1?second:d;window(center,b,r-tol,r+tol);});
+    function chord(a,b,deg){return Math.sqrt(Math.max(0,a*a+b*b-2*a*b*Math.cos(deg*Math.PI/180)));}
+    if(kind!=='bond')for(var i=0;i<nb.length;i++)for(var j=i+1;j<nb.length;j++){
+      var angle=kind==='angle'?target:Math.acos(Math.max(-1,Math.min(1,shape[i].reduce(function(sum,x,k){return sum+x*shape[j][k];},0)/(Math.hypot.apply(null,shape[i])*Math.hypot.apply(null,shape[j])))))*180/Math.PI;
+      var rj=kind==='angle'?second:d,lo=chord(d,rj,Math.max(0,angle-at)),hi=chord(d,rj,Math.min(180,angle+at));
+      window(nb[i],nb[j],lo,hi);pairs.push({a:nb[i],b:nb[j],angle:angle});
+    }
+    return {text:lines.join('\n'),bonds:nb.length,angles:pairs.length,pairs:pairs};
+  }
+  return { read: read, rules: rules, radius: radius, elementOf: elementOf, geometryRules:geometryRules };
+
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = MoleculeRules;

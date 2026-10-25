@@ -58,7 +58,7 @@ RV.workspace=(function(){
     var find=$('#dataset-search');if(find){var many=S.datasets.length>8;if(!many && find.value){find.value='';$('#ds-list').querySelectorAll('.ds').forEach(function(row){row.hidden=false;});}find.hidden=!many;}
     $('#method-setup').hidden=noPhases || noDatasets;
   }
-  function render(){queued=0;emptyStates();focusSelect();var tab=RV.app && RV.app.commandTab();if(tab==='datasets'){datasetEditor();RV.panels.renderLimits();var host=$('#dataset-atomic-constraints');if(host && RV.constraints)RV.constraints.renderSolve(host,true);linkEditor();}if(tab==='phases')phaseEditor();if(RV.layout)RV.layout.syncRunPicker();}
+  function render(){queued=0;emptyStates();focusSelect();var tab=RV.app && RV.app.commandTab();if(tab==='datasets'){datasetEditor();RV.panels.renderLimits();var host=$('#dataset-atomic-constraints');if(host && RV.constraints)RV.constraints.renderSolve(host,true);if(RV.restraints)RV.restraints.renderDatasets($('#dataset-restraints'),dataset());linkEditor();}if(tab==='phases')phaseEditor();if(RV.layout)RV.layout.syncRunPicker();}
   function schedule(){if(!queued)queued=requestAnimationFrame(render);}
   function inspectStep(dir){var list=St.selected(),i=list.indexOf(St.first());if(list.length)St.setFocus(list[(i+dir+list.length)%list.length].id);}
   function linkText(l){return (St.byId(l.target.datasetId)||{}).name+' · '+l.target.name+' = '+l.factor+' × '+(St.byId(l.source.datasetId)||{}).name+' · '+l.source.name+' + '+St.toDisplay(l.target.name,l.offset || 0);}

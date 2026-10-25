@@ -1428,3 +1428,69 @@ test('editing either end of a dataset link updates its source and all dependents
   a.S.limits.zero=[-.4,.4];const before=[source.p.zero,other.p.zero,third.p.zero];
   assert.equal(a.state.setParam('zero',2,[other]),false);assert.deepEqual([source.p.zero,other.p.zero,third.p.zero],before);
 });
+
+
+test('geometry helper writes bond and angle windows for distinct atom labels', () => {
+  const MR=require('../js/molecule_rules.js'),AR=require('../js/atom_restraints.js');
+  const bond=MR.geometryRules({kind:'bond',center:'Si',neighbours:['O1'],distance:1.62,distanceTol:.03});
+  assert.equal(bond.text,'Si O1 - 1.5900/1.6500');assert.equal(bond.angles,0);
+  const angle=MR.geometryRules({kind:'angle',center:'O',neighbours:['H1','H2'],distance:.96,secondDistance:.96,distanceTol:.03,angle:104.5,angleTol:3});
+  const windows=AR.parse(angle.text).windows;assert.equal(windows.length,3);
+  assert.ok(Math.abs(windows[2].dmin-2*.96*Math.sin(101.5*Math.PI/360))<.0001);
+  assert.ok(Math.abs(windows[2].dmax-2*.96*Math.sin(107.5*Math.PI/360))<.0001);
+  for(const [kind,count] of [['linear',2],['triangle',3],['tetrahedron',4],['square',4],['octahedron',6]]){
+    const neighbours=Array.from({length:count},(_,i)=>'O'+(i+1));
+    const r=MR.geometryRules({kind,center:'Si',neighbours,distance:2,distanceTol:.03,angleTol:3});
+    assert.equal(r.bonds,count);assert.equal(r.angles,count*(count-1)/2);assert.equal(AR.parse(r.text).bad.length,0);
+    if(kind==='square' || kind==='octahedron')assert.equal(r.pairs.filter(p=>p.angle===180).length,count/2);
+  }
+  assert.throws(()=>MR.geometryRules({kind:'tetrahedron',center:'Si',neighbours:['O1'],distance:2,distanceTol:.03,angleTol:3}),/exactly 4/);
+  assert.throws(()=>MR.geometryRules({kind:'bond',center:'Si',neighbours:['Si'],distance:2,distanceTol:.03}),/distinct/);
+  assert.throws(()=>MR.geometryRules({kind:'bond',center:'Si',neighbours:['O'],distance:2,distanceTol:-1}),/tolerance/);
+});
+
+test('generated tetrahedral restraints accept ideal geometry and penalize distortion', () => {
+  const a=app(),MR=require('../js/molecule_rules.js'),AR=a.context.AtomRestraints;
+  const vectors=[[1,1,1],[1,-1,-1],[-1,1,-1],[-1,-1,1]],scale=2/Math.sqrt(3)/20;
+  const atoms=[{label:'Si',type:'Si',x:.5,y:.5,z:.5,occ:1,B:.5}].concat(vectors.map((v,i)=>({label:'O'+(i+1),type:'O',x:.5+scale*v[0],y:.5+scale*v[1],z:.5+scale*v[2],occ:1,B:.5})));
+  a.state.addPhase(a.state.makePhase({name:'Tetrahedron',sg:a.state.resolveSG(1),cell:{a:20,b:20,c:20},atoms}));
+  const ph=a.S.phases[0],def=a.state.phaseDefs()[0],r={on:true,text:MR.geometryRules({kind:'tetrahedron',center:'Si',neighbours:['O1','O2','O3','O4'],distance:2,distanceTol:.03,angleTol:3}).text,weight:1,sigmaD:.02};
+  const ctx={cellOf:a.core.cellOf,sitePosition:a.core.sitePosition};
+  const ideal=AR.rows(def,r,ph.v,ctx);assert.equal(ideal.length,10);assert.ok(ideal.every(row=>row.dev===0));
+  const distorted={...ph.v,[ph.key+'.O1.x']:ph.v[ph.key+'.O1.x']+.04};assert.ok(AR.rows(def,r,distorted,ctx).some(row=>Math.abs(row.dev)>.1));
+});
+
+
+test('symmetry geometry rules retain independent angular windows and penalize only outside them', () => {
+  const a=app(),MR=require('../js/molecule_rules.js'),AR=a.context.AtomRestraints;
+  const generated=MR.geometryRules({kind:'octahedron',mode:'symmetry',center:'A',neighbours:['B'],distance:3.46,distanceTol:.06,angleTol:25});
+  assert.match(generated.text,/A B 6 3.4000\/3.5200 octahedron angle=25/);
+  assert.equal(AR.parse(generated.text).windows[0].angleTol,25);
+  assert.ok(AR.parse('A B - 1/2 angle=3').bad.length);
+  assert.ok(AR.parse('A B 6 1/2 oct angle=-1').bad.length);
+  assert.ok(AR.parse('A B 6 1/2 oct angle=NaN').bad.length);
+  const ph=a.state.makePhase({name:'Distorted shell',sg:a.state.resolveSG(1),cell:{a:4,b:4,c:4},atoms:[{label:'A',type:'Na',x:0,y:0,z:0,B:.5,occ:1},{label:'B',type:'Cl',x:.5,y:.5,z:.5,B:.5,occ:1}]});a.state.addPhase(ph);
+  const def=a.state.phaseDefs()[0],ctx={cellOf:a.core.cellOf,sitePosition:a.core.sitePosition};
+  const rows=text=>AR.rows(def,{text,weight:1,sigmaA:3},ph.v,ctx).filter(r=>r.kind==='ang');
+  assert.ok(rows(generated.text).every(r=>r.dev===0));
+  const strict=rows(generated.text.replace(' angle=25','')),narrow=rows(generated.text.replace('angle=25','angle=10'));
+  assert.ok(strict.some(r=>Math.abs(r.dev)>19));assert.ok(narrow.some(r=>Math.abs(r.dev)>9));assert.ok(narrow.every((r,i)=>Math.abs(r.dev)<=Math.abs(strict[i].dev)));
+});
+
+
+test('restraints reject repeated unordered atom pairs regardless of windows or geometry', () => {
+  const AR=require('../js/atom_restraints.js'),atoms=['Si','O1','O2'].map(label=>({label}));
+  for(const text of ['Si O1 - 1.5/1.7\nO1 Si - 1.4/1.8','Si O1 4 1.5/1.7 tet angle=3\nSi O1 4 1.5/1.7 tetrahedron angle=5','Si O1 - 1.5/1.7\nsi o1 - 1.6/1.8'])assert.ok(AR.check(atoms,{text}).errors.some(e=>/Duplicate restraint/.test(e)));
+  const result=AR.merge(atoms,'Si O1 - 1.5/1.7','O1 Si - 1.4/1.8\nSi O2 - 1.5/1.7\nO2 Si - 1.3/1.9');
+  assert.equal(result.added,1);assert.equal(result.skipped,2);assert.equal(result.text,'Si O1 - 1.5/1.7\nSi O2 - 1.5/1.7');
+  const again=AR.merge(atoms,result.text,result.text);assert.equal(again.added,0);assert.equal(again.text,result.text);
+  assert.throws(()=>AR.merge(atoms,'','Si Missing - 1/2'),/not an atom label/);
+});
+
+test('overlapping geometry helpers keep existing bonds and angle-distance rules exactly once', () => {
+  const AR=require('../js/atom_restraints.js'),MR=require('../js/molecule_rules.js'),atoms=['Si','O1','O2','O3','O4'].map(label=>({label}));
+  const tetra=MR.geometryRules({kind:'tetrahedron',center:'Si',neighbours:['O1','O2','O3','O4'],distance:1.62,distanceTol:.03,angleTol:3}).text;
+  const initial=AR.merge(atoms,'O1 Si - 1.50/1.70',tetra);assert.equal(initial.added,9);assert.equal(initial.skipped,1);assert.equal(AR.check(atoms,{text:initial.text}).rules.length,10);
+  const angle=MR.geometryRules({kind:'angle',center:'Si',neighbours:['O2','O1'],distance:1.62,secondDistance:1.62,distanceTol:.03,angle:109.47,angleTol:3}).text;
+  const again=AR.merge(atoms,initial.text,angle);assert.equal(again.added,0);assert.equal(again.skipped,3);assert.equal(again.text,initial.text);
+});
