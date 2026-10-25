@@ -2,6 +2,10 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.33.2 — 25 October 2026
+
+1. **Factor tooltip.** In the Wyckoff constraint Helper (Suggest tab), the Factor label and its value show "shortest contact = Factor × (covalent radius of A + covalent radius of B)" on hover.
+
 ## 2.33.1 — 25 October 2026
 
 1. **Helper placement.** The Helper button sits to the right of its rules box, in Datasets / Restraints and in the Wyckoff search Distance constraints, instead of below it.

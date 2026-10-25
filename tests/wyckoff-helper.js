@@ -36,7 +36,7 @@
     change('#dlg [data-wh-paste]','S\nO1 1 1.47\nO2 1 1.47 2 109.47\nO3 1 1.47 2 109.47 3 120\nO4 1 1.47 2 109.47 3 -120');
     q('#dlg [data-wh-add="molecule"]').click();await frame();
     check(/^O S 1 1\.37\/1\.57$/m.test(col()) && col().split('\n').filter(function(l){return /^S O /.test(l);}).length===1,'Molecule Add writes the O around S and keeps the first S O shell: '+col());
-    q('#dlg [data-wh-tab="suggest"]').click();q('#dlg [data-wh-add="suggest"]').click();await frame();
+    check(/Factor ×/.test(q('#dlg [data-wh-factor]').title) && /Factor ×/.test(q('#dlg [data-wh-factor]').closest('label').title),'Factor label and value explain the shortest contact');q('#dlg [data-wh-tab="suggest"]').click();q('#dlg [data-wh-add="suggest"]').click();await frame();
     check(/^Ba S - [\d.]+\/$/m.test(col()) && col().split('\n').filter(function(l){return /^O O /.test(l);}).length===1,'Suggest adds shortest contacts without repeating O O');
     var draft=col();q('#dlg .btns .primary').click();await frame();await frame();
     check(copied===draft && RV.solve.state.opts.wy.constraints===original,'Copy writes the collection to the clipboard only');

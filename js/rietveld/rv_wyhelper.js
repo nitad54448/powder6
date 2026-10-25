@@ -109,7 +109,7 @@ RV.wyHelper = (function(){
         '<div data-wh-made></div><p class="buttons"><button type="button" data-wh-add="molecule">Add</button></p></div></section>'+
       '<section role="tabpanel" class="rs-helper-panel" id="wh-panel-suggest" aria-labelledby="wh-tab-suggest" data-wh-panel="suggest" hidden><div class="rs-guide-body">'+
         '<p class="hint">Writes a shortest contact for every pair of elements of the formula unit: the factor times the sum of their covalent radii. A floor keeps atoms apart without adding a rule to the kernel budget.</p>'+
-        '<div class="rs-set"><label>Factor <input class="num" data-wh-factor value="0.8" inputmode="decimal"></label><label><input type="checkbox" data-wh-like checked> like pairs (O O)</label></div>'+
+        '<div class="rs-set"><label title="shortest contact = Factor × (covalent radius of A + covalent radius of B)">Factor <input class="num" data-wh-factor value="0.8" inputmode="decimal" title="shortest contact = Factor × (covalent radius of A + covalent radius of B)"></label><label><input type="checkbox" data-wh-like checked> like pairs (O O)</label></div>'+
         '<div data-wh-suggested></div><p class="buttons"><button type="button" data-wh-add="suggest">Add</button></p></div></section>'+
       '<label class="rs-rules rs-collected">Collected constraints<textarea class="code-area" data-wh-collected rows="6" spellcheck="false"></textarea></label>'+
       '<p class="hint">Add collects constraints here only. Copy them, then paste into Distance constraints if wanted. For a duplicate or conflicting rule the first is kept.</p>'+
