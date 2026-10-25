@@ -2,6 +2,13 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.27.0 — 25 October 2026
+
+1. **Constraint refinement and edits.** Sum-constraint refine checkboxes enable or fix all terms together, with one fewer independent refinement variable than terms. Partial flags are shown as mixed, tooltips explain the relationship, and equations at their parameter-limit extremes show when no refinement freedom remains. Valid edits update related values while typing; either end of an equivalence or dataset parameter link can be edited, updating its source and dependents while preserving limits. Invalid edits leave all values unchanged.
+2. **Dataset controls.** Copy has independent Values and Refinement flags options, a destination selector for all other datasets or one named dataset, and a Copy button. Atomic Constraints exposes the editor directly; Links is a separate section with parameter limits and sharing beneath it. Remove redundant selection/fit buttons, their unused handlers, and the extra Links title. Scope equation styles so constrained values and refine checkboxes keep their row alignment.
+3. **Fourier and structure views.** Periodic density surfaces include equivalent peaks on cell faces and edges. Fourier, charge-flipping and Wyckoff formula help moves to tooltips. Autoscale and Reset view appear only when the view has changed.
+4. **Validation.** Add regression coverage for grouped refine flags, constrained edits in both directions, dataset-link propagation, bound-limited sums and periodic density boundaries; add browser pages for constraint alignment and editing. The 96 Node regression tests passed. Browser checks for Fourier maps and constraint alignment passed; the later constraint-edit browser runs timed out.
+
 ## 2.26.2 — 24 October 2026
 
 1. **Fourier peak threshold.** The peak list of a Fourier map starts at a setting, Peaks above (σ), default 4 instead of the fixed 2.5 σ, which listed mostly noise in powder maps. The setting is remembered.
