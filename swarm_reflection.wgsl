@@ -1249,12 +1249,14 @@ if (lid == 0u) {
                 }
             }
             
-            let STEP_UP = 1.057596;
-            let STEP_DOWN = 0.9762857;
+            //__STEP_UP__
+            //__STEP_DOWN__
+            //__STEP_MIN__
+            //__STEP_MAX__
             if (accept) {
-                st.stepSize = clamp(st.stepSize * STEP_UP, 2e-4, 0.5);
+                st.stepSize = clamp(st.stepSize * STEP_UP, STEP_MIN, STEP_MAX);
             } else {
-                st.stepSize = clamp(st.stepSize * STEP_DOWN, 2e-4, 0.5);
+                st.stepSize = clamp(st.stepSize * STEP_DOWN, STEP_MIN, STEP_MAX);
             }
             
             mcmcState[pIdx] = st;

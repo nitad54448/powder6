@@ -90,14 +90,8 @@ const SW_DEFAULTS = Object.freeze({
     // --- Penalties, in fitness units ---
     penClash: 0.05,         // per clashing pair
 
-    // Effective observations per free parameter below which the RANKING IS
-    // WITHHELD. Three, not one: at one the model reproduces the observations
-    // exactly and the correlation is 1 by construction, and the ordering is
-    // already meaningless somewhat before that, because a near-fit saturates a
-    // measure that is invariant under Icalc -> a*Icalc + b. This is a
-    // threshold on MEANINGFULNESS, not on quality -- above it a low score is
-    // still a real answer, below it a high one is not.
-    minObsPerParam: 3,
+    // Ranking is withheld below WY_WITHHOLD_OBS_PER_PARAM (1 observation per
+    // free parameter); below WY_MIN_OBS_PER_PARAM (3) it carries a caution.
     // Per Angstrom of unmet distance constraint. Raised from 0.02, which was
     // set when the only upper-bound rule was a loose "some O within 1.65 A"
     // nearest-neighbour test. As the restoring force of a coordination
@@ -204,7 +198,22 @@ function swRestraintCapacity(restraints) {
     return { rules: Math.max(L.baseRules, rules), slots: capSlots, geomSlots: restraints && restraints.geometry ? capSlots : 1 };
 }
 
-function swInject(src, maxGen, minImageShell = 0, groupStride = 3, countShell = 1, capacity = null) {
+function swInject(src, maxGen, minImageShell = 0, groupStride = 3, countShell = 1, capacity = null, adaptationSettings = SW_DEFAULTS) {
+    const d = adaptationSettings;
+    if (![d.stepMin, d.stepMax, d.stepInit, d.targetAccept, d.stepAdapt].every(Number.isFinite) ||
+        d.stepMin <= 0 || d.stepMax < d.stepMin || d.stepInit < d.stepMin || d.stepInit > d.stepMax ||
+        d.targetAccept <= 0 || d.targetAccept >= 1 || d.stepAdapt <= 0) {
+        throw new Error('Invalid Wyckoff step adaptation settings.');
+    }
+    const adaptation = { STEP_MIN: d.stepMin, STEP_MAX: d.stepMax,
+        STEP_UP: Math.exp(d.stepAdapt * (1 - d.targetAccept)),
+        STEP_DOWN: Math.exp(-d.stepAdapt * d.targetAccept) };
+    for (const [name, value] of Object.entries(adaptation)) {
+        if (!Number.isFinite(Math.fround(value)) || Math.fround(value) <= 0) throw new Error('Wyckoff adaptation exceeds GPU float limits.');
+        const marker = `//__${name}__`;
+        if (!src.includes(marker)) throw new Error(`${name} marker not found in the kernel source. Reload without the cache.`);
+        src = src.replace(marker, `const ${name}: f32 = ${value.toExponential(9)};`);
+    }
     let out = src.replace(
         /const\s+MAX_GEN_ATOMS\s*:\s*u32\s*=\s*\d+u\s*;\s*\/\/__MAX_GEN_ATOMS__/,
         `const MAX_GEN_ATOMS: u32 = ${maxGen}u; //__injected__`);
@@ -340,11 +349,6 @@ function swGaussian() {
     swHasSpare = true;
     return u * f;
 }
-
-// The two Robbins-Monro multipliers, one for an accepted proposal and one for
-// a rejected one. See the adaptation step in the search loop.
-const SW_STEP_UP = Math.exp(SW_DEFAULTS.stepAdapt * (1 - SW_DEFAULTS.targetAccept));
-const SW_STEP_DOWN = Math.exp(SW_DEFAULTS.stepAdapt * (0 - SW_DEFAULTS.targetAccept));
 
 function swBuffer(device, data, usage) {
     const buf = device.createBuffer({

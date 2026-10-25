@@ -1432,6 +1432,7 @@ RV.cmd = (function () {
     St.commitProject(pj);
     if(RV.absorption && RV.absorption.restoreUser)RV.absorption.restoreUser(doc.absorption || null);
     if(RV.solve && RV.solve.restoreArchive)RV.solve.restoreArchive(doc.solutionState);
+    if(RV.project && RV.project.markSaved)RV.project.markSaved();
     ui.logLoad(pj.log, 'Log saved with the project, ' + plural(pj.log.length, 'line') + ' (newest first):');
     ui.toast('Opened a project with ' + plural(S.phases.length, 'phase') + ' and ' + plural(S.datasets.length, 'dataset') + '.', 'ok');
   }

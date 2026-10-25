@@ -10,5 +10,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      # no install step: the app has no dependencies. The browser pages need Chrome with WebGPU and are run locally.
-      - run: node --test tests/regressions.test.cjs tests/cf-adaptive.test.cjs tests/cf-startup.test.cjs tests/numerics.test.cjs tests/project-unpack.test.cjs tests/density-boundaries.test.cjs
+      # No install step: the app has no dependencies.
+      - run: node --test tests/*.test.cjs
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        page: [ui-consistency, ui-interactions]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # Hosted Ubuntu runners include Chrome. These suites do not require GPU fitting.
+      - run: node tests/run-webgpu.cjs "$(command -v google-chrome)" tests/${{ matrix.page }}.html

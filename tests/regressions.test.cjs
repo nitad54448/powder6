@@ -503,6 +503,7 @@ test('opening a project clears every restore point and reads the project as save
   const project = JSON.parse(a.state.projectJSON([]));
   project.settings.weight = 'unit'; project.settings.bkgN = 2; project.settings.nAnchors = 4; project.settings.inst.lambda1 = 2;
   await a.context.RV.cmd.openProject(JSON.stringify(project));
+  assert.equal(a.context.RV.project.hasUnsavedChanges(),false,'An opened project should not warn on leaving');
   assert.equal(a.S.settings.weight, 'unit');
   assert.equal(H.count(), 0, 'restore points of the previous session survived');
   H.undo();

@@ -3,6 +3,21 @@
 RV.project = (function(){
   'use strict';
   var St=RV.state,S=St.S,columns=['tth','y','sig','weights'];
+  // Compare saved content, not UI events: rendering and undo can emit the same
+  // events as edits. Observation data is immutable and identified by dataKey.
+  var savedSnapshot=null;
+  function snapshot(){
+    var doc=JSON.parse(St.projectJSON([],{metadataOnly:true}));
+    delete doc.saved;
+    delete doc.selection;delete doc.focus;delete doc.phaseSelection;
+    if(RV.solve && RV.solve.archive)doc.solutionState=RV.solve.archive(false);
+    return JSON.stringify(doc);
+  }
+  function markSaved(value){savedSnapshot=value===undefined?snapshot():value;}
+  function hasUnsavedChanges(){
+    if(savedSnapshot===null)return !!(S.datasets.length || S.phases.length);
+    return snapshot()!==savedSnapshot;
+  }
   // saved as the first; all of them are opened (.powder6 is what versions before 2.8 wrote)
   var EXTENSIONS=['.project','.archive','.powder6'];
   function isProjectName(name){return EXTENSIONS.some(function(e){return String(name || '').toLowerCase().slice(-e.length)===e;});}
@@ -24,17 +39,29 @@ RV.project = (function(){
     return zip.generateAsync({type:'uint8array',compression:'DEFLATE',compressionOptions:{level:3}},function(p){if(opts.progress)opts.progress(p.percent);});
   }
   // Limits on what an archive may claim, so a damaged or hostile file fails with a message instead of exhausting memory.
-  var LIMITS={json:256e6,column:8e8,rows:100000,files:2000000};
+  var LIMITS={json:256e6,column:8e8,rows:100000,files:100000,archive:512e6,decoded:1e9};
   function declaredSize(entry){var d=entry && entry._data;return d && Number.isFinite(d.uncompressedSize)?d.uncompressedSize:null;}
   function plain(x){return !!x && typeof x==='object' && !Array.isArray(x);}
-  async function unpack(buffer){if(typeof JSZip==='undefined')throw new Error('Project compression library is unavailable.');var zip=await JSZip.loadAsync(buffer),entry=zip.file('project.json');if(!entry)throw new Error('This archive is not a Powder 6 project.');
+  async function unpack(buffer){if(typeof JSZip==='undefined')throw new Error('Project compression library is unavailable.');
+    if(buffer.byteLength>LIMITS.archive)throw new Error('Project archive is too large.');
+    var zip=await JSZip.loadAsync(buffer),entries=Object.values(zip.files);
+    if(entries.length>LIMITS.files)throw new Error('Too many files in project archive.');
+    var total=0;
+    entries.forEach(function(file){if(file.dir)return;var n=declaredSize(file);if(!Number.isSafeInteger(n) || n<0)throw new Error('Invalid archive entry size.');total+=n;if(total>LIMITS.archive)throw new Error('Project archive uncompressed size exceeds the limit.');});
+    var entry=zip.file('project.json');if(!entry)throw new Error('This archive is not a Powder 6 project.');
     var size=declaredSize(entry);if(size!==null && size>LIMITS.json)throw new Error('project.json is too large to be a Powder 6 project.');
     var doc;try{doc=JSON.parse(await entry.async('string'));}catch(e){throw new Error('project.json is not valid JSON.');}
     if(!plain(doc) || doc.format!=='powder6-project' || doc.version!==3)throw new Error('Unsupported project format.');
     var pool=Object.create(null),rows=doc.observations;if(!Array.isArray(rows))throw new Error('Missing project observations.');if(rows.length>LIMITS.rows)throw new Error('Too many observation sets.');if(!Array.isArray(doc.datasets))throw new Error('Missing project datasets.');
-    for(var row of rows){if(!plain(row) || typeof row.key!=='string' || row.key in pool || !plain(row.columns))throw new Error('Invalid observation identifier.');var raw={key:row.key};for(var c of columns){var field=row.columns[c];if(!field){raw[c]=null;continue;}
+    // Validate every reference before decoding any column. Count repeated paths
+    // too: each reference allocates another output and a temporary byte array.
+    var decoded=(size || 0)*4,keys=new Set();
+    for(var row of rows){if(!plain(row) || typeof row.key!=='string' || keys.has(row.key) || !plain(row.columns))throw new Error('Invalid observation identifier.');keys.add(row.key);for(var c of columns){var field=row.columns[c];if(!field)continue;
         if(!plain(field) || typeof field.path!=='string' || !Number.isSafeInteger(field.length) || field.length<0 || field.length*8>LIMITS.column)throw new Error('Invalid observation column.');
         var file=zip.file(field.path);if(!file)throw new Error('Missing observation column '+field.path);var declared=declaredSize(file);if(declared!==null && declared!==field.length*8)throw new Error('Observation column length mismatch.');
+        decoded+=field.length*16;if(decoded>LIMITS.decoded)throw new Error('Project decoded observations exceed the memory limit.');
+      }}
+    for(var row of rows){var raw={key:row.key};for(var c of columns){var field=row.columns[c];if(!field){raw[c]=null;continue;}var file=zip.file(field.path);
         var array=values(await file.async('uint8array'));if(array.length!==field.length)throw new Error('Observation column length mismatch.');raw[c]=array;}
       if(!raw.tth || !raw.y || raw.tth.length!==raw.y.length)throw new Error('Invalid powder observations.');
       if(raw.sig && raw.sig.length!==raw.tth.length)throw new Error('Observation uncertainty length mismatch.');
@@ -63,13 +90,15 @@ RV.project = (function(){
     if(S.busy){ui.toast('A calculation started meanwhile: the project was not saved. Save again when it ends.','warn');return;}
     St.setBusy(true,'Compressing project…');
     try{
+      var savingSnapshot=snapshot();
       var output=await pack({compact:choice.compact,density:choice.density,progress:function(p){ui.progress(p,100,'Saving '+p.toFixed(0)+'%');}});
       await ui.writeSaveTarget(target,output,'application/zip');
+      markSaved(savingSnapshot);
       var size=(output.byteLength/1000000).toFixed(2)+' MB';
       ui.toast(target.download?'Saved project '+target.name+' ('+size+') to your browser’s download folder. If it is not there, look for a blocked-download notice next to the address bar.':'Saved project as '+target.name+' ('+size+').','ok');
     }catch(x){
       ui.toast('The project could not be saved: '+(x && x.message || x)+'.'+(target.handle?' The file '+target.name+' may have been left empty; save again.':' Nothing was downloaded.'),'err');
     }finally{St.setBusy(false);ui.progress(0,0);}
   }
-  return {pack:pack,unpack:unpack,save:save,binary:binary,values:values,EXTENSIONS:EXTENSIONS,isProjectName:isProjectName,isProjectArchive:isProjectArchive};
+  return {pack:pack,unpack:unpack,save:save,markSaved:markSaved,hasUnsavedChanges:hasUnsavedChanges,binary:binary,values:values,EXTENSIONS:EXTENSIONS,isProjectName:isProjectName,isProjectArchive:isProjectArchive};
 })();

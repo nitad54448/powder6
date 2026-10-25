@@ -13,6 +13,18 @@
     function key(el,value){el.focus();el.dispatchEvent(new w.KeyboardEvent('keydown',{key:value,bubbles:true,cancelable:true}));}
     St.addPhase(St.makePhase({name:'Reference phase',sg:St.resolveSG(1),cell:{a:5,b:5,c:5,alpha:90,beta:90,gamma:90},atoms:[]}));
     const datasets=St.insertDatasets(['Reference standard','Sample at 300 K'].map(name=>St.makeDataset({name,tth:[10,20,30],y:[10,40,20]})),{estimate:false,selectAll:true});
+    check(RV.project.hasUnsavedChanges(),'New data must be unsaved');
+    RV.project.markSaved();
+    check(!RV.project.hasUnsavedChanges(),'Saved project must be clean');
+    const originalName=datasets[0].name;
+    RV.history.take('Rename for dirty-state check');St.rename(datasets[0].id,'Unsaved name');
+    check(RV.project.hasUnsavedChanges(),'Rename must mark the project dirty');
+    RV.cmd.undo();
+    check(!RV.project.hasUnsavedChanges(),'Undo to saved content must clear the warning');
+    check(St.byId(datasets[0].id).name===originalName,'Undo failed');
+    // Undo replaces dataset objects; later checks should use the live instances.
+    datasets.splice(0,datasets.length,...S.datasets);
+    record('Unsaved changes distinguish saved content, edits and undo');
     RV.app.showTab('datasets');await frame();
     check(!q('[data-acc="dataset-batch"]') && !q('#dataset-table'),'Duplicate batch section remains');
     q('[data-edit-dataset]').click();await frame();

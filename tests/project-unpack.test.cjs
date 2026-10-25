@@ -73,3 +73,32 @@ test('datasets must be a list',
 
 test('only version 3 archives are read',
   rejects(doc => { doc.version = 2; }, /Unsupported project format/));
+
+// Small limits exercise actual ZIP metadata and decoding without huge fixtures.
+function limited(overrides) {
+  const sandbox=vm.createContext({console,TextDecoder,TextEncoder,setTimeout,clearTimeout,setImmediate,clearImmediate,RV:{state:{S:{}}}});
+  sandbox.window=sandbox;
+  vm.runInContext(read('lib/jszip.min.js'),sandbox);
+  const source=read('js/rietveld/rv_project.js').replace(/var LIMITS=\{[^;]+;/,match=>match+'Object.assign(LIMITS,'+JSON.stringify(overrides)+');');
+  vm.runInContext(source,sandbox);
+  return async bytes=>sandbox.RV.project.unpack(new (vm.runInContext('Uint8Array',sandbox))(bytes));
+}
+test('archive entry counts are enforced',async()=>{
+  await assert.rejects(()=>limited({files:2})(archiveBytes),/Too many files/);
+});
+let archiveBytes;
+test.before(async()=>{archiveBytes=await archive();});
+test('cumulative inflated bytes include unreferenced entries',async()=>{
+  const stored=await archive((doc,files)=>{files['unused.txt']='x'.repeat(3000);});
+  const zip=await JSZip.loadAsync(stored),bytes=await zip.generateAsync({type:'uint8array',compression:'DEFLATE'});
+  assert.ok(bytes.byteLength<2000);
+  await assert.rejects(()=>limited({archive:2000})(bytes),/uncompressed size/);
+});
+test('decoded allocation budget counts repeated references and temporary copies',async()=>{
+  const bytes=await archive(doc=>{
+    for(let i=2;i<=20;i++)doc.observations.push({key:'k'+i,columns:doc.observations[0].columns});
+  });
+  // Budget permits the JSON and one observation, but not all repeated columns.
+  const zip=await JSZip.loadAsync(bytes),jsonSize=zip.file('project.json')._data.uncompressedSize;
+  await assert.rejects(()=>limited({decoded:jsonSize*4+100})(bytes),/decoded observations.*memory limit/);
+});

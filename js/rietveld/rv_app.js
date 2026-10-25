@@ -310,7 +310,11 @@
       else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); RV.cmd.saveProject(); }
       else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && !$('#dlg').open) { e.preventDefault(); RV.cmd.undo(); }
     });
-    window.addEventListener('beforeunload', function (e) { if (S.datasets.length || S.phases.length) { e.preventDefault(); e.returnValue = ''; } });
+    window.addEventListener('beforeunload', function (e) {
+      var dirty=true;
+      try{dirty=RV.project.hasUnsavedChanges();}catch(error){console.error('Checking unsaved project',error);}
+      if(dirty){e.preventDefault();e.returnValue='';}
+    });
 
     $('#theme-toggle').addEventListener('click', function () { St.setSetting('theme', isDark() ? 'light' : 'dark'); });
     if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () { if (S.settings.theme !== 'dark' && S.settings.theme !== 'light') applyTheme(); });
