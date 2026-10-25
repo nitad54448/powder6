@@ -1042,7 +1042,7 @@ RV.solve = (function () {
     function formulaRow(k) {
       return '<div class="sv-row"><label class="sv-lbl" for="sv-formula-' + k + '">Formula unit</label><input id="sv-formula-' + k + '" class="sv-formula" data-opt="formula" value="' + esc(o.formula) + '" placeholder="e.g. PbSO4" spellcheck="false" autocomplete="off">' +
         '<label class="sv-lbl" for="sv-z-' + k + '">Z</label><input id="sv-z-' + k + '" class="num sv-z" data-opt="z" value="' + esc(o.z) + '" placeholder="Auto" inputmode="numeric" autocomplete="off">' +
-        '<span class="hint sv-dens" data-k="' + k + '"></span></div><p class="hint sv-shared">' + esc(FORMULA_USE[k]) + '</p>';
+        '<span class="hint sv-dens" data-k="' + k + '"></span><button type="button" class="mini"'+tip(FORMULA_USE[k])+' aria-label="Formula unit help">?</button></div>';
     }
     function structBlock(k) {
       return block(k + '-struct', '3D structure', '<div class="sv-st-head" id="sv-' + k + '-st-head"></div><div class="sv-struct sv-struct-host" id="sv-' + k + '-st" data-src="' + k + '"></div>', false, null, 'sub');
@@ -1095,7 +1095,7 @@ RV.solve = (function () {
           '<label>Grid stride <select id="sv-density-stride"><option value="1">Full resolution</option><option value="2">Every 2nd voxel</option><option value="4">Every 4th voxel</option></select></label>' +
           '<label class="chk"><input type="checkbox" id="sv-density-cell"'+(o.cf.densityCell?' checked':'')+'> Unit cell</label>' +
           '<label class="chk"><input type="checkbox" id="sv-density-sites"'+(o.cf.densitySites?' checked':'')+'> Sites</label>' +
-          '<button type="button" data-sv="density-reset">Reset view</button><button type="button" data-sv="density-png">Save PNG</button><button type="button" data-sv="density-map">Save map</button></div>' +
+          '<button type="button" data-sv="density-reset" hidden>Reset view</button><button type="button" data-sv="density-png">Save PNG</button><button type="button" data-sv="density-map">Save map</button></div>' +
           '<canvas id="sv-density-canvas" class="density-canvas" aria-label="Charge-flipping electron-density isosurface. Drag to rotate and wheel to zoom."></canvas><p class="hint" id="sv-density-note"></p></section>', false, null, 'sub') +
         block('cf-sites', 'Sites', '<div id="sv-cf-sites"></div>', true, 'id="sv-cf-sites-n"', 'sub') +
         structBlock('cf') +
@@ -1181,7 +1181,7 @@ RV.solve = (function () {
       '<span class="sub">Extracted ' + esc(I.stamp) + (I.pre ? ', precision block of the ' + I.pre.n + ' lowest-angle' : '') + '.</span></p>' + (why ? '<p class="sv-warn">' + esc(why) + '</p>' : '');
   }
   function renderDensity() {
-    document.querySelectorAll('#solve .sv-dens').forEach(function (el) { var h = densityHint(el.getAttribute('data-k') === 'cf' ? 'cf' : 'wy'); el.textContent = h.text; el.classList.toggle('sv-warn', !!h.warn); });
+    document.querySelectorAll('#solve .sv-dens').forEach(function (el) { var h = densityHint(el.getAttribute('data-k') === 'cf' ? 'cf' : 'wy'); el.textContent = h.text ? '?' : ''; el.title=h.text; el.tabIndex=0; el.classList.toggle('sv-warn', !!h.warn); });
   }
   function chipsOf(recs, max) {
     var shown = recs.slice(0, max).map(function (r) {

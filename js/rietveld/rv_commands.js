@@ -1133,13 +1133,14 @@ RV.cmd = (function () {
     RV.bus.emit('params', {});
     ui.toast('Scales and constant background estimated by linear least squares in ' + ok + ' of ' + plural(list.length, 'dataset') + '.', ok === list.length ? 'ok' : 'warn');
   }
-  function cloneTo(all) {
+  function cloneTo(all, values, flags) {
     if (!idle()) return;
-    var from = RV.workspace.dataset(), targets = (all ? S.datasets.slice() : sel()).filter(function(d){return d!==from;});
+    var from = RV.workspace.dataset(), targets = (typeof all==='string' ? (all==='all'?S.datasets:S.datasets.filter(function(d){return String(d.id)===all;})) : all ? S.datasets.slice() : sel()).filter(function(d){return d!==from;});
+    if(values===false && flags===false){ui.toast('Choose Values or Refinement flags to copy.','info');return;}
     if (!need(from && targets.length, all ? 'There is only one dataset.' : 'Select the datasets to copy to.')) return;
     snapshot('copying the parameters of ' + from.name);
-    St.copyParams(from, targets);
-    ui.toast('Copied the values and fit flags of ' + from.name + ' to ' + plural(targets.length, 'other dataset') + '.', 'ok');
+    St.copyParams(from, targets, values, flags);
+    ui.toast('Copied '+(values===false?'refinement flags':flags===false?'values':'values and refinement flags')+' of ' + from.name + ' to ' + plural(targets.length, 'other dataset') + '.', 'ok');
   }
 
   // fit flags by steps, the usual order of a Rietveld refinement; each step keeps the ones before

@@ -1369,3 +1369,62 @@ test('a difference Fourier map finds the atom the model lacks', () => {
   assert.ok(run([na, cl], 'diff').sigma < diff.sigma / 20);
   const obs = run([na], 'obs'); assert.ok(obs.peaks.length >= 1);
 });
+
+
+test('sum constraint refine flags toggle together in the target dataset', () => {
+  const a=app();a.S.calculation='rietveld';
+  const ph=a.state.makePhase({name:'NaCl',sg:a.state.resolveSG(1),cell:{a:5,b:5,c:5},atoms:[
+    {label:'Na1',type:'Na',x:0,y:0,z:0,occ:.5,B:.5},
+    {label:'Cl1',type:'Cl',x:.5,y:.5,z:.5,occ:.5,B:.5}]});
+  a.state.addPhase(ph);
+  const one=a.state.makeDataset({name:'one',tth:[10,20,30],y:[1,2,1]}),two=a.state.makeDataset({name:'two',tth:[10,20,30],y:[1,2,1]});
+  a.S.datasets.push(one,two);
+  const names=['Na1','Cl1'].map(n=>ph.key+'.'+n+'.occ');
+  ph.constraints=[{kind:'sum',component:'occ',atoms:['Na1','Cl1'],mult:[1,1],total:1}];
+  names.forEach(n=>{one.fit[n]=false;two.fit[n]=false;});
+  a.state.setFit(names[0],true,[one]);
+  names.forEach(n=>{assert.equal(one.fit[n],true);assert.equal(two.fit[n],false);});
+  const plan=a.context.AtomicConstraints.prepare(a.state.jobFor(one));
+  assert.equal(plan.vars.filter(v=>names.includes(v.name)).length,1,'the sum has only one independent variable');
+  a.state.setFit(names[1],false,[one]);names.forEach(n=>assert.equal(one.fit[n],false));
+  a.S.calculation='wppf';a.state.setFit(names[0],true,[one]);assert.equal(one.fit[names[1]],false);
+});
+
+test('sum constraints identify bounds that leave no refinement freedom', () => {
+  const a=app(),AC=a.context.AtomicConstraints,ph={key:'p1',v:{}};
+  const c={kind:'sum',component:'occ',atoms:['Na1','Cl1'],mult:[1,1],total:2};
+  assert.equal(AC.sumInfo(ph,c,{}).noFreedom,true);
+  c.total=1;assert.equal(AC.sumInfo(ph,c,{}).noFreedom,false);
+  c.total=0;assert.equal(AC.sumInfo(ph,c,{}).noFreedom,true);
+  c.mult=[1,-1];c.total=1;assert.equal(AC.sumInfo(ph,c,{}).noFreedom,true);
+  c.total=0;assert.equal(AC.sumInfo(ph,c,{}).noFreedom,false);
+});
+
+
+test('editing either sum or equivalence term updates its partner with refinement on or off', () => {
+  const a=app();a.S.calculation='rietveld';
+  const ph=a.state.makePhase({name:'NaCl',sg:a.state.resolveSG(1),cell:{a:5,b:5,c:5},atoms:[
+    {label:'Na1',type:'Na',x:0,y:0,z:0,occ:.5,B:.5},{label:'Cl1',type:'Cl',x:.5,y:.5,z:.5,occ:.5,B:.5}]});
+  a.state.addPhase(ph);const ds=a.state.makeDataset({name:'Pattern',tth:[10,20,30],y:[1,2,1]});a.S.datasets.push(ds);
+  const [na,cl]=['Na1','Cl1'].map(n=>ph.key+'.'+n+'.occ');
+  ph.constraints=[{kind:'sum',component:'occ',atoms:['Na1','Cl1'],mult:[1,1],total:1}];
+  for(const on of [false,true]){
+    a.state.setFit(na,on,[ds]);
+    assert.equal(a.state.setParam(na,.3,[ds]),true);assert.ok(Math.abs(ds.p[cl]-.7)<1e-12);
+    assert.equal(a.state.setParam(cl,.4,[ds]),true);assert.ok(Math.abs(ds.p[na]-.6)<1e-12);
+  }
+  ph.constraints[0].total=2;ds.p[na]=ds.p[cl]=1;
+  assert.equal(a.state.setParam(na,.9,[ds]),false);assert.equal(ds.p[na],1);assert.equal(ds.p[cl],1);
+  ph.constraints=[{kind:'equiv',component:'occ',atoms:['Na1','Cl1'],mult:[1,2]}];
+  assert.equal(a.state.setParam(na,.3,[ds]),true);assert.ok(Math.abs(ds.p[cl]-.6)<1e-12);
+  assert.equal(a.state.setParam(cl,.4,[ds]),true);assert.ok(Math.abs(ds.p[na]-.2)<1e-12);
+});
+
+test('editing either end of a dataset link updates its source and all dependents', () => {
+  const a=model(),source=a.ds,other=a.state.makeDataset({name:'Other',tth:[10,20,30],y:[1,2,1]}),third=a.state.makeDataset({name:'Third',tth:[10,20,30],y:[1,2,1]});a.S.datasets.push(other,third);
+  a.S.parameterLinks=[{source:{datasetId:source.id,name:'zero'},target:{datasetId:other.id,name:'zero'},factor:2,offset:.1},{source:{datasetId:source.id,name:'zero'},target:{datasetId:third.id,name:'zero'},factor:3,offset:0}];
+  assert.equal(a.state.setParam('zero',.2,[source]),true);assert.ok(Math.abs(other.p.zero-.5)<1e-12);
+  assert.equal(a.state.setParam('zero',.7,[other]),true);assert.ok(Math.abs(source.p.zero-.3)<1e-12);assert.ok(Math.abs(third.p.zero-.9)<1e-12);
+  a.S.limits.zero=[-.4,.4];const before=[source.p.zero,other.p.zero,third.p.zero];
+  assert.equal(a.state.setParam('zero',2,[other]),false);assert.deepEqual([source.p.zero,other.p.zero,third.p.zero],before);
+});

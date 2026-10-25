@@ -149,15 +149,21 @@ var AtomicConstraints = (function () {
 
   /* What each constrained parameter of a phase does in one dataset with its refine flags fit ({name: bool}):
      {name: {role: 'held'|'independent'|'dependent'|'term', text}} for the Parameters panel. */
+  function sumInfo(ph,c,problem,values) {
+    var names=c.atoms.map(function(a){return ph.key+'.'+a+'.'+c.component;}),lo=0,hi=0,free=0;
+    names.forEach(function(n,i){var lim=limits(problem || {},n,(values || ph.v || {})[n]),m=c.mult[i];if(lim[1]>lim[0])free++;lo+=m>0?m*lim[0]:m*lim[1];hi+=m>0?m*lim[1]:m*lim[0];});
+    var tol=1e-10*Math.max(1,Math.abs(c.total));
+    return {names:names,noFreedom: free<2 || Number.isFinite(lo) && Math.abs(c.total-lo)<=tol || Number.isFinite(hi) && Math.abs(c.total-hi)<=tol};
+  }
   function roles(ph, fit) {
     var out={};fit=fit || {};
     normalizeAll(ph.constraints).forEach(function(c){
       var names=c.atoms.map(function(a){return ph.key+'.'+a+'.'+c.component;}), t=text(c);
       if(c.kind==='hold'){names.forEach(function(n){out[n]={role:'held',ignore:true,text:'Held (GSAS-II hold): not refined'};});return;}
       if(c.kind==='equiv'){out[names[0]]={role:'independent',text:'Independent parameter of: '+t};
-        names.slice(1).forEach(function(n,i){var m=c.mult[i+1];out[n]={role:'dependent',ignore:true,text:'= '+(m===1?'':fmtMult(m)+' × ')+c.atoms[0]+'.'+c.component+' (equivalence); its refine flag is ignored'};});return;}
+        names.slice(1).forEach(function(n,i){var m=c.mult[i+1];out[n]={role:'dependent',ignore:true,editable:true,text:'= '+(m===1?'':fmtMult(m)+' × ')+c.atoms[0]+'.'+c.component+' (equivalence); its refine flag is ignored'};});return;}
       var ticked=names.filter(function(n){return !!fit[n];}), dep=ticked.length?ticked[ticked.length-1]:null;
-      names.forEach(function(n){out[n]=n===dep?{role:'dependent',text:'Dependent term of '+t+' (computed from the others)'}:{role:'term',text:(fit[n]?'Refined':'Fixed')+' term of '+t};});
+      names.forEach(function(n){out[n]=n===dep?{role:'dependent',text:'Dependent term of '+t+' (computed from the others)'}:{role:'term',text:(fit[n]?'Refined':'Fixed')+' term of '+t};out[n].sum=c;out[n].group=names;});
     });
     return out;
   }
@@ -195,6 +201,6 @@ var AtomicConstraints = (function () {
     return {constraints:list,dropped:dropped};
   }
   return {definitions:definitions,prepare:prepare,values:values,clone:clone,normalize:normalize,normalizeAll:normalizeAll,text:text,label:label,
-          roles:roles,withoutAtom:withoutAtom,prune:prune,limits:limits,COMPONENTS:COMPONENTS};
+          roles:roles,sumInfo:sumInfo,withoutAtom:withoutAtom,prune:prune,limits:limits,COMPONENTS:COMPONENTS};
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = AtomicConstraints;

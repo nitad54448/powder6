@@ -17,7 +17,7 @@ RV.datasets = (function () {
     RV.bus.on('phases',simulationButtons);RV.bus.on('busy',simulationButtons);simulationButtons();
     var pane=$('#pane-datasets');
     pane.addEventListener('click',function(e){var b=e.target.closest('[data-dataset-action]');if(!b || S.busy)return;switch(b.dataset.datasetAction){
-      case 'read':RV.cmd.readData();break;case 'demo':RV.cmd.demo();break;case 'simulate':RV.cmd.simulate();break;case 'delete':RV.cmd.deleteDatasets();break;case 'all':St.selectAll();break;case 'none':St.selectIds([]);break;case 'parameters':RV.app.showSide('params');break;
+      case 'read':RV.cmd.readData();break;case 'demo':RV.cmd.demo();break;case 'simulate':RV.cmd.simulate();break;case 'delete':RV.cmd.deleteDatasets();break;case 'parameters':RV.app.showSide('params');break;
       case 'individual':St.store('fitmode','single');RV.bus.emit('fitmode');RV.cmd.fitSelected();break;
     }});
     pane.addEventListener('change',function(e){if(S.busy)return;var el=e.target,id,d;

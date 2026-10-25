@@ -261,8 +261,6 @@
               </div>
             </div>
             <div class="buttons">
-              <button type="button" data-dataset-action="all">Select all</button><button type="button" data-dataset-action="none">Clear selection</button>
-              <button type="button" data-workflow="fit">Fit selected datasets</button>
               <span class="hint" id="dataset-summary"></span>
             </div>
             <p class="hint">Individual fits refine each dataset separately. Global fits tie parameters marked shared.</p>
@@ -293,11 +291,7 @@
                   <div class="side-h param-head"><span class="sub">Values of</span><span id="param-ds" class="sub strong"></span><span id="param-more" class="sub"></span><span class="tool-gap"></span><span class="ds-step" role="group" aria-label="Show another dataset"><button type="button" id="param-prev" aria-label="Previous dataset">←</button><button type="button" id="param-next" aria-label="Next dataset">→</button></span></div>
                   <div id="param-list" class="param-list"></div>
                   <div id="param-stats" class="param-stats" hidden></div>
-                  <div class="clone-bar">
-                    <span class="sub">Copy these values to</span>
-                    <button type="button" id="clone-all" title="Copy values and fit flags from the active dataset tab to every other dataset">All datasets</button>
-                    <button type="button" id="clone-sel" title="Copy values and fit flags from the active dataset tab to the selected datasets">Selected datasets</button>
-                  </div>
+                  <div class="clone-bar"><span class="sub">Copy</span><label><input type="checkbox" id="clone-values" checked> Values</label><label><input type="checkbox" id="clone-flags" checked> Refinement flags</label><label>To <select id="clone-target" aria-label="Copy to dataset"></select></label><button type="button" id="clone-all">Copy</button></div>
                 </section>
               </div>
               <details class="object-group">
@@ -312,9 +306,10 @@
                 </div>
               </details>
               <details class="object-group">
-                <summary>Constraints and links</summary>
-                <div id="dataset-constraints-host"><div class="acc-body ac-host" id="dataset-atomic-constraints"></div></div>
+                <summary>Atomic Constraints</summary>
+                <div id="dataset-constraints-host"><p class="hint">Choose a relationship and parameter, select the atoms below, then click Add. Constraints apply to the phase in every Rietveld dataset.</p><div class="acc-body ac-host" id="dataset-atomic-constraints"></div></div>
               </details>
+              <details class="object-group" id="dataset-links-group"><summary>Links</summary><div id="dataset-links"></div></details>
             </section>
             </div>
           </details>

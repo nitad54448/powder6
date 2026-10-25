@@ -1,0 +1,29 @@
+<!doctype html><meta charset="utf-8"><title>Sum constraint refinement</title><pre id="results">Loading application?</pre><iframe id="app" src="../index.html" style="width:1440px;height:950px"></iframe><script>
+(async()=>{const results=[];try{
+const w=document.querySelector('iframe').contentWindow;const deadline=Date.now()+20000;
+while(!w.RV?.state?.S.sgReady || !w.RV.state.S.tables){if(Date.now()>deadline)throw Error('Startup timeout');await new Promise(r=>setTimeout(r,40));}
+const {RV}=w,St=RV.state,S=St.S,doc=w.document;
+const frame=()=>new Promise(r=>w.requestAnimationFrame(()=>w.requestAnimationFrame(r)));
+const check=(ok,name)=>{if(!ok)throw Error(name);results.push({name,pass:true});};
+St.setCalculation('rietveld');
+const ph=St.makePhase({name:'NaCl',sg:St.resolveSG(1),cell:{a:5,b:5,c:5},atoms:[{label:'Na1',type:'Na',x:0,y:0,z:0,occ:1,B:.5},{label:'Cl1',type:'Cl',x:.5,y:.5,z:.5,occ:1,B:.5}]});St.addPhase(ph);
+const ds=St.insertDatasets([St.makeDataset({name:'Pattern',tth:[10,20,30],y:[1,2,1]})],{estimate:false,selectAll:true})[0];
+ph.constraints=[{kind:'sum',component:'occ',atoms:['Na1','Cl1'],mult:[1,1],total:2}];
+const names=['Na1','Cl1'].map(a=>ph.key+'.'+a+'.occ');names.forEach(n=>ds.fit[n]=false);
+RV.app.showTab('datasets');RV.bus.emit('params',{});await frame();
+const box=n=>doc.querySelector('#param-list [data-name="'+n+'"] .pf');
+box(names[0]).click();await frame();check(names.every(n=>box(n).checked),'checking Na enables both checkboxes');
+check(box(names[1]).title.includes('no freedom'),'checkbox tooltip explains saturated bounds');
+check(doc.querySelector('#dataset-atomic-constraints').textContent.includes('These limits leave no freedom'),'constraint editor shows no-freedom message');
+box(names[1]).click();await frame();check(names.every(n=>!box(n).checked),'unchecking Cl fixes both');
+ds.fit[names[0]]=true;RV.bus.emit('params',{});await frame();check(names.every(n=>box(n).indeterminate),'partial legacy flags are shown as mixed');box(names[0]).click();await frame();check(names.every(n=>box(n).checked),'clicking a mixed checkbox enables the whole sum');
+ph.constraints[0].total=1;names.forEach(n=>ds.p[n]=.5);RV.bus.emit('params',{});await frame();
+const field=n=>doc.querySelector('#param-list [data-name="'+n+'"] .pv');
+field(names[0]).focus();field(names[0]).value='0.3';field(names[0]).dispatchEvent(new w.Event('input',{bubbles:true}));
+check(Math.abs(ds.p[names[1]]-.7)<1e-12 && Math.abs(Number(field(names[1]).value)-.7)<1e-6,'typing Na occupancy immediately updates Cl');
+field(names[1]).focus();field(names[1]).value='0.4';field(names[1]).dispatchEvent(new w.Event('input',{bubbles:true}));
+check(Math.abs(ds.p[names[0]]-.6)<1e-12 && Math.abs(Number(field(names[0]).value)-.6)<1e-6,'typing Cl occupancy immediately updates Na');
+check(!doc.querySelector('#dataset-links h2'),'Links has no redundant title');
+window.browserTestResult={ok:true,results};
+}catch(e){window.browserTestResult={ok:false,results,error:e.stack};}document.querySelector('#results').textContent=JSON.stringify(window.browserTestResult,null,2);})();
+</script>

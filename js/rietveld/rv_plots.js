@@ -152,6 +152,7 @@ RV.plots = (function () {
   }
 
   function render() {
+    syncAutoscale();
     if (!dirty || !shown) return;
     dirty = false;
     var list = plotted(), s = build(list), note = $('#plot-note');
@@ -169,6 +170,7 @@ RV.plots = (function () {
     var sig = list.map(function (ds) { return ds.id + ':' + ds.dataKey; }).join(',') + '|' + S.settings.yscale + '|' + backgroundSubtracted(list) + '|' + S.settings.plotMode;
     if (sig !== plottedSig) { plottedSig = sig; needAuto = true; }
     if (needAuto) { needAuto = false; [P.pat, P.diff].forEach(function (p) { p.auto = true; p.hidden.clear(); }); }
+    syncAutoscale();
     var subtract=backgroundSubtracted(list);
     document.querySelectorAll('[data-yscale]').forEach(function(b){var k=b.getAttribute('data-yscale');b.setAttribute('aria-pressed',String(k===(subtract?'lin':S.settings.yscale)));b.disabled=subtract && k!=='lin';});
     P.pat.resize();
@@ -193,11 +195,12 @@ RV.plots = (function () {
     shown = on !== false;
     if (shown && dirty && !raf) raf = requestAnimationFrame(function () { raf = 0; P.pat.resize(); P.diff.resize(); render(); });
   }
+  function syncAutoscale(){var b=$('[data-plot-action="auto"]');if(b)b.hidden=![P.pat,P.diff].some(function(p){return p && !p.auto;});}
   function linkX(a, b) {
-    a.o.onView = function (v) { b.setXView(v.x0, v.x1); };
-    b.o.onView = function (v) { a.setXView(v.x0, v.x1); };
+    a.o.onView = function (v) { b.setXView(v.x0, v.x1); syncAutoscale(); };
+    b.o.onView = function (v) { a.setXView(v.x0, v.x1); syncAutoscale(); };
   }
-  function autoscale() { [P.pat, P.diff].forEach(function (p) { p.hidden.clear(); p.autoscale(true); }); }
+  function autoscale() { [P.pat, P.diff].forEach(function (p) { p.hidden.clear(); p.autoscale(true); }); syncAutoscale(); }
   function exportPNG() {
     var cvs = [P.pat.canvas, P.diff.canvas], w = Math.max(cvs[0].width, cvs[1].width), h = cvs[0].height + cvs[1].height;
     var out = document.createElement('canvas');
@@ -245,7 +248,7 @@ RV.plots = (function () {
                                              onMark: function (x, y, px, py) { RV.cmd.markAt(x, y, px, py); }, onRegion: function (x0, x1) { RV.cmd.regionAt(x0, x1); },
                                              onAnchorStart:startAnchor,onAnchorDrag:dragAnchor,onAnchorEnd:endAnchor });
     P.diff = new RV.Plot2D($('#diff-host'), { xlabel: '2θ /°', ylabel: 'obs − calc', legend: false, tooltip: tooltip });
-    linkX(P.pat, P.diff);
+    linkX(P.pat, P.diff); syncAutoscale();
     RV.bus.on('phaseStyle', function () { refresh(false); });
     RV.bus.on('paramFocus',focusAnchor);
     ['selection','calculation'].forEach(function(ev){RV.bus.on(ev,function(){anchorFocus=null;anchorDrag=null;if(P.pat && P.pat.drag && P.pat.drag.mode==='anchor')P.pat.drag=null;});});

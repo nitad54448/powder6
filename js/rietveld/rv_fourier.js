@@ -20,7 +20,7 @@ RV.fourier = (function(){
   // ---------------------------------------------------------------- the form (Commands → Structure)
   function html(block){
     var o=FO.opts;
-    var form='<p class="hint">A Fourier map from the WPPF intensities of the phase and dataset chosen above, with the phases of the atoms of the model: a <b>difference map</b> shows where the model lacks electron density (or scattering length) and where it has too much, the <b>observed map</b> the atoms the data support. A powder line holds several reflections, so each overlap group is shared among them in proportion to the calculated intensities; the map is only as good as that sharing and the model. It works for one phase, with one dataset or the one you choose in Structure.</p>'+
+    var form='<button type="button" class="mini" title="A Fourier map from the WPPF intensities of the phase and dataset chosen above, with the phases of the atoms of the model: a difference map shows where the model lacks electron density (or scattering length) and where it has too much, the observed map the atoms the data support. A powder line holds several reflections, so each overlap group is shared among them in proportion to the calculated intensities; the map is only as good as that sharing and the model. It works for one phase, with one dataset or the one you choose in Structure." aria-label="About Fourier maps">?</button>'+
       '<div class="form-grid sv-form">'+
         row('fo-type','Map','<select id="f_fo-type" data-key="fo-type" title="'+esc(HELP.type)+'">'+TYPES.map(function(t){return '<option value="'+t[0]+'"'+(t[0]===o.type?' selected':'')+'>'+esc(t[1])+'</option>';}).join('')+'</select>',HELP.type)+
         row('fo-dmin','Resolution d (Å)','<input id="f_fo-dmin" data-key="fo-dmin" class="num" value="'+esc(o.dmin)+'" placeholder="Auto" inputmode="decimal" autocomplete="off" title="'+esc(HELP.dmin)+'">',HELP.dmin)+
@@ -36,7 +36,7 @@ RV.fourier = (function(){
           '<label class="chk" id="sv-fo-neg-l"><input type="checkbox" data-key="fo-negative"> Holes (negative)</label>'+
           '<label class="chk"><input type="checkbox" data-key="fo-cell"'+(o.cell?' checked':'')+'> Unit cell</label>'+
           '<label class="chk"><input type="checkbox" data-key="fo-atoms"'+(o.atoms?' checked':'')+'> Atoms</label>'+
-          '<button type="button" data-fo="reset">Reset view</button><button type="button" data-fo="png">Save PNG</button><button type="button" data-fo="save">Save map</button></div>'+
+          '<button type="button" data-fo="reset" hidden>Reset view</button><button type="button" data-fo="png">Save PNG</button><button type="button" data-fo="save">Save map</button></div>'+
         '<canvas id="sv-fo-canvas" class="density-canvas" aria-label="Fourier map isosurface. Drag to rotate and wheel to zoom."></canvas><p class="hint" id="sv-fo-note"></p></section>',true,null,'sub');
     var peaks=block('fo-peaks','Peaks','<div id="sv-fo-peaks"><p class="hint">No map yet.</p></div>',true,'id="sv-fo-peaks-n"','sub');
     return block('wppf-fo','Fourier map',form+map+peaks,false,'id="sv-fo-sum"');

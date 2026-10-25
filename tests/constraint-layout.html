@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><title>Constraint alignment</title>
+<link rel="stylesheet" href="../powder6.css">
+<pre id="results"></pre><div id="app" style="width:700px">
+<div class="prow"><span class="pn">A.occ</span><input class="pv" value="0.5"><span class="pu"></span><input type="checkbox" class="pf"><span></span></div>
+<div class="prow ac-term"><span class="pn">B.occ</span><input class="pv" value="0.5"><span class="pu"></span><input type="checkbox" class="pf"><span></span></div>
+<div class="ac-add-row"><label>Total c <input class="num" value="1"></label><button>Add</button></div>
+</div><script>
+requestAnimationFrame(()=>{const results=[];const rows=document.querySelectorAll('.prow');
+for(const selector of ['.pv','.pf']){const a=rows[0].querySelector(selector).getBoundingClientRect(),b=rows[1].querySelector(selector).getBoundingClientRect();results.push({name:selector+' stays aligned on sum-constrained rows',pass:Math.abs(a.x-b.x)<1 && Math.abs(a.width-b.width)<1 && getComputedStyle(rows[1]).display==='grid'});}
+const label=document.querySelector('.ac-add-row label'),input=label.querySelector('input');results.push({name:'total field stays beside its label',pass:['flex','inline-flex'].includes(getComputedStyle(label).display) && input.getBoundingClientRect().width===72});
+window.browserTestResult={ok:results.every(r=>r.pass),results};document.querySelector('#results').textContent=JSON.stringify(window.browserTestResult);
+});</script>

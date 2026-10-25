@@ -223,23 +223,30 @@ function mapStats(map) {
 function buildIsosurface(map, N, level, stride) {
     const st = Math.max(1, Math.floor(stride || 1));
     const M = Math.max(2, Math.floor(N / st));         // cells per axis
-    const S = M + 1;                                   // samples per axis
+    const S = M + 3;                                   // samples per axis
     const N2 = N * N;
 
     const data = new Float32Array(S * S * S);
     let p = 0;
     for (let k = 0; k < S; k++) {
-        const zk = ((k * st) % N) * N2;
+        const zk = (((k - 1) * st + N) % N) * N2;
         for (let j = 0; j < S; j++) {
-            const yj = ((j * st) % N) * N;
+            const yj = (((j - 1) * st + N) % N) * N;
             for (let i = 0; i < S; i++) {
                 // Negative inside, so the sign mask marks the dense region.
-                data[p++] = level - map[((i * st) % N) + yj + zk];
+                data[p++] = level - map[(((i - 1) * st + N) % N) + yj + zk];
             }
         }
     }
 
     const mesh = surfaceNets(data, [S, S, S]);
+    for (let i=0;i<mesh.positions.length;i++) mesh.positions[i]-=1;
+    const kept=[];
+    for(let i=0;i<mesh.indices.length;i+=3){
+        const ids=[mesh.indices[i],mesh.indices[i+1],mesh.indices[i+2]];
+        if([0,1,2].every(a=>{const c=ids.reduce((v,id)=>v+mesh.positions[3*id+a],0)/3;return c>=0 && c<=M;}))kept.push(...ids);
+    }
+    mesh.indices=new Uint32Array(kept);
     return { mesh, samplesPerAxis: S, scale: st / N };  // sample index -> fractional
 }
 
@@ -381,6 +388,7 @@ const Density3D = {
         return {triangles:iso?iso.mesh.triangleCount:0,vertices:s.vertices.length,level,sigma:stat.sigma,ms:Math.round(performance.now()-t0),backend:'Canvas'};
     },
     _drawCanvas() {
+        this._syncReset();
         const s=this._software;if(!s || !s.basis)return;
         const w=Math.max(240,s.canvas.clientWidth||640),h=Math.max(240,s.canvas.clientHeight||440),dpr=Math.min(2,global.devicePixelRatio||1);
         if(s.canvas.width!==Math.round(w*dpr)||s.canvas.height!==Math.round(h*dpr)){s.canvas.width=Math.round(w*dpr);s.canvas.height=Math.round(h*dpr);}
@@ -532,6 +540,7 @@ const Density3D = {
     },
 
     _draw() {
+        this._syncReset();
         const t = this._three;
         const canvas = t.canvas;
         const w = canvas.clientWidth || 400, h = canvas.clientHeight || 400;
@@ -874,6 +883,13 @@ const Density3D = {
         t.needsRender = true;
     },
 
+    _syncReset() {
+        const state=this._software || this._three;
+        const canvas=state && state.canvas;
+        const host=canvas && canvas.closest('.cf-density');
+        const button=host && host.querySelector('[data-fo="reset"],[data-sv="density-reset"]');
+        if(button)button.hidden=this._software ? Math.abs(state.zoom-1)<1e-6 && state.theta===-0.8 && state.phi===0.5 : state.radius===3 && state.theta===-1.05 && state.phi===1.15;
+    },
     resetView() {
         if (this._software) { Object.assign(this._software,{theta:-0.8,phi:0.5,zoom:1}); this._drawCanvas(); return; }
         const t = this._three;

@@ -983,22 +983,36 @@ RV.state = (function () {
         }staged.push({ds:ds,v:v});
       });
       var tv=null;if(template && ph){tv=Object.assign({},ph.v);tv[name]=value;if(c.kind==='atom' && ph.constraints && ph.constraints.length){var def=phaseDefs().filter(function(p){return p.key===ph.key;})[0];def.method='rietveld';var tp=AtomicConstraints.prepare({phases:[def],datasets:[{phases:[ph.key]}],values:[tv],referenceValues:[ph.v],limits:S.limits},name);tv=tp.values[0];if(!tp.valid([tv]))throw new Error('The edit conflicts with an atomic constraint or its bounds.');}}
-      if(S.parameterLinks.length){var maps=S.datasets.map(function(d){var pending=staged.find(function(o){return o.ds===d;});return pending?pending.v:d.p;}),plan=AtomicConstraints.prepare({phases:phaseDefs(),datasets:S.datasets.map(function(d){return {id:d.id,phases:d.phases};}),values:maps,parameterLinks:S.parameterLinks,limits:S.limits},name);if(!plan.valid(plan.values))throw new Error('This edit conflicts with linked parameter limits.');staged=S.datasets.map(function(d,i){return {ds:d,v:plan.values[i]};}).filter(function(o){return Object.keys(o.v).some(function(n){return o.v[n]!==o.ds.p[n];});});}
+      if(S.parameterLinks.length){var maps=S.datasets.map(function(d){var pending=staged.find(function(o){return o.ds===d;});return Object.assign({},pending?pending.v:d.p);});
+        S.parameterLinks.forEach(function(link){
+          if(link.target.name!==name || !targets.some(function(d){return d.id===link.target.datasetId;}))return;
+          var sd=S.datasets.findIndex(function(d){return d.id===link.source.datasetId;}),td=S.datasets.findIndex(function(d){return d.id===link.target.datasetId;});
+          if(sd<0 || td<0)throw new Error('The linked source dataset is unavailable.');
+          var next=(maps[td][name]-(link.offset || 0))/link.factor,lim=AtomicConstraints.limits({limits:S.limits},link.source.name,next);
+          if(next<lim[0] || next>lim[1])throw new Error('This edit would put the linked source outside its limits.');
+          maps[sd][link.source.name]=next;
+        });
+        var plan=AtomicConstraints.prepare({phases:phaseDefs(),datasets:S.datasets.map(function(d){return {id:d.id,phases:d.phases};}),values:maps,parameterLinks:S.parameterLinks,limits:S.limits},name);if(!plan.valid(plan.values))throw new Error('This edit conflicts with linked parameter limits.');staged=S.datasets.map(function(d,i){return {ds:d,v:plan.values[i]};}).filter(function(o){return Object.keys(o.v).some(function(n){return o.v[n]!==o.ds.p[n];});});}
     }catch(e){RV.ui.toast(e.message,'warn');RV.bus.emit('params',{name:name});return false;}
     staged.forEach(function(o){o.ds.p=o.v;o.ds.stats=null;o.ds.esd={};o.ds.ints=null;if(c.kind==='atom')syncSites(o.ds);invalidate(o.ds);});
     if(tv){ph.v=tv;if(c.kind==='atom')syncTemplate(ph);}
     RV.bus.emit('params',{name:name});return true;
   }
   function setFit(name, on, list) {
-    (list || selected()).forEach(function (ds) { if (own(ds.fit, name)) ds.fit[name] = !!on; });
-    var c = C.classify(name), ph = c.phase ? phaseByKey(c.phase) : null;
-    if (ph && !(list || selected()).length) ph.fit[name] = !!on;
-    RV.bus.emit('params', { name: name, flag: true });
+    var c=C.classify(name),ph=c.phase?phaseByKey(c.phase):null,names=[name];
+    if(ph && S.calculation==='rietveld')AtomicConstraints.normalizeAll(ph.constraints).forEach(function(rule){
+      if(rule.kind!=='sum')return;
+      var group=rule.atoms.map(function(a){return ph.key+'.'+a+'.'+rule.component;});
+      if(group.indexOf(name)>=0)names=group;
+    });
+    (list || selected()).forEach(function(ds){names.forEach(function(n){if(own(ds.fit,n))ds.fit[n]=!!on;});});
+    if(ph && !(list || selected()).length)names.forEach(function(n){ph.fit[n]=!!on;});
+    RV.bus.emit('params',{name:name,flag:true});
   }
-  function copyParams(from, list) {
+  function copyParams(from, list, values, flags) {
     list.forEach(function (ds) {
       if (ds === from) return;
-      Object.keys(from.p).forEach(function (n) { if (own(ds.p, n)) { ds.p[n] = from.p[n]; ds.fit[n] = from.fit[n]; } });
+      Object.keys(from.p).forEach(function (n) { if (own(ds.p, n)) { if(values!==false)ds.p[n] = from.p[n]; if(flags!==false)ds.fit[n] = from.fit[n]; } });
       ds.stats = null; ds.esd = {}; ds.ints = null;
       invalidate(ds);
     });

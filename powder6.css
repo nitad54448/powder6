@@ -827,15 +827,16 @@ body.busy .stop-btn, body.busy .stop-btn * { cursor: pointer !important; }
 /* ---------- GSAS-II atomic constraints editor (Phases, Solve → Rietveld, dialog) ---------- */
 .ac-list td { vertical-align: middle; }
 .ac-rel { line-height: 2; }
-.ac-term { display: inline-block; margin-right: 18px; white-space: nowrap; }
-.ac-term code { font-size: var(--fs-sm); }
+.ac-rel .ac-term { display: inline-block; margin-right: 18px; white-space: nowrap; }
+.ac-rel .ac-term code { font-size: var(--fs-sm); }
 table.grid.ac-list input.ac-m { width: 64px; min-width: 0; max-width: 64px; padding: 2px 5px; text-align: right; }
 .ac-add { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--rule); border-radius: var(--radius-sm); }
 .ac-add-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
-.ac-add-row label { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
-.ac-add-row input.num { width: 72px; }
+.ac-add-row label { display: inline-flex; flex-wrap: nowrap; white-space: nowrap; align-items: center; gap: 6px; color: var(--ink-2); }
+.ac-add-row input.num { flex: 0 0 72px; width: 72px; min-width: 0; }
 .ac-chips { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; }
 .ac-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border: 1px solid var(--rule-2); border-radius: var(--radius-pill); cursor: pointer; }
+.ac-chip input[type=checkbox] { flex: none; }
 .ac-chip small { color: var(--ink-3); }
 .ac-chip.off { opacity: .45; cursor: not-allowed; }
 .ac-chip .ac-ord { font-size: var(--fs-xs); color: var(--blue); }

@@ -232,7 +232,7 @@ RV.panels = (function () {
   }
   var shownGroups = null;
   function renderParams() {
-    var copy=$('#sp-params .clone-bar'),source=editorDataset();copy.hidden=S.datasets.length<2 || !source;copy.querySelector('.sub').textContent=source?'Copy parameter values and refinement flags from '+source.name+' to:':'';
+    var copy=$('#sp-params .clone-bar'),source=editorDataset();copy.hidden=S.datasets.length<2 || !source;copy.querySelector('.sub').textContent=source?'Copy from '+source.name:'Copy';var target=$('#clone-target'),held=target.value;target.innerHTML='<option value="all">All other datasets</option>'+S.datasets.filter(function(d){return d!==source;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');if(Array.from(target.options).some(function(o){return o.value===held;}))target.value=held;
     var host = $('#param-list'), ds = editorDataset(), head = $('#param-ds');
     head.textContent = ds ? ds.name : '';
     $('#param-more').textContent = '';
@@ -298,14 +298,14 @@ RV.panels = (function () {
     host.classList.toggle('global', g);
     // GSAS-II atomic constraints (Rietveld only): held, independent, dependent and equation terms are marked
     var acRoles = {};
-    S.parameterLinks.filter(function(l){return l.target.datasetId===ds.id;}).forEach(function(l){acRoles[l.target.name]={role:'dependent',ignore:true,text:'Follows '+l.factor+' × '+l.source.name+' in '+(St.byId(l.source.datasetId)||{}).name+' + '+(l.offset || 0)};});
+    S.parameterLinks.filter(function(l){return l.target.datasetId===ds.id;}).forEach(function(l){acRoles[l.target.name]={role:'dependent',ignore:true,editable:true,text:'Follows '+l.factor+' × '+l.source.name+' in '+(St.byId(l.source.datasetId)||{}).name+' + '+(l.offset || 0)};});
     if (S.calculation === 'rietveld' && typeof AtomicConstraints !== 'undefined') S.phases.forEach(function (ph) {
       if (ph.method === 'rietveld' && ph.constraints && ph.constraints.length && St.hasPhase(ds, ph)) { try { Object.assign(acRoles, AtomicConstraints.roles(ph, ds.fit)); } catch (e) { /* shown by the editor */ } }
     });
     host.querySelectorAll('.prow').forEach(function (row) {
       var n = row.getAttribute('data-name'), v = ds.p[n], inp = row.querySelector('.pv');
       var ar = acRoles[n], pn = row.querySelector('.pn');
-      inp.readOnly=!St.isVariable(n) || !!(ar && ar.ignore);
+      inp.readOnly=!St.isVariable(n) || !!(ar && ar.ignore && !ar.editable);
       inp.disabled=!!S.busy || row.classList.contains('dep');
       var anchorX=row.querySelector('[data-anchor-x]');
       if(anchorX){if(document.activeElement!==anchorX)anchorX.value=fmtVal(ds.inst.bkgX[+anchorX.dataset.anchorX]);anchorX.disabled=!!S.busy;}
@@ -323,6 +323,14 @@ RV.panels = (function () {
       pf.disabled = !!S.busy || !!(ar && ar.ignore) || S.disabledPhases.includes(C.classify(n).phase);
       pf.title = mixed ? 'Refined in ' + nFit + ' of the ' + hold.length + ' selected datasets' + part + (g ? '; the global fit uses the ticks of ' + hold[0].name : '') + '. Click to refine it in all of them.'
                        : (fit ? 'Refined' : 'Held fixed') + (hold.length > 1 ? ' in all ' + hold.length + ' selected datasets' + part : '') + '. Click to ' + (fit ? 'hold it fixed.' : 'refine it.');
+      if(ar && ar.sum){
+        var count=ar.group.filter(function(n){return !!ds.fit[n];}).length;
+        pf.checked=count===ar.group.length;pf.indeterminate=count>0 && count<ar.group.length;
+        var info=AtomicConstraints.sumInfo(St.phaseByKey(C.classify(n).phase),ar.sum,{limits:S.limits},ds.p);
+        pf.title='Refine '+ar.sum.atoms.join(' and ')+' '+ar.sum.component+' together, keeping '+AtomicConstraints.text(ar.sum)+'. '+(ar.group.length-1)+' independent value(s) are refined. Click either checkbox to refine or fix the whole constraint.';
+        if(pf.indeterminate)pf.title+=' Warning: only some terms are currently enabled. Click to enable the whole constraint.';
+        if(info.noFreedom)pf.title+=' These limits leave no freedom to refine.';
+      }
       if (ar && ar.ignore) pf.title = ar.text + '.';
       row.classList.toggle('fixed', !fit && !mixed);
       var pl = row.querySelector('.pl'), can = St.shareable(n), sh = St.isShared(n);
@@ -391,7 +399,7 @@ RV.panels = (function () {
     if(St.setParam(n, v, list, false)===false)return;
     ui.toast(n + ' set to ' + fmtParam(n,v) + (St.isSizeParam(n) ? ' nm' : '') + (list.length > 1 ? ' in ' + list.length + ' datasets.' : '.'), 'info', merge);
   }
-  function commitInput(inp) {
+  function commitInput(inp, burst) {
     if(inp.readOnly)return;
     var row = inp.closest('.prow'), n = row.getAttribute('data-name'), ds = editorDataset();
     if (!ds || +inp.dataset.datasetId!==ds.id || row.classList.contains('dep')) return;
@@ -403,7 +411,7 @@ RV.panels = (function () {
     v = St.fromDisplay(n,v);
     var c = clampVal(n, v);
     if (c !== v) ui.toast(n + ' kept within its limits, ' + limitText(n, v) + ' (Datasets).', 'warn');
-    changeValue(n, c);
+    changeValue(n, c, burst);
   }
   // one step of the wheel or of an arrow key, by kind of parameter
   function step(n, dir, e) {
@@ -483,6 +491,15 @@ RV.panels = (function () {
       e.preventDefault();
       RV.cmd.sharing(n);
     });
+    host.addEventListener('input',function(e){
+      var inp=e.target;if(!inp.classList.contains('pv') || inp.readOnly || S.busy)return;
+      var n=inp.closest('.prow').getAttribute('data-name'),ds=editorDataset(),c=C.classify(n),ph=St.phaseByKey(c.phase);if(!ds)return;
+      var ar=ph && S.calculation==='rietveld'?AtomicConstraints.roles(ph,ds.fit)[n]:null;
+      if(!(ar && (ar.sum || ar.editable || ar.role==='independent')) && !S.parameterLinks.some(function(l){return l.source.datasetId===ds.id && l.source.name===n || l.target.datasetId===ds.id && l.target.name===n;}))return;
+      if(!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?$/i.test(inp.value.trim()))return;
+      var value=St.fromDisplay(n,ui.parseNum(inp.value));if(!Number.isFinite(value) || clampVal(n,value)!==value)return;
+      commitInput(inp, true);
+    });
     host.addEventListener('change', function (e) {
       if(e.target.hasAttribute('data-instrument-profile')){RV.cmd.setInstrumentProfile(St.byId(+e.target.dataset.datasetId),e.target.value);return;}
       if(e.target.classList.contains('pv')){commitInput(e.target);return;}
@@ -503,18 +520,18 @@ RV.panels = (function () {
       if (S.busy) { e.target.checked = !!(ds && ds.fit[n]); ui.toast('A fit is running. Wait for it to finish or press Stop.', 'warn'); return; }
       on = e.target.checked;
       e.target.indeterminate = false;
-      if (!ds || !!ds.fit[n] === on) return;
+      if (!ds) return;
       RV.history.take('fit flag ' + n);
       St.setFit(n, on,[ds]);
-      ui.toast(n + (on ? ' will be refined.' : ' held fixed.'), 'info');
+      var ph=St.phaseByKey(C.classify(n).phase),ar=ph && S.calculation==='rietveld'?AtomicConstraints.roles(ph,ds.fit)[n]:null;ui.toast(ar && ar.sum?AtomicConstraints.text(ar.sum)+(on?' will be refined together.':' held fixed together.'):n+(on?' will be refined.':' held fixed.'),'info');
     });
   }
   function initParams() {
     bindParams();
     $('#param-prev').addEventListener('click', function () { stepDataset(-1); });
     $('#param-next').addEventListener('click', function () { stepDataset(1); });
-    $('#clone-all').addEventListener('click', function () { RV.cmd.cloneTo(true); });
-    $('#clone-sel').addEventListener('click', function () { RV.cmd.cloneTo(false); });
+    $('#clone-all').addEventListener('click', function () { RV.cmd.cloneTo($('#clone-target').value,$('#clone-values').checked,$('#clone-flags').checked); });
+
     ['selection', 'datasetFocus', 'datasets', 'phases', 'phaseStyle', 'data', 'calculation'].forEach(function (ev) { RV.bus.on(ev, renderParams); });
     ['params', 'stats', 'fitmode', 'shared', 'absorption', 'composition', 'calculation'].forEach(function (ev) { RV.bus.on(ev, renderValues); });
     RV.bus.on('tables', renderStats);
