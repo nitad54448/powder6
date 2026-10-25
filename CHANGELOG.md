@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.36.0 — 25 October 2026
+
+1. **Polyhedron moves in the Wyckoff search.** When a distance rule has a count (`Fe C 6 1.85/2.05 octahedron`, `S O 4 1.40/1.60`), 30 % of the proposals move a coordination shell as a unit instead of single atoms: the centre and its nearest partners translated together, the partners rotated about the centre, or the partners snapped to one distance (in the rule's window) and, for a shaped rule, to the ideal shape best aligned with the current shell. Each moved partner is put back on its independent site through the inverse of its symmetry operator and projected on its Wyckoff position; the proposal is scored and accepted like any other, so a shell that does not suit a unit move (shared corners, a special position) only lowers the acceptance. Runs without a counted rule are unchanged. On a simulated FeC6 (P21/c, Z = 4, the octahedron on a general position) five runs of 600 iterations reached a best fitness of 0.93 with an intact octahedron every time, against 0.46–0.84 without the moves, at the same cost per iteration; at 1500 iterations 0.93 every time against 0.06–0.93.
+2. **Kernel contract.** The kernel carries the inverse orthogonalisation and the share of the moves in its parameters, and a `POLY_MOVES` marker that the host checks, so a cached older kernel is refused.
+3. **Tests.** The Wyckoff search page checks that a counted shell turns the moves on and that bare rules do not.
+
 ## 2.35.0 — 25 October 2026
 
 1. **Atoms from CIF.** Phases → Atoms from CIF… (also under the atom table and in the Refine menu) reads the atom sites of a structure CIF into the current phase, replacing its atoms or adding to them; the phase keeps its cell and space group. A CIF in another space group or a cell more than 2 % different is read and said, not refused. Read CIF… still makes a new phase.

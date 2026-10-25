@@ -56,6 +56,10 @@ struct Params {
     fTabOff: f32, nRefl: f32, penClash: f32, penBond: f32,
     penCoord: f32, penScale: f32, centro: f32, pad0: f32,
     symOff: f32, tablesOff: f32, projOff: f32, penGeom: f32,
+    // Cartesian -> fractional (original basis), rows: the inverse of the orthogonalisation, for polyhedron moves
+    i0: vec4<f32>, i1: vec4<f32>, i2: vec4<f32>,
+    // the share of proposals that move a coordination shell as a unit (0: none; the host sets it when a rule counts)
+    polyProb: f32, polyPad0: f32, polyPad1: f32, polyPad2: f32,
 };
 
 struct ParticleState {
@@ -135,6 +139,12 @@ const MAX_GEOM_SLOTS: u32 = 1u; //__MAX_GEOM_SLOTS__
 // runs to slotTotal, the slots the rules actually claimed, so a run needing 20
 // does not pay for the other 44.
 const MAX_COORD_SLOTS: u32 = 64u; //__MAX_COORD_SLOTS__
+// POLYHEDRON MOVES. A contract marker like the ones above: the host checks it
+// before compiling, so a cached kernel without these moves (and with a shorter
+// Params) is refused rather than run with the moves silently missing.
+const POLY_MOVES: u32 = 1u; //__POLY_MOVES__
+// The partners of one shell a polyhedron move carries, at most (the nearest ones).
+const MAX_POLY: u32 = 12u;
 const NO_PARTNER_CHARGE: f32 = 5.0;
 const COORD_SOFT_A: f32 = 0.25;
 
@@ -211,6 +221,9 @@ fn project_onto_wyckoff(pos: vec3<f32>, p_mat: array<f32, 9>, t_vec: vec3<f32>) 
 
 var<workgroup> proposal_site: u32; // maxSites means a collective proposal
 var<workgroup> prop_sites: array<vec3<f32>, 32>;   // MAX_SITES
+// A polyhedron move: the new coordinates of the independent sites it moves, and which ones (bit s).
+var<workgroup> poly_new: array<vec3<f32>, 32>;     // MAX_SITES
+var<workgroup> poly_mask: u32;
 var<workgroup> gx: array<f32, MAX_GEN_ATOMS>;
 var<workgroup> gy: array<f32, MAX_GEN_ATOMS>;
 var<workgroup> gz: array<f32, MAX_GEN_ATOMS>;
@@ -318,6 +331,250 @@ fn geomCosError(code: u32, c: f32) -> f32 {
     }
 }
 
+// ---------------------------------------------------------------------------
+//  POLYHEDRON MOVES
+//
+//  A counted rule ("Fe C 6 1.85/2.05 octahedron") describes a unit: a centre and
+//  its shell. Moving the shell's atoms one at a time almost always breaks it, so
+//  such a proposal is nearly always rejected and the search spends its steps
+//  rebuilding geometry it was given. A polyhedron move takes one centre of a
+//  counted rule, its nearest partners in the current structure, and moves them
+//  together, in one of three ways:
+//
+//    translate  the centre and its partners shifted by one random vector
+//    rotate     the partners turned about the centre (random axis, an angle
+//               that follows the adaptive step size)
+//    snap       the partners put at one common distance (the mean, nudged, kept
+//               in the rule's window) and, for a shaped rule, on the ideal shape
+//               best aligned with the current shell
+//
+//  Each moved partner is an IMAGE of an independent site; the site takes the
+//  coordinates whose image lands at the new position (the inverse of that
+//  image's operator), then the usual Wyckoff projection. A site appearing twice
+//  in the shell is moved by its nearest image only; its other images follow by
+//  symmetry. Nothing else changes: the result is scored and accepted like any
+//  proposal, so a move that does not suit the structure (a partner shared with
+//  another centre, a shell on a special position) is simply rejected more often.
+// ---------------------------------------------------------------------------
+fn fracOfCart(c: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(dot(params.i0.xyz, c), dot(params.i1.xyz, c), dot(params.i2.xyz, c));
+}
+fn opRead(o: u32, k: u32) -> f32 { return staticFloats[u32(params.symOff) + o * 12u + k]; }
+fn opApply(o: u32, p: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(opRead(o, 0u) * p.x + opRead(o, 1u) * p.y + opRead(o, 2u) * p.z + opRead(o, 9u),
+                     opRead(o, 3u) * p.x + opRead(o, 4u) * p.y + opRead(o, 5u) * p.z + opRead(o, 10u),
+                     opRead(o, 6u) * p.x + opRead(o, 7u) * p.y + opRead(o, 8u) * p.z + opRead(o, 11u));
+}
+// The site whose image under operator o is q: R^-1 (q - t), R^-1 by the adjugate.
+fn opInverseApply(o: u32, q: vec3<f32>) -> vec3<f32> {
+    let m0 = opRead(o, 0u); let m1 = opRead(o, 1u); let m2 = opRead(o, 2u);
+    let m3 = opRead(o, 3u); let m4 = opRead(o, 4u); let m5 = opRead(o, 5u);
+    let m6 = opRead(o, 6u); let m7 = opRead(o, 7u); let m8 = opRead(o, 8u);
+    let c00 = m4 * m8 - m5 * m7; let c01 = m5 * m6 - m3 * m8; let c02 = m3 * m7 - m4 * m6;
+    let det = m0 * c00 + m1 * c01 + m2 * c02;
+    let w = (q - vec3<f32>(opRead(o, 9u), opRead(o, 10u), opRead(o, 11u))) / select(det, 1.0, abs(det) < 1e-6);
+    return vec3<f32>(c00 * w.x + (m2 * m7 - m1 * m8) * w.y + (m1 * m5 - m2 * m4) * w.z,
+                     c01 * w.x + (m0 * m8 - m2 * m6) * w.y + (m2 * m3 - m0 * m5) * w.z,
+                     c02 * w.x + (m1 * m6 - m0 * m7) * w.y + (m0 * m4 - m1 * m3) * w.z);
+}
+fn randUnit() -> vec3<f32> {
+    let v = vec3<f32>(rand_gaussian(), rand_gaussian(), rand_gaussian());
+    let l = length(v);
+    return select(v / l, vec3<f32>(0.0, 0.0, 1.0), l < 1e-6);
+}
+fn rotateAbout(v: vec3<f32>, k: vec3<f32>, ang: f32) -> vec3<f32> {
+    let c = cos(ang); let s = sin(ang);
+    return v * c + cross(k, v) * s + k * dot(k, v) * (1.0 - c);
+}
+// The ideal directions of a shape (WY_LIMITS.geometries codes), vertex k; the first two set the alignment.
+fn shapeCount(code: u32) -> u32 {
+    switch code { case 1u: { return 2u; } case 2u: { return 3u; } case 3u, 4u: { return 4u; } case 5u: { return 6u; } default: { return 0u; } }
+}
+fn shapeVertex(code: u32, k: u32) -> vec3<f32> {
+    let s3 = 0.5773503;
+    switch code {
+        case 1u: { if (k == 0u) { return vec3<f32>(1.0, 0.0, 0.0); } return vec3<f32>(-1.0, 0.0, 0.0); }
+        case 2u: {
+            if (k == 0u) { return vec3<f32>(1.0, 0.0, 0.0); }
+            if (k == 1u) { return vec3<f32>(-0.5, 0.8660254, 0.0); }
+            return vec3<f32>(-0.5, -0.8660254, 0.0);
+        }
+        case 3u: {
+            if (k == 0u) { return vec3<f32>(s3, s3, s3); }
+            if (k == 1u) { return vec3<f32>(s3, -s3, -s3); }
+            if (k == 2u) { return vec3<f32>(-s3, s3, -s3); }
+            return vec3<f32>(-s3, -s3, s3);
+        }
+        case 4u: {
+            if (k == 0u) { return vec3<f32>(1.0, 0.0, 0.0); }
+            if (k == 1u) { return vec3<f32>(0.0, 1.0, 0.0); }
+            if (k == 2u) { return vec3<f32>(-1.0, 0.0, 0.0); }
+            return vec3<f32>(0.0, -1.0, 0.0);
+        }
+        default: {
+            if (k == 0u) { return vec3<f32>(1.0, 0.0, 0.0); }
+            if (k == 1u) { return vec3<f32>(0.0, 1.0, 0.0); }
+            if (k == 2u) { return vec3<f32>(-1.0, 0.0, 0.0); }
+            if (k == 3u) { return vec3<f32>(0.0, -1.0, 0.0); }
+            if (k == 4u) { return vec3<f32>(0.0, 0.0, 1.0); }
+            return vec3<f32>(0.0, 0.0, -1.0);
+        }
+    }
+}
+// An orthonormal frame from two directions: e1 along a, e2 in the plane of a and b.
+fn frameOf(a: vec3<f32>, b: vec3<f32>) -> mat3x3<f32> {
+    let e1 = normalize(a);
+    var p = b - dot(b, e1) * e1;
+    if (length(p) < 1e-4) {
+        // b along a (a linear shell): any perpendicular will do
+        let h = select(vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 1.0, 0.0), abs(e1.x) > 0.9);
+        p = h - dot(h, e1) * e1;
+    }
+    let e2 = normalize(p);
+    return mat3x3<f32>(e1, e2, cross(e1, e2));
+}
+
+// Lane 0 only. Fills poly_new / poly_mask; leaves poly_mask at 0 when no move applies (no counted rule, no centre,
+// no partner), and the caller then makes an ordinary proposal.
+fn polyPropose(A: u32, gBase: u32, nTot: u32, maxSites: u32, sd: f32) {
+    let tb = u32(params.tablesOff) + u32(params.ruleOff);
+    let nRules = min(u32(params.nBondRules), MAX_BOND_RULES);
+    var nCounted = 0u;
+    var k = 0u;
+    for (var r = 0u; r < nRules; r = r + 1u) {
+        if (u32(staticFloats[tb + r * RULE_STRIDE + 5u]) != 0u) {
+            nCounted = nCounted + 1u;
+            if (rand_float() < 1.0 / f32(nCounted)) { k = r; }
+        }
+    }
+    if (nCounted == 0u) { return; }
+    let rb = tb + k * RULE_STRIDE;
+    let ta = u32(staticFloats[rb]);
+    let tbType = u32(staticFloats[rb + 1u]);
+    let rMin = max(staticFloats[rb + 2u], 0.0);
+    let rMax = staticFloats[rb + 3u];
+    let nn = min(u32(staticFloats[rb + 4u]), MAX_POLY);
+    let geom = u32(staticFloats[rb + 6u]);
+
+    // a centre: an independent site of the rule's first element
+    var nCentre = 0u;
+    var sc = maxSites;
+    var seen: u32 = 0u;
+    for (var g = 0u; g < nTot; g = g + 1u) {
+        let pk = genPack[gBase + g];
+        let s = pk & 0xFFu;
+        if (s >= maxSites || ((pk >> 20u) & 0xFu) != ta || (seen & (1u << s)) != 0u) { continue; }
+        seen = seen | (1u << s);
+        nCentre = nCentre + 1u;
+        if (rand_float() < 1.0 / f32(nCentre)) { sc = s; }
+    }
+    if (sc >= maxSites || nn == 0u) { return; }
+    let c = prop_sites[sc];
+
+    // its nn nearest partners: every image of every site of the second element, nearest image of each
+    var ld: array<f32, MAX_POLY>;
+    var lv: array<vec3<f32>, MAX_POLY>;
+    var ls: array<u32, MAX_POLY>;
+    var lo: array<u32, MAX_POLY>;
+    for (var m = 0u; m < MAX_POLY; m = m + 1u) { ld[m] = NO_NEIGHBOUR; }
+    for (var g = 0u; g < nTot; g = g + 1u) {
+        let pk = genPack[gBase + g];
+        let s = pk & 0xFFu;
+        if (s >= maxSites || s == sc || ((pk >> 20u) & 0xFu) != tbType) { continue; }
+        let o = (pk >> 8u) & 0xFFFu;
+        let img = opApply(o, prop_sites[s]);
+        let dv = cartVec(fracDelta(img - floor(img), c));
+        let d = length(dv);
+        if (d < 1e-4 || d >= ld[nn - 1u]) { continue; }
+        var m = nn - 1u;
+        loop {
+            if (m > 0u && ld[m - 1u] > d) {
+                ld[m] = ld[m - 1u]; lv[m] = lv[m - 1u]; ls[m] = ls[m - 1u]; lo[m] = lo[m - 1u];
+                m = m - 1u;
+            } else { break; }
+        }
+        ld[m] = d; lv[m] = dv; ls[m] = s; lo[m] = o;
+    }
+    var nf = 0u;
+    for (var m = 0u; m < nn; m = m + 1u) { if (ld[m] < NO_NEIGHBOUR) { nf = nf + 1u; } }
+    if (nf == 0u) { return; }
+
+    let kind = rand_float();
+    var shift = vec3<f32>(0.0, 0.0, 0.0);
+    var nv: array<vec3<f32>, MAX_POLY>;
+    for (var m = 0u; m < nf; m = m + 1u) { nv[m] = lv[m]; }
+    if (kind < 0.3333333) {
+        // translate: one fractional step for the whole unit
+        shift = vec3<f32>(rand_gaussian(), rand_gaussian(), rand_gaussian()) * sd;
+    } else if (kind < 0.6666667) {
+        // rotate the shell about its centre
+        let axis = randUnit();
+        let ang = rand_gaussian() * clamp(sd * 20.0, 0.05, 0.8);
+        for (var m = 0u; m < nf; m = m + 1u) { nv[m] = rotateAbout(lv[m], axis, ang); }
+    } else {
+        // snap: one distance for the shell, and the ideal shape when the rule has one
+        var mean = 0.0;
+        for (var m = 0u; m < nf; m = m + 1u) { mean = mean + ld[m]; }
+        mean = mean / f32(nf) * (1.0 + 0.03 * rand_gaussian());
+        let dT = clamp(mean, max(rMin, 0.3), select(mean, rMax, rMax < 1.0e6));
+        let nShape = shapeCount(geom);
+        if (nShape >= 2u && nf >= 2u) {
+            // align the ideal shape on the nearest partner and the one whose angle to it best matches the shape's
+            let u0 = lv[0] / ld[0];
+            let cIdeal = dot(shapeVertex(geom, 0u), shapeVertex(geom, 1u));
+            var j1 = 1u;
+            var bestErr = 1.0e9;
+            for (var m = 1u; m < nf; m = m + 1u) {
+                let e = abs(dot(u0, lv[m] / ld[m]) - cIdeal);
+                if (e < bestErr) { bestErr = e; j1 = m; }
+            }
+            let Fa = frameOf(u0, lv[j1]);
+            let Fi = frameOf(shapeVertex(geom, 0u), shapeVertex(geom, 1u));
+            var usedV: u32 = 3u;   // vertices 0 and 1 are taken by partners 0 and j1
+            for (var m = 0u; m < nf; m = m + 1u) {
+                var vk = 0u;
+                if (m == 0u) { vk = 0u; }
+                else if (m == j1) { vk = 1u; }
+                else {
+                    var bestDot = -2.0;
+                    vk = nShape;
+                    for (var q = 2u; q < nShape; q = q + 1u) {
+                        if ((usedV & (1u << q)) != 0u) { continue; }
+                        let e = shapeVertex(geom, q);
+                        let w = Fa * vec3<f32>(dot(Fi[0], e), dot(Fi[1], e), dot(Fi[2], e));
+                        let dd = dot(w, lv[m] / ld[m]);
+                        if (dd > bestDot) { bestDot = dd; vk = q; }
+                    }
+                    if (vk < nShape) { usedV = usedV | (1u << vk); }
+                }
+                if (vk < nShape) {
+                    let e = shapeVertex(geom, vk);
+                    nv[m] = Fa * vec3<f32>(dot(Fi[0], e), dot(Fi[1], e), dot(Fi[2], e)) * dT;
+                } else {
+                    nv[m] = lv[m] / ld[m] * dT;
+                }
+            }
+        } else {
+            for (var m = 0u; m < nf; m = m + 1u) { nv[m] = lv[m] / ld[m] * dT; }
+        }
+    }
+
+    // back to the independent sites: the nearest image of each site carries it
+    var mask: u32 = 0u;
+    if (kind < 0.3333333) {
+        poly_new[sc] = c + shift;
+        mask = 1u << sc;
+    }
+    for (var m = 0u; m < nf; m = m + 1u) {
+        let s = ls[m];
+        if ((mask & (1u << s)) != 0u) { continue; }
+        let dest = c + fracOfCart(nv[m]) + shift;
+        poly_new[s] = opInverseApply(lo[m], dest);
+        mask = mask | (1u << s);
+    }
+    poly_mask = mask;
+}
+
 fn cartDist(p1: vec3<f32>, p2: vec3<f32>) -> f32 {
     let d = p1 - p2;
     var q = vec3<f32>(
@@ -400,12 +657,27 @@ fn main(@builtin(workgroup_id) wgId: vec3<u32>,
         let sd = mcmcState[pIdx].stepSize;
         rng_state = hash_u32(mcmcState[pIdx].seed ^ (lid * 0x9E3779B9u));
 
-        // Select one FREE independent site in 3/4 of proposals. Fixed special
-        // positions and padded sites have zero projectors and must not consume
-        // attempts. Moving a site moves its full symmetry orbit, never one image.
+        // The current coordinates first: a polyhedron move reads the whole
+        // structure before it moves anything. Untouched sites keep these values
+        // exactly; repeated projection could round them.
+        if (lid < maxSites) {
+            let c0 = pBase + lid * 3u;
+            prop_sites[lid] = vec3<f32>(particles[c0], particles[c0 + 1u], particles[c0 + 2u]);
+        }
+        workgroupBarrier();
+
+        // A polyhedron move in params.polyProb of the proposals (see polyPropose).
+        // Otherwise, or when it finds nothing to move: one FREE independent site
+        // in 3/4 of proposals. Fixed special positions and padded sites have zero
+        // projectors and must not consume attempts. Moving a site moves its full
+        // symmetry orbit, never one image.
         if (lid == 0u) {
             proposal_site = maxSites;
-            if (params.pad0 > 0.5 && rand_float() < 0.75) {
+            poly_mask = 0u;
+            if (params.pad0 > 0.5 && params.polyProb > 0.0 && rand_float() < params.polyProb) {
+                polyPropose(A, gBase, nTot, maxSites, sd);
+            }
+            if (poly_mask == 0u && params.pad0 > 0.5 && rand_float() < 0.75) {
                 var nFree = 0u;
                 for (var s = 0u; s < maxSites; s = s + 1u) {
                     let b = u32(params.projOff) + (A * siteStride + s) * 12u;
@@ -425,11 +697,13 @@ fn main(@builtin(workgroup_id) wgId: vec3<u32>,
         
         if (lid < maxSites) {
             let s = lid;
-            let c = pBase + s * 3u;
-            var pos = vec3<f32>(particles[c], particles[c + 1u], particles[c + 2u]);
-            
-            let moving = params.pad0 > 0.5 && (proposal_site == maxSites || proposal_site == s);
-            if (moving) {
+            var pos = prop_sites[s];
+
+            let poly = poly_mask != 0u;
+            let moving = params.pad0 > 0.5 && select(proposal_site == maxSites || proposal_site == s, (poly_mask & (1u << s)) != 0u, poly);
+            if (moving && poly) {
+                pos = poly_new[s];
+            } else if (moving) {
                 pos.x = pos.x + rand_gaussian() * sd;
                 pos.y = pos.y + rand_gaussian() * sd;
                 pos.z = pos.z + rand_gaussian() * sd;

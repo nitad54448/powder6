@@ -710,7 +710,9 @@ RV.solve = (function () {
              particles: readNum(o.particles,WL.particles[0],gpuBudget.maxParticles,true) || Math.max(WL.particles[0],Math.floor(gpuBudget.maxParticles/3)),
              iterations: readNum(o.iterations, WL.iterations[0], WL.iterations[1], true) || WD.iterations, restarts: readNum(o.restarts, WL.restarts[0], WL.restarts[1], true) || WD.restarts,
              minContact: Number.isFinite(mc) ? Math.min(WL.minContact[1], Math.max(WL.minContact[0], mc)) : undefined,
-             shapeWeight: Number.isFinite(readNum(o.shapeWeight, WL.shapeWeight[0], WL.shapeWeight[1])) ? readNum(o.shapeWeight, WL.shapeWeight[0], WL.shapeWeight[1]) : WD.shapeWeight };
+             shapeWeight: Number.isFinite(readNum(o.shapeWeight, WL.shapeWeight[0], WL.shapeWeight[1])) ? readNum(o.shapeWeight, WL.shapeWeight[0], WL.shapeWeight[1]) : WD.shapeWeight,
+             // the share of polyhedron moves; no control in the form (the default of the search), set for comparisons
+             polyProb: Number.isFinite(o.polyProb) ? Math.min(1, Math.max(0, o.polyProb)) : undefined };
   }
   function runWy() {
     if (S.busy || SV.wyRun || SV.cfRun) return;
@@ -759,7 +761,7 @@ RV.solve = (function () {
     St.setBusy(true,'Wyckoff structure search…');
     try { W.postMessage({ type: 'wyckoff-search', cell: I.cell, profileParams: I.profile, profileType: I.profile.profileType, symops: got.symops, wyckoffTable: got.setting.wyckoff,
                     targetComposition: formula, wyckoffZ: Z, wyckoffMaxSites: o.maxSites, wyckoffMaxRepeat: o.maxRepeat, densityMin: o.rhoMin, densityMax: o.rhoMax,
-                    maxZSearches: o.maxZ, swarmParticles: o.particles, swarmIterations: o.iterations, swarmRestarts: o.restarts, minContact: o.minContact, shapeWeight: o.shapeWeight,
+                    maxZSearches: o.maxZ, swarmParticles: o.particles, swarmIterations: o.iterations, swarmRestarts: o.restarts, minContact: o.minContact, shapeWeight: o.shapeWeight, polyProb: o.polyProb,
                     distanceConstraints: vc.windows, hklList: inp.hklList, applyLP: true, polarization: I.pol, wavelength: I.lambda, radiation: I.radiation }); } catch(e) { finishWy(e.message); return; }
     progress('wy', -1, 'starting…');
     syncRun();

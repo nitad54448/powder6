@@ -114,6 +114,12 @@ const SW_DEFAULTS = Object.freeze({
     penRampStart: 0.2,
     penRampEnd: 4.0,
 
+    // --- Polyhedron moves ---
+    // The share of proposals that move a coordination shell as a unit (translate the centre with its partners,
+    // rotate the partners, or snap them to one distance and the ideal shape): see polyPropose() in
+    // swarm_reflection.wgsl. Used only when a distance rule has a count; 0 turns the moves off.
+    polyProb: 0.3,
+
     // --- Metropolis update ---
     // Replaced particle swarm. PSO's social term pulls every particle of an
     // assignment toward that assignment's best, so the population collapses
@@ -260,6 +266,8 @@ function swInject(src, maxGen, minImageShell = 0, groupStride = 3, countShell = 
         /const\s+MAX_GEOM_SLOTS\s*:\s*u32\s*=\s*\d+u\s*;\s*\/\/__MAX_GEOM_SLOTS__/,
         `const MAX_GEOM_SLOTS: u32 = ${cap.geomSlots || 1}u; //__injected__`);
     if (out === beforeGeom) throw new Error('MAX_GEOM_SLOTS marker not found in the kernel source: swarm_reflection.wgsl is older than this page. Reload without the cache.');
+    // the polyhedron moves change Params: a kernel without them would read a shorter uniform and never move a shell
+    if (!/const\s+POLY_MOVES\s*:\s*u32\s*=\s*1u\s*;\s*\/\/__POLY_MOVES__/.test(out)) throw new Error('POLY_MOVES marker not found in the kernel source: swarm_reflection.wgsl is older than this page. Reload without the cache.');
     return out;
 }
 
@@ -1358,9 +1366,10 @@ async function runWyckoffSearch(o) {
         nElem: 28, nBondRules: 29, rMinOff: 30, ruleOff: 31,
         fTabOff: 32, nRefl: 33, penClash: 34, penBond: 35,
         penCoord: 36, penScale: 37, centro: 38, pad0: 39,
-        symOff: 40, tablesOff: 41, projOff: 42, penGeom: 43
+        symOff: 40, tablesOff: 41, projOff: 42, penGeom: 43,
+        i0: 44, i1: 48, i2: 52, polyProb: 56
     });
-    const params = new Float32Array(44);
+    const params = new Float32Array(60);
     
     bufParams = device.createBuffer({
         size: params.byteLength,
@@ -1373,6 +1382,20 @@ async function runWyckoffSearch(o) {
             params[r4 + k] = red.xform[i * 3 + k];
         }
     }
+    // Cartesian -> fractional of the cell's own basis, for the polyhedron moves (they rotate shells in Cartesian
+    // space and put the partners back in fractional coordinates).
+    {
+        const m = sharkoOrthMatrix(o.cell);
+        const c00 = m[4] * m[8] - m[5] * m[7], c01 = m[5] * m[6] - m[3] * m[8], c02 = m[3] * m[7] - m[4] * m[6];
+        const det = m[0] * c00 + m[1] * c01 + m[2] * c02;
+        const inv = [c00, m[2] * m[7] - m[1] * m[8], m[1] * m[5] - m[2] * m[4],
+                     c01, m[0] * m[8] - m[2] * m[6], m[2] * m[3] - m[0] * m[5],
+                     c02, m[1] * m[6] - m[0] * m[7], m[0] * m[4] - m[1] * m[3]].map(v => v / det);
+        for (let i = 0; i < 3; i++) for (let k = 0; k < 3; k++) params[PARAM.i0 + i * 4 + k] = inv[i * 3 + k];
+    }
+    const counted = (o.windows || []).some(w => w && Number.isFinite(w.count) && w.count > 0);
+    params[PARAM.polyProb] = counted ? Math.min(1, Math.max(0, o.polyProb ?? SW_DEFAULTS.polyProb)) : 0;
+    if (params[PARAM.polyProb] > 0) say(`Polyhedron moves: ${Math.round(params[PARAM.polyProb] * 100)} % of the proposals move a coordination shell as a unit.`);
     params[PARAM.nTot] = nTot;
     params[PARAM.maxSites] = T.maxSites;
     params[PARAM.numParticles] = numParticles;

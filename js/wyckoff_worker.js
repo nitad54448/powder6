@@ -1551,6 +1551,7 @@ if (constraintBreak) {
             generations: job.swarmIterations || WY_LIMITS.defaults.iterations,
             restarts: job.swarmRestarts || WY_LIMITS.defaults.restarts,
             shapeWeight: Number.isFinite(job.shapeWeight) ? job.shapeWeight : WY_LIMITS.defaults.shapeWeight,
+            polyProb: Number.isFinite(job.polyProb) ? job.polyProb : undefined,
             minContact: Number.isFinite(job.minContact)
     ? job.minContact
     : 1.0,

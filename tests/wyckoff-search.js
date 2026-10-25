@@ -68,6 +68,9 @@
     check(/angle errors weighted 2 x/.test(log2),'The Shape weight did not reach the search');
     check(wy2 && !wy2.error && wy2.sols && wy2.sols.length && !/marker not found|WGSL|validation/i.test(log2),'The shaped search failed: '+(wy2 && wy2.error)+'\n'+log2.slice(-1200));
     record('a shaped coordination shell compiles and runs on the GPU',{assignment:wy2.sols[0].assignment});
+    // a counted rule turns the polyhedron moves on; the ten bare rules of the first run did not
+    check(/Polyhedron moves: 30 %/.test(log2) && !/Polyhedron moves/.test(log),'Polyhedron moves are not on for a counted shell only: '+(log2.match(/Polyhedron[^\n]*/) || ['none'])[0]);
+    record('a counted shell turns the polyhedron moves on');
 
     check(!errors.length,'Browser errors: '+errors.join('; '));record('no browser errors');
     window.browserTestResult={ok:true,results};
