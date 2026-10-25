@@ -2,6 +2,20 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.39.0 — 25 October 2026
+
+1. **Automatic anomalous scattering.** Copy Hephaestus's 92-element Chantler data file into `scatters/anomalous_chantler.json` and interpolate signed f′ and f″ linearly in photon energy at each dataset's λ1. The Instrument checkbox defaults on for X-rays and is disabled for neutrons. Turning it off removes the corrections from CPU and GPU fit jobs. Table bounds are respected without extrapolation; ionic species use their element's anomalous values.
+2. **Values used, recorded.** Text, PDF and History reports include enabled state, source, wavelength, energy, interpolation and per-element corrections. Completed fits store the exact job values, preserved through projects and archived-result inspection even if the current table changes. Legacy explicit values remain readable; applying Instrument returns to the automatic or disabled choice.
+3. **A smaller Instrument dialog.** Remove manual anomalous-value entry and Fit from/to fields. Exclusions remain the region editor; existing dataset range limits are preserved. The monochromator tooltip omits reflections that cannot diffract at the entered wavelength.
+4. **Validation.** Regression checks cover all 92 copied tables, interpolation and boundaries, enable/disable and neutron behavior, cache invalidation, report provenance, and saved-run/project fidelity. Browser checks cover the checkbox, neutron disabling, accessible monochromators and range preservation.
+5. **Angle selection and simulation phases.** Clicking a monochromator row fills its displayed 2θ into the Instrument field; crystal buttons also support keyboard selection. Simulation lists only phases with atoms, automatically includes a single eligible phase and shows its name without an Include checkbox. Multiple eligible phases retain their Include controls.
+6. **Simulation instrument controls.** Share Instrument's live monochromator picker, source updates and anomalous-scattering switch with Simulate a pattern. Neutrons disable the switch. Build the atomic simulation model before resolving corrections so they also apply when starting from WPPF or Le Bail; explicitly selected simulation phases are independent of the fit inclusion flags. Preserve the generated pattern's anomalous factors in project metadata and verify on/off, wavelength and neutron calculations across all three starting methods.
+
+## 2.38.0 — 25 October 2026
+
+1. **Monochromator angles at the current wavelength.** Instrument and range replaces the fixed graphite/Cu hint with a tooltip on both the monochromator label and its angle input. It lists approximate Bragg 2θ for graphite (002), quartz (10-11), Ge (111)/(220), Si (111)/(220) and LiF (200), calculated from the dialog's current λ1 and refreshed after source or wavelength edits. Impossible reflections are marked instead of displaying an invalid angle. The entered monochromator value is kept.
+2. **Hover and keyboard help.** Labels and fields can use the existing full-size help popup; focusing the angle input opens the same table as hovering its label. The user guide distinguishes these current-λ1 values from its static weighted-mean Kα reference table.
+
 ## 2.37.2 — 25 October 2026
 
 1. **Wyckoff GPU and CPU documentation.** README, About and the user guide distinguish GPU proposals, fitness and acceptance from CPU enumeration, replica exchange, restart control and final coordinate refinement. The closing quench is CPU-controlled but still evaluates fitness on the GPU. Wyckoff requires WebGPU and has no CPU-only search fallback; charge flipping and parallel-tempering fits retain theirs.

@@ -177,7 +177,7 @@ RV.cmd = (function () {
     if(RV.app)RV.app.showTab('pattern');
     var pts = made.reduce(function (a, d) { return a + d.tth.length; }, 0), wl = made.filter(function (d) { return raws[made.indexOf(d)].inst.lambda1; }).length;
     ui.toast('Read ' + plural(made.length, 'dataset') + ' (' + pts + ' points): ' + made.slice(0, 3).map(function (d) { return d.name; }).join(', ') + (made.length > 3 ? ' …' : '') + '. ' +
-      (wl ? 'Wavelength from the file' + (wl < made.length ? ' for ' + wl + ' of them' : '') + '. ' : 'No wavelength in the file: ' + made[0].inst.lambda1 + ' Å assumed (Data, Instrument and range). ') +
+      (wl ? 'Wavelength from the file' + (wl < made.length ? ' for ' + wl + ' of them' : '') + '. ' : 'No wavelength in the file: ' + made[0].inst.lambda1 + ' Å assumed (Data, Instrument). ') +
       (S.phases.length ? 'Scales estimated.' : 'Next: read a structure CIF.'), failed ? 'warn' : 'ok');
     warnings.forEach(function(warning){ui.toast(warning,'warn');});
   }
@@ -787,58 +787,83 @@ RV.cmd = (function () {
 
 
   // ---------------------------------------------------------------- datasets
+  // Representative d spacings match the reference table in the polarisation documentation.
+  function monochromatorHelp(wavelength) {
+    if(!(wavelength>0) || !Number.isFinite(wavelength))return '<p>Enter a positive wavelength in λ1 to calculate monochromator angles.</p>';
+    var crystals=[['Graphite (002)',3.354],['Quartz (10-11)',3.343],['Ge (111)',3.266],['Si (111)',3.136],['LiF (200)',2.014],['Ge (220)',2.000],['Si (220)',1.920]];
+    return '<p><b>Monochromator 2θ at λ1 = '+ui.esc(String(wavelength))+' Å</b></p><table class="grid compact"><thead><tr><th>Crystal / reflection</th><th>2θ /°</th></tr></thead><tbody>'+crystals.filter(function(c){return wavelength<=2*c[1];}).map(function(c){
+      var ratio=wavelength/(2*c[1]),angle=(360*Math.asin(ratio)/Math.PI).toFixed(2);
+      return '<tr data-mono-angle="'+angle+'"><td><button type="button" class="link" aria-label="Use '+ui.esc(c[0])+', 2θ '+angle+'°">'+ui.esc(c[0])+'</button></td><td>'+angle+'°</td></tr>';
+    }).join('')+'</tbody></table><p class="hint">Click a row to use its angle. Approximate Bragg take-off angles: 2θ = 2 asin(λ1 / 2d). Enter 2θ, not θ. The guide describes the polarisation model for mosaic and perfect crystals.</p>';
+  }
+  function anomalousField(i) { return { key: 'anomalousEnabled', label: 'Anomalous scattering', type: 'checkbox', value: i.anomalousEnabled!==false, hint: 'Use interpolated Chantler f′ and f″ at λ1 for X-ray Rietveld calculations. Values used are included in reports.' }; }
+  // Instrument and simulation use the same source, monochromator picker and radiation controls.
+  function instrumentControls(body) {
+    var wavelength=body.querySelector('[data-key="lambda1"]'),angle=body.querySelector('[data-key="monoTth"]'),label=body.querySelector('label[for="'+angle.id+'"]');
+    function updateMonochromatorHelp(){var html=monochromatorHelp(ui.parseNum(wavelength.value));[label,angle].forEach(function(el){el.setAttribute('data-help-html',html);});}
+    wavelength.addEventListener('input',updateMonochromatorHelp);wavelength.addEventListener('change',updateMonochromatorHelp);
+    body.querySelector('[data-key="anode"]').addEventListener('change', function (e) {
+      var A = St.ANODES[e.target.value];
+      if (!A) return;
+      wavelength.value = A[0]; body.querySelector('[data-key="lambda2"]').value = A[1]; body.querySelector('[data-key="ratio"]').value = A[2];
+      updateMonochromatorHelp();
+    });
+    updateMonochromatorHelp();
+    var helpDialog=body.closest('dialog');
+    var chooseAngle=function(e){
+      var row=e.target.closest('[data-mono-angle]');if(!row || !row.closest('.help-pop'))return;
+      angle.value=row.getAttribute('data-mono-angle');
+      angle.dispatchEvent(new Event('input',{bubbles:true}));angle.dispatchEvent(new Event('change',{bubbles:true}));
+      angle.focus();angle.select();
+    };
+    helpDialog.addEventListener('click',chooseAngle);
+    var radiation=body.querySelector('[data-key="radiation"]'),anomalous=body.querySelector('[data-key="anomalousEnabled"]');
+    function syncAnomalous(){anomalous.disabled=radiation.value==='neutron';anomalous.title=anomalous.disabled?'Anomalous X-ray scattering does not apply to neutrons.':'Interpolate f′ and f″ from the bundled Chantler table.';}
+    radiation.addEventListener('change',syncAnomalous);syncAnomalous();
+    return function(){helpDialog.removeEventListener('click',chooseAngle);};
+  }
   async function instrument() {
     if (!idle()) return;
     var list = datasetTargets(), d = list[0];if(!d)return;
     RV.app.showTab('datasets');
-    var i = d.inst, lo = Infinity, hi = -Infinity;
-    list.forEach(function (x) { lo = Math.min(lo, x.tth[0]); hi = Math.max(hi, x.tth[x.tth.length - 1]); });
+    var i = d.inst, cleanControls;
     var anodes = Object.keys(St.ANODES).map(function (k) { return [k, k + ' Kα1 ' + St.ANODES[k][0] + ', Kα2 ' + St.ANODES[k][1] + ' Å']; }).concat([['', 'Other wavelength']]);
     var anode = i.anode && St.ANODES[i.anode] && Math.abs(St.ANODES[i.anode][0] - i.lambda1) < 1e-6 ? i.anode : '';
-    var v = await ui.prompt('Instrument and range', [
+    var v = await ui.prompt('Instrument', [
       { key: 'anode', label: 'Source', type: 'select', value: anode, options: anodes },
       { key: 'lambda1', label: 'λ1 /Å', type: 'number', value: i.lambda1 },
       { key: 'lambda2', label: 'λ2 /Å', type: 'number', value: i.lambda2, hint: 'Kα2; set the ratio to 0 for a monochromatic beam.' },
       { key: 'ratio', label: 'Ratio I(λ2)/I(λ1)', type: 'number', value: i.ratio },
       { key: 'radiation', label: 'Radiation', type: 'select', value: i.radiation, options: [['xray', 'X-rays'], ['neutron', 'Neutrons (constant wavelength)']] },
       { key: 'pol', label: 'Polarisation', type: 'select', value: i.pol, options: [['tube', 'Tube, no monochromator (K = 1)'], ['mono', 'Monochromator'], ['sync', 'Synchrotron, polarised'], ['none', 'None (K = 0)']] },
-      { key: 'monoTth', label: 'Monochromator 2θ /°', type: 'number', value: i.monoTth, when: 'pol:mono', hint: '26.6° for graphite (002) with Cu Kα' },
+      { key: 'monoTth', label: 'Monochromator 2θ /°', type: 'number', value: i.monoTth, when: 'pol:mono' },
       { key: 'polFrac', label: 'Polarised fraction', type: 'number', value: i.polFrac, when: 'pol:sync' },
       { key:'radiusMM',label:'Goniometer radius /mm',type:'number',value:i.radiusMM || 0,hint:'Bragg–Brentano radius. 0 = unknown; required for displacement in mm and effective absorption.' },
-      { key: 'anomalous', label: 'Anomalous f′, f″', type: 'text', value: i.anomalous || '', when: 'radiation:xray', hint: 'Per element at λ1, in electrons: Fe -3.36 3.20, O 0.05 0.03. Used in the Rietveld structure factors (Friedel-averaged); an element not listed has none. Take the values from tables (Sasaki, Cromer–Liberman) for this wavelength.' },
-      { key: 'tthMin', label: 'Fit from 2θ /°', type: 'number', value: i.tthMin }, { key: 'tthMax', label: 'Fit to 2θ /°', type: 'number', value: i.tthMax, hint: 'Measured: ' + lo.toFixed(2) + ' to ' + hi.toFixed(2) + '°. The background and the excluded regions have their own buttons.' }
+      anomalousField(i)
     ], 'Apply', (list.length > 1 ? 'For the ' + plural(list.length, 'selected dataset') + ': the fields show the values of ' + RV.ui.esc(d.name) + ', and only the fields you change are applied to all of them. ' : '') +
        'Polarisation does not apply to neutrons.', {
-      onOpen: function (body) {
-        body.querySelector('[data-key="anode"]').addEventListener('change', function (e) {
-          var A = St.ANODES[e.target.value];
-          if (!A) return;
-          body.querySelector('[data-key="lambda1"]').value = A[0]; body.querySelector('[data-key="lambda2"]').value = A[1]; body.querySelector('[data-key="ratio"]').value = A[2];
-        });
-      },
+      onOpen: function (body) { cleanControls=instrumentControls(body); },
       check: function (r) {
         if (!(r.lambda1 > 0 && r.lambda1 < 20)) return 'λ1 must be a wavelength in Å.';
         if (!(r.ratio >= 0 && r.ratio <= 1) || (r.ratio > 0 && !(r.lambda2 > 0))) return 'The ratio is from 0 to 1, with a positive λ2.';
         if (r.radiusMM != null && !(r.radiusMM >= 0)) return 'Radius must be positive, or 0 for unknown.';
-        var an = C.parseAnomalous(r.anomalous); if (an.bad.length) return 'Anomalous f′, f″: “' + an.bad[0] + '” is not an element followed by two numbers.';
-        if (!(r.tthMin < r.tthMax)) return 'The fitted range must go from a lower to a higher 2θ.';
         if (r.pol === 'sync' && !(r.polFrac > 0 && r.polFrac <= 1)) return 'The polarised fraction is from 0 to 1.';
         return '';
       }
     });
+    if(cleanControls)cleanControls();
     if (!v) return;
     // only what was changed is applied, so datasets measured differently keep their own wavelength or range
     var want = { anode: v.anode, lambda1: v.lambda1, lambda2: v.lambda2, ratio: v.ratio, radiation: v.radiation, pol: v.pol,
                  monoTth: Number.isFinite(v.monoTth) ? v.monoTth : i.monoTth, polFrac: Number.isFinite(v.polFrac) ? v.polFrac : i.polFrac,
-                 radiusMM:Number.isFinite(v.radiusMM)?v.radiusMM:i.radiusMM || 0, anomalous: v.anomalous != null ? C.parseAnomalous(v.anomalous).text : i.anomalous || '', tthMin: v.tthMin, tthMax: v.tthMax }, changed = {};
+                 radiusMM:Number.isFinite(v.radiusMM)?v.radiusMM:i.radiusMM || 0, anomalous:'', anomalousEnabled:v.anomalousEnabled }, changed = {};
     if (want.anode === anode) delete want.anode;
     Object.keys(want).forEach(function (k) { if (list.length === 1 || want[k] !== i[k]) changed[k] = want[k]; });
-    if (('tthMin' in changed) !== ('tthMax' in changed)) { changed.tthMin = v.tthMin; changed.tthMax = v.tthMax; }
     var keys = Object.keys(changed).filter(function (k) { return k !== 'anode'; });
     if (!keys.length) { ui.toast('Nothing changed.', 'info'); return; }
     snapshot('instrument of ' + plural(list.length, 'dataset'));
     St.setInstrument(list, changed);
-    var LBL = { radiusMM:'goniometer radius /mm', anomalous: 'anomalous f′, f″', lambda1: 'λ1', lambda2: 'λ2', ratio: 'ratio', radiation: 'radiation', pol: 'polarisation', monoTth: 'monochromator 2θ', polFrac: 'polarised fraction', tthMin: 'from', tthMax: 'to' };
+    var LBL = { radiusMM:'goniometer radius /mm', anomalous: 'legacy anomalous overrides', anomalousEnabled:'anomalous scattering', lambda1: 'λ1', lambda2: 'λ2', ratio: 'ratio', radiation: 'radiation', pol: 'polarisation', monoTth: 'monochromator 2θ', polFrac: 'polarised fraction', tthMin: 'from', tthMax: 'to' };
     ui.toast('Instrument of ' + plural(list.length, 'dataset') + ': ' + keys.map(function (k) { return LBL[k] + ' ' + changed[k]; }).join(', ') + '.', 'ok');
   }
   // ---------------------------------------------------------------- background and excluded regions
@@ -1044,9 +1069,9 @@ RV.cmd = (function () {
     if (!need(rv.length, 'Simulation needs at least one phase with atoms. Its current fitting method can be Rietveld, WPPF or Le Bail.')) return;
     var d = St.first(), base = d ? d.inst : S.settings.inst, anodes = Object.keys(St.ANODES).map(function (k) { return [k, k + ' Kα1 ' + St.ANODES[k][0] + ', Kα2 ' + St.ANODES[k][1] + ' Å']; }).concat([['', 'Other wavelength']]);
     var anode = base.anode && St.ANODES[base.anode] && Math.abs(St.ANODES[base.anode][0] - base.lambda1) < 1e-6 ? base.anode : '';
-    var v = await ui.prompt('Simulate a pattern', [
+    var cleanControls, v = await ui.prompt('Simulate a pattern', [
       { key: 'name', label: 'Name', type: 'text', value: 'simulated ' + rv.map(function (p) { return p.name; }).join(' + ') },
-    ].concat(rv.map(function(p){return {key:'sim_'+p.key,label:'Include '+p.name,type:'checkbox',value:!d || St.hasPhase(d,p)};})).concat([
+    ].concat(rv.length>1?rv.map(function(p){return {key:'sim_'+p.key,label:'Include '+p.name,type:'checkbox',value:!d || St.hasPhase(d,p)};}):[]).concat([
       { key: 'from', label: 'From 2θ /°', type: 'number', value: d ? d.inst.tthMin : 10 }, { key: 'to', label: 'To 2θ /°', type: 'number', value: d ? d.inst.tthMax : 100 },
       { key: 'step', label: 'Step /°', type: 'number', value: d && d.step ? +d.step.toPrecision(3) : 0.02 },
       { key: 'anode', label: 'Source', type: 'select', value: anode, options: anodes },
@@ -1056,34 +1081,32 @@ RV.cmd = (function () {
       { key: 'pol', label: 'Polarisation', type: 'select', value: base.pol, options: [['tube', 'Tube, no monochromator (K = 1)'], ['mono', 'Monochromator'], ['sync', 'Synchrotron, polarised'], ['none', 'None (K = 0)']] },
       { key: 'monoTth', label: 'Monochromator 2θ /°', type: 'number', value: base.monoTth, when: 'pol:mono' },
       { key: 'polFrac', label: 'Polarised fraction', type: 'number', value: base.polFrac, when: 'pol:sync' },
+      anomalousField(base),
       { key: 'peak', label: 'Strongest point /counts', type: 'number', value: 10000, hint: 'The scales are set for this; 0 keeps the scales of the phases as they are.' },
       { key: 'bkg', label: 'Background /counts', type: 'number', value: 50 },
       { key: 'noise', label: 'Counting noise', type: 'checkbox', value: true, hint: 'Poisson noise on every point, so the pattern can be fitted like a measurement' }
     ]), 'Simulate', 'A pattern calculated from the selected phases with atoms, regardless of their current intensity models. It becomes an ordinary dataset. The active calculation and phase methods are kept.', {
-      onOpen: function (body) {
-        body.querySelector('[data-key="anode"]').addEventListener('change', function (e) {
-          var A = St.ANODES[e.target.value];
-          if (!A) return;
-          body.querySelector('[data-key="lambda1"]').value = A[0]; body.querySelector('[data-key="lambda2"]').value = A[1]; body.querySelector('[data-key="ratio"]').value = A[2];
-        });
-      },
+      before:rv.length===1?'<p>Phase: <b>'+ui.esc(rv[0].name)+'</b></p>':'',
+      onOpen: function (body) { cleanControls=instrumentControls(body); },
       check: function (r) {
-        if(!rv.some(function(p){return r['sim_'+p.key];}))return 'Include at least one phase with atoms.';
+        if(rv.length>1 && !rv.some(function(p){return r['sim_'+p.key];}))return 'Include at least one phase with atoms.';
         if (!(r.from < r.to) || !(r.from > 0) || !(r.to < 180)) return 'The range goes from a lower to a higher 2θ, within 0 to 180°.';
         if (!(r.step > 0) || (r.to - r.from) / r.step > 200000) return 'The step must be positive, and give at most 200000 points.';
         if (!(r.lambda1 > 0 && r.lambda1 < 20)) return 'λ1 must be a wavelength in Å.';
         if (!(r.ratio >= 0 && r.ratio <= 1) || (r.ratio > 0 && !(r.lambda2 > 0))) return 'The ratio is from 0 to 1, with a positive λ2.';
+        if (r.pol === 'sync' && !(r.polFrac > 0 && r.polFrac <= 1)) return 'The polarised fraction is from 0 to 1.';
         if (!(r.peak >= 0) || !(r.bkg >= 0)) return 'The counts cannot be negative.';
         return '';
       }
     });
+    if(cleanControls)cleanControls();
     if (!v) return;
     var inst = Object.assign(St.instCopy(base), { anode: v.anode, lambda1: v.lambda1, lambda2: v.lambda2, ratio: v.ratio, radiation: v.radiation, pol: v.pol,
-                                                 monoTth: Number.isFinite(v.monoTth) ? v.monoTth : base.monoTth, polFrac: Number.isFinite(v.polFrac) ? v.polFrac : base.polFrac });
+                                                 monoTth: Number.isFinite(v.monoTth) ? v.monoTth : base.monoTth, polFrac: Number.isFinite(v.polFrac) ? v.polFrac : base.polFrac, anomalous:'', anomalousEnabled:v.anomalousEnabled });
     var ds;
     St.setBusy(true,'Simulating a powder pattern…');
     await new Promise(function(resolve){setTimeout(resolve,20);});
-    try { ds = St.simulate({ phases:rv.filter(function(p){return v['sim_'+p.key];}).map(function(p){return p.key;}), name: v.name.trim() || 'simulated', tthMin: v.from, tthMax: v.to, step: v.step, inst: inst, peak: v.peak, bkg: v.bkg, noise: v.noise, seed: Date.now() % 2147483647 }); }
+    try { ds = St.simulate({ phases:rv.filter(function(p){return rv.length===1 || v['sim_'+p.key];}).map(function(p){return p.key;}), name: v.name.trim() || 'simulated', tthMin: v.from, tthMax: v.to, step: v.step, inst: inst, peak: v.peak, bkg: v.bkg, noise: v.noise, seed: Date.now() % 2147483647 }); }
     catch (e) { ui.toast('Simulation failed: ' + ((e && e.message) || e), 'err'); return; } finally {St.setBusy(false);}
     snapshot('simulating a pattern');
     St.insertDatasets([ds], { estimate: false });
@@ -1301,7 +1324,7 @@ RV.cmd = (function () {
     var list = sel().filter(refinable);
     if (!list.length) { ui.toast('Tick at least one parameter to refine (Datasets).', 'warn'); return; }
     var jobs = list.filter(function(ds){return St.fitPoints(ds).tth.length>=2;}).map(function(ds){return {id:ds.id,job:null};});
-    if (!need(jobs.length, 'Fewer than two points in the fitted range (Data, Instrument and range).')) return;
+    if (!need(jobs.length, 'Fewer than two points in the fitted range (Data, Instrument).')) return;
     snapshot('refining ' + plural(jobs.length, 'dataset'));
     ui.log('Starting from the current values for '+C.METHOD_LABELS[S.calculation]+'.');
     var historyTicket=RV.fitHistory?RV.fitHistory.begin(list,false):null;
@@ -1665,7 +1688,7 @@ RV.cmd = (function () {
              ['Save calculated patterns of selected…', function () { RV.results.save('calc'); }, 'selection'], null,
              ['Export to GSAS-II…', function () { RV.gsas2.exportSelected(); }, 'selection']],
       data: [['Undo the last command', undo, 'undo'], null,
-             ['Instrument and range of selected…', instrument, 'edit'], ['Background of selected…', background, 'edit'], ['Excluded regions of selected…', excludeRegions, 'edit'], null,
+             ['Instrument of selected…', instrument, 'edit'], ['Background of selected…', background, 'edit'], ['Excluded regions of selected…', excludeRegions, 'edit'], null,
              ['Simulate a pattern from the phases…', simulate, 'havePhase'], ['Delete selected datasets…', deleteDatasets, 'edit'], null,
              ['Copy active dataset parameters to all others', function () { cloneTo(true); }, 'cloneAll'],
              ['Copy active dataset parameters to selected others', function () { cloneTo(false); }, 'cloneSel']],

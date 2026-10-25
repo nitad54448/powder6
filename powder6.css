@@ -319,6 +319,8 @@ textarea.code-area::placeholder, .sv-form textarea::placeholder { font-style: it
 .help-pop ul { padding-left: var(--sp-4); }
 .help-pop > :last-child { margin-bottom: 0; }
 .help-pop .hint { color: var(--ink-2); }
+.help-pop [data-mono-angle] { cursor: pointer; }
+.help-pop [data-mono-angle]:focus-within > td { background: var(--hover); }
 .info-tip:hover .info-pop, .info-tip:focus-within .info-pop { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; }
 .info-pop b { font-weight: 600; white-space: nowrap; }
 .plot-pane { padding: var(--sp-1) var(--inset) var(--inset); gap: var(--sp-2); overflow: auto; }

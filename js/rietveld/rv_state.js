@@ -33,7 +33,7 @@ RV.state = (function () {
                  Cr: [2.28976, 2.293663, 0.5], Mo: [0.7093, 0.71359, 0.5], Ag: [0.5594075, 0.563798, 0.5] };
   function defaultInst() {
     return { anode: 'Cu', lambda1: 1.540598, lambda2: 1.544426, ratio: 0.5, radiation: 'xray', pol: 'tube', monoTth: 26.6, polFrac: 0.95,
-             radiusMM:0, anomalous: '', resolutionType:'tch_aniso', bkgType: 'cheb', bkgN: 6, bkgX: [], excl: [], exclOff: [] };
+             radiusMM:0, anomalous: '', anomalousEnabled:true, resolutionType:'tch_aniso', bkgType: 'cheb', bkgN: 6, bkgX: [], excl: [], exclOff: [] };
   }
   // arrays of an instrument copied, so a restore point or a copy never shares them
   function instCopy(i) {
@@ -50,6 +50,7 @@ RV.state = (function () {
     o.radiusMM = Number.isFinite(+o.radiusMM) && +o.radiusMM > 0 ? +o.radiusMM : 0;
     // f' and f'' per element at this wavelength, as text ("Fe -3.36 3.20, O 0.05 0.03"); entries that do not read are dropped
     o.anomalous = C.parseAnomalous(typeof o.anomalous === 'string' ? o.anomalous : '').text;
+    o.anomalousEnabled = o.anomalousEnabled !== false;
     o.bkgType = o.bkgType === 'spline' ? 'spline' : 'cheb';
     o.bkgX = (Array.isArray(o.bkgX) ? o.bkgX : []).map(Number).filter(Number.isFinite).sort(function (a, b) { return a - b; })
       .filter(function (x, k, a) { return k === 0 || x - a[k - 1] > 1e-6; });
@@ -170,7 +171,7 @@ RV.state = (function () {
     var xm = new Map(), nm = new Map();
     Object.keys((t.xray && t.xray.table) || {}).forEach(function (k) { xm.set(k.toUpperCase(), { label: k, e: t.xray.table[k] }); });
     Object.keys((t.neutron && t.neutron.table) || {}).forEach(function (k) { nm.set(k.toUpperCase(), { label: k, e: t.neutron.table[k] }); });
-    S.tables = { raw: t, xray: xm, neutron: nm, labels: Object.keys((t.xray && t.xray.table) || {}) };
+    S.tables = { raw: t, xray: xm, neutron: nm, anomalous:t.anomalous?normalizeAnomalousTable(t.anomalous):null, labels: Object.keys((t.xray && t.xray.table) || {}) };
     S.datasets.forEach(function (ds) { clearFit(ds, true); });
   }
   // standard atomic weights (g/mol), for cell masses, densities and weight fractions
@@ -766,7 +767,9 @@ RV.state = (function () {
         }
       }); });
     });
-    return factors.length ? 'Missing scattering factors (' + factors.join('; ') + '). Load the required tables or correct the atom types before Rietveld fitting.' : '';
+    if(factors.length)return 'Missing scattering factors (' + factors.join('; ') + '). Load the required tables or correct the atom types before Rietveld fitting.';
+    for(var j=0;j<list.length;j++){var anomalous=anomalousFor(list[j]);if(anomalous.error)return 'Anomalous scattering: '+anomalous.error;}
+    return '';
   }
   function addAtomTo(ph, a, cell, used) {
     used = used || new Set(ph.atoms.map(function (x) { return x.label; }));
@@ -1061,14 +1064,38 @@ RV.state = (function () {
                constraints:JSON.parse(JSON.stringify(ph.constraints || [])), restraints:RV.restraintsOf(ph.restraints), atoms: ph.atoms.map(function (at) { var f = scatterer(at.type); return { label: at.label, element: elementOf(at.type), ff: { xray: f.xray, neutron: f.neutron }, site: at.site }; }) };
     });
   }
-  function datasetDef(ds) {
-    var pts = fitPoints(ds), i = ds.inst;
-    return { id: ds.id, tth: pts.tth, y: pts.y, w: pts.w, lambda1: i.lambda1, lambda2: i.ratio > 0 ? i.lambda2 : 0, ratio: i.lambda2 > 0 ? i.ratio : 0,
-             polK: polK(i), radiation: i.radiation, anomalous: C.parseAnomalous(i.anomalous).map, resolutionType:i.resolutionType, bkgType: i.bkgType, bkgN: i.bkgN, bkgX: i.bkgX.slice(), minFwhm: Math.max(1e-4, 2 * (ds.step || 0.01)),
-             phases: ds.phases.filter(function(k){return !S.disabledPhases.includes(k);}) };
+  // Resolve once per job; workers receive only the selected numerical corrections and their provenance.
+  function anomalousFor(ds, simulatedPhases) {
+    var i=ds.inst,viewing=RV.fitHistory && RV.fitHistory.viewing(),saved=ds.stats && ds.stats.anomalousData;
+    if(viewing && saved)return cloneCalculation(saved);
+    var legacy=C.parseAnomalous(i.anomalous),enabled=i.radiation!=='neutron' && i.anomalousEnabled!==false;
+    var out={enabled:enabled,wavelength:i.lambda1,energyEV:12398.419843320025/i.lambda1,source:'Chantler',interpolation:'linear in photon energy; no extrapolation',map:{}};
+    if(!enabled){out.source=i.radiation==='neutron'?'Not applicable to neutrons':'Disabled';return out;}
+    // An old archived fit must not acquire corrections that were absent from its calculation.
+    if(viewing){out.enabled=Object.keys(legacy.map).length>0;out.source='Saved legacy input';out.interpolation=out.enabled?'supplied values':'none';out.map=legacy.map;return out;}
+    if(Object.keys(legacy.map).length){out.source='Legacy explicit values';out.interpolation='supplied values';out.map=legacy.map;return out;}
+    var elements=[];
+    var phases=simulatedPhases?S.phases.filter(function(p){return simulatedPhases.includes(p.key);}):participatingPhases(ds).filter(function(p){return p.method==='rietveld';});
+    phases.forEach(function(p){p.atoms.forEach(function(at){var el=elementOf(at.type);if(el && elements.indexOf(el)<0)elements.push(el);});});
+    if(!elements.length){out.source='Not used by free-intensity methods';return out;}
+    try {
+      if(!S.tables || !S.tables.anomalous)throw new Error(S.tables && S.tables.raw.anomalousError || 'The bundled anomalous scattering table is unavailable.');
+      elements.sort().forEach(function(el){out.map[el.toUpperCase()]=interpolateAnomalous(S.tables.anomalous,el,i.lambda1);});
+    }catch(e){out.error=e.message;out.map={};}
+    return out;
   }
-  function problemFor(list) {
-    return { phases: phaseDefs(), datasets: list.map(datasetDef), values: list.map(function (ds) { return Object.assign({}, ds.p); }), parameterLinks:cloneCalculation(S.parameterLinks),
+  function datasetDef(ds, simulatedPhases) {
+    var pts = fitPoints(ds), i = ds.inst, an=anomalousFor(ds, simulatedPhases);
+    if(an.error)throw new Error(an.error);
+    return { id: ds.id, tth: pts.tth, y: pts.y, w: pts.w, lambda1: i.lambda1, lambda2: i.ratio > 0 ? i.lambda2 : 0, ratio: i.lambda2 > 0 ? i.ratio : 0,
+             polK: polK(i), radiation: i.radiation, anomalous: an.map, anomalousData:an, resolutionType:i.resolutionType, bkgType: i.bkgType, bkgN: i.bkgN, bkgX: i.bkgX.slice(), minFwhm: Math.max(1e-4, 2 * (ds.step || 0.01)),
+             phases: ds.phases.filter(function(k){return simulatedPhases?simulatedPhases.includes(k):!S.disabledPhases.includes(k);}) };
+  }
+  function problemFor(list, simulatedPhases) {
+    var phases=phaseDefs();
+    // Build simulation's Rietveld model before resolving its energy-dependent scattering factors.
+    if(simulatedPhases)phases.forEach(function(p){if(simulatedPhases.includes(p.key))p.method='rietveld';});
+    return { phases: phases, datasets: list.map(function(ds){return datasetDef(ds, simulatedPhases);}), values: list.map(function (ds) { return Object.assign({}, ds.p); }), parameterLinks:cloneCalculation(S.parameterLinks),
              linkValues:S.parameterLinks.reduce(function(o,l){var d=byId(l.source.datasetId);if(d){o[d.id]=o[d.id] || {};o[d.id][l.source.name]=d.p[l.source.name];}return o;},{}),maxIter: S.settings.maxIter, tol: S.settings.tol, algorithm: S.settings.algorithm,
              pt: { sweeps:S.settings.ptSweeps, chains:S.settings.ptChains, maxTemp:S.settings.ptMaxTemp, seed:S.settings.ptSeed } };
   }
@@ -1186,8 +1213,8 @@ RV.state = (function () {
   // ---------------------------------------------------------------- simulation
   /* A pattern calculated from the phases, with no data behind it. o = { name, tthMin, tthMax, step, inst, peak (counts
      of the strongest point; 0 keeps the scales as they are), bkg (constant counts), noise (Poisson counting noise),
-     seed }. The values of the phases are those of the first selected dataset (or the start values); Le Bail and WPPF
-     phases have no intensities of their own and add nothing. The result is an ordinary dataset: it can be fitted. */
+     seed }. The values of the phases are those of the first selected dataset (or the start values). The selected
+     atomic models are evaluated by Rietveld independently of the active fitting method. The result is an ordinary dataset: it can be fitted. */
   function simulate(o) {
     var n = Math.max(2, Math.round((o.tthMax - o.tthMin) / o.step) + 1), tth = new Float64Array(n);
     for (var i = 0; i < n; i++) tth[i] = +(o.tthMin + i * o.step).toFixed(6);
@@ -1200,7 +1227,8 @@ RV.state = (function () {
     if (from) Object.keys(ds.p).forEach(function (k) { var c = C.classify(k); if ((c.phase || c.kind==='instrument') && own(from.p, k)) ds.p[k] = from.p[k]; });
     ds.p.bkg0 = 0; ds.p.zero = from && own(from.p, 'zero') ? from.p.zero : 0;
     syncSites(ds);
-    var job=problemFor([ds]); job.phases.forEach(function(p){if(keys.indexOf(p.key)>=0)p.method='rietveld';});
+    var job=problemFor([ds],keys);
+    ds.sim.anomalousData=cloneCalculation(job.datasets[0].anomalousData);
     var ev = C.evaluate(job, 0), y = Float64Array.from(ev.ycalc), mx = 0;
     for (i = 0; i < n; i++) if (y[i] > mx) mx = y[i];
     var k = o.peak > 0 && mx > 0 ? o.peak / mx : 1;
@@ -1249,7 +1277,7 @@ RV.state = (function () {
       ds.ints = res.intensities ? res.intensities[d] : null;
       ds.stats = Object.assign(shortStats(st), { ok: true, calculation:S.calculation, msg: res.msg, iter: res.iter, nVar: nVar, nInt: st.nInt || 0, chi2red: st.chi2 / Math.max(1, st.n - nPar),
                                                  constraintWarnings:res.constraintWarnings || [], uncertaintyIssues: res.uncertaintyIssues ? res.uncertaintyIssues[d] : {}, fitWarnings:res.fitWarnings ? res.fitWarnings[d] : [], covarianceOK:res.covarianceOK, global: !!global, globalSummary: overall, globalChi2red: global ? res.chi2red : null, nSets: list.length,
-                                                 algorithm: res.algorithm || 'lm', effectiveAlgorithm: res.effectiveAlgorithm || 'lm', pt: res.pt || null, maxIter: job.maxIter, tol: job.tol, ms: res.ms, weight: S.settings.weight });
+                                                 anomalousData:cloneCalculation(job.datasets[d].anomalousData || null), algorithm: res.algorithm || 'lm', effectiveAlgorithm: res.effectiveAlgorithm || 'lm', pt: res.pt || null, maxIter: job.maxIter, tol: job.tol, ms: res.ms, weight: S.settings.weight });
       invalidate(ds);
     });
   }
@@ -1490,7 +1518,7 @@ RV.state = (function () {
     setPresetDefault: setPresetDefault,
     polK: polK, anodeOf: anodeOf, defaults: defaults, restore: restore, store: store, load: load,
     refinementOptions: refinementOptions, restoreRefinementOptions: restoreRefinementOptions, setSetting: setSetting, resetSettings: resetSettings, validSetting: validSetting,
-    setTables: setTables, scatterer: scatterer, elementOf: elementOf, atomicWeight: atomicWeight, resolveSG: resolveSG, resolveFileSG: resolveFileSG, sgText: sgText,
+    setTables: setTables, anomalousFor:anomalousFor, scatterer: scatterer, elementOf: elementOf, atomicWeight: atomicWeight, resolveSG: resolveSG, resolveFileSG: resolveFileSG, sgText: sgText,
     phaseByKey: phaseByKey, cellOf: cellOf, siteOf: siteOf, coordRole: coordRole, syncSites: syncSites, syncTemplate: syncTemplate,
     isSizeParam: isSizeParam, toDisplay: toDisplay, fromDisplay: fromDisplay, instrumentParamsFor: instrumentParamsFor, dsNames: dsNames, phaseNames: phaseNames, profileNames: profileNames, namesFor: namesFor, isVariable: isVariable, remap: remap, remapAll: remapAll,
     shareable: shareable, isShared: isShared, setShared: setShared, isApart: isApart, setApart: setApart, shareOf: shareOf, limitsOf: limitsOf, setLimit: setLimit, clearLimit: clearLimit,

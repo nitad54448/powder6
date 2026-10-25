@@ -46,7 +46,45 @@ async function loadScatteringTables(baseDir = SHARKO_SCATTER_DIR) {
     if ((index.files || []).some(f => f.name === 'neutron.json')) {
         neutron = await fetch(`${baseDir}/neutron.json`).then(r => r.ok ? r.json() : null);
     }
-    return { index, xray, neutron };
+    let anomalous = null, anomalousError = '';
+    if (index.anomalous) {
+        try {
+            const response = await fetch(`${baseDir}/${index.anomalous}`);
+            if (!response.ok) throw new Error(`${baseDir}/${index.anomalous}: ${response.status}; required for automatic anomalous scattering.`);
+            anomalous = await response.json();
+        } catch (error) { anomalousError = error.message; }
+    }
+    return { index, xray, neutron, anomalous, anomalousError };
+}
+
+/** Energy-dependent anomalous corrections f′ and f″, already excluding f0/Z. */
+function normalizeAnomalousTable(doc) {
+    const out = new Map();
+    for (const [symbol, item] of Object.entries(doc || {})) {
+        if (!/^[A-Z][a-z]?$/.test(symbol)) continue;
+        if (!item || !Array.isArray(item.table) || item.table.length < 2) throw new Error(symbol + ': missing anomalous scattering rows.');
+        let previous = 0;
+        const rows = item.table.map(row => {
+            if (!Array.isArray(row) || row.length !== 3 || !row.every(Number.isFinite) || !(row[0] > 0) || row[0] < previous || row[2] < 0) throw new Error(symbol + ': invalid anomalous scattering row.');
+            previous = row[0]; return row.slice();
+        });
+        out.set(symbol.toUpperCase(), {symbol, rows, source: String(item.source || 'Chantler')});
+    }
+    if (!out.size) throw new Error('No anomalous scattering tables found.');
+    return out;
+}
+function interpolateAnomalous(table, element, wavelength) {
+    const key = String(element).toUpperCase(), item = table && table.get(key === 'D' ? 'H' : key);
+    if (!item) throw new Error('No anomalous scattering table for ' + element + '.');
+    const energyEV = 12398.419843320025 / wavelength, rows = item.rows, n = rows.length;
+    if (!(wavelength > 0) || !Number.isFinite(energyEV) || energyEV < rows[0][0] || energyEV > rows[n-1][0]) throw new Error(element + ': photon energy is outside the anomalous table range; no extrapolation.');
+    // Upper bound selects the post-edge row at a duplicated exact energy.
+    let lo = 0, hi = n;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (rows[mid][0] <= energyEV) lo = mid + 1; else hi = mid; }
+    const a = rows[Math.max(0, lo-1)];
+    if (a[0] === energyEV || lo === n) return [a[1], a[2]];
+    const b = rows[lo], t = (energyEV-a[0]) / (b[0]-a[0]);
+    return [a[1]+t*(b[1]-a[1]), a[2]+t*(b[2]-a[2])];
 }
 
 /** f(stol) = c + sum a_i exp(-b_i stol^2). */
@@ -131,5 +169,5 @@ function makeFormFactor(tables, options = {}) {
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { SHARKO_SCATTERERS_VERSION, loadScatteringTables, evaluateGaussian,
-                       verifyScatteringTable, makeFormFactor, SHARKO_SCATTER_DIR };
+                       verifyScatteringTable, makeFormFactor, normalizeAnomalousTable, interpolateAnomalous, SHARKO_SCATTER_DIR };
 }

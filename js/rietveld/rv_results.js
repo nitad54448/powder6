@@ -254,6 +254,11 @@ RV.results = (function () {
       L.push('width units\tU,V,W: Gaussian variance (cdeg²); X,Y,Z: Lorentzian width (cdeg); size: nm; strain: ppm');
       L.push('lambda1\t' + i.lambda1 + (i.ratio > 0 && i.lambda2 > 0 ? '\nlambda2\t' + i.lambda2 + '\nratio\t' + i.ratio : ''));
       L.push('radiation\t' + i.radiation + '\npolarisation K\t' + St.polK(i));
+      var an=d.stats && d.stats.anomalousData || St.anomalousFor(d);
+      L.push('anomalous scattering\t'+(an.enabled?'enabled':'disabled')+'\tsource: '+an.source+'\tlambda1: '+an.wavelength+' A');
+      if(an.interpolation && an.enabled)L.push('anomalous interpolation\t'+an.interpolation+'\tenergy (eV): '+an.energyEV);
+      if(an.error)L.push('anomalous scattering unavailable\t'+an.error);
+      if(Object.keys(an.map || {}).length){L.push('anomalous element\tf_prime (electrons)\tf_double_prime (electrons)');Object.keys(an.map).sort().forEach(function(el){L.push(el+'\t'+an.map[el][0]+'\t'+an.map[el][1]);});}
       L.push('fitted range\t' + i.tthMin + '\t' + i.tthMax + '\npoints\t' + (s ? s.n : 0));
       if (s) {
         L.push('Rp %\t' + pct(s.Rp) + '\nRwp %\t' + pct(s.Rwp) + '\nRexp %\t' + pct(s.Rexp) + '\nchi2\t' + ui.fmt(s.fitted ? s.chi2red : s.gof, 6));

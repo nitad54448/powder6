@@ -132,6 +132,8 @@ RV.fitHistory = (function () {
     if(Array.isArray(inst.bkgX))ikv.push(['Background anchors (2θ)',inst.bkgX.map(num).join(', ') || 'none']);
     if(Array.isArray(inst.excl))ikv.push(['Excluded regions (2θ)',inst.excl.map(function(x){return num(x[0])+'–'+num(x[1]);}).join(', ') || 'none']);
     out.push({title:'Instrument and background',kv:ikv});
+    var an=st.anomalousData;
+    if(an)out.push({title:'Anomalous scattering',kv:[['Enabled',an.enabled],['Source',an.source],['Wavelength (A)',an.wavelength],['Energy (eV)',an.energyEV],['Interpolation',an.interpolation || 'none']],head:['Element','f′ (electrons)','f″ (electrons)'],rows:Object.keys(an.map || {}).sort().map(function(el){return [el,an.map[el][0],an.map[el][1]];})});
     return out;
   }
   function solutionSections(kind,v){

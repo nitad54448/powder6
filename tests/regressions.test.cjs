@@ -9,7 +9,8 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const database = JSON.parse(read('sg/all.json'));
 const tables = {
   xray: JSON.parse(read('scatters/xray_wk1995_ions.json')),
-  neutron: JSON.parse(read('scatters/neutron.json'))
+  neutron: JSON.parse(read('scatters/neutron.json')),
+  anomalous: JSON.parse(read('scatters/anomalous_chantler.json'))
 };
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -27,7 +28,7 @@ function app(withTables = true) {
     } }
   });
   context.window = context;
-  for (const file of ['constants', 'crystal', 'profile', 'wppf_linear', 'atomic_constraints', 'wyckoff_limits', 'distance_rules', 'atom_restraints', 'molecule_rules', 'rietveld_core',
+  for (const file of ['constants', 'crystal', 'profile', 'scatterers', 'wppf_linear', 'atomic_constraints', 'wyckoff_limits', 'distance_rules', 'atom_restraints', 'molecule_rules', 'rietveld_core',
     'cif_reader', 'data_io', 'parsers', 'cif_structure', 'sg_convert']) {
     vm.runInContext(read('js/' + file + '.js'), context, { filename: file + '.js' });
   }
@@ -451,6 +452,8 @@ test('Rietveld rejects missing factors in the UI and fit core; zero neutron leng
   const a = model(); a.S.tables = null;
   assert.match(a.state.calculationIssue(), /Missing scattering factors/);
   assert.throws(() => a.state.jobFor(a.ds), /Missing scattering factors/);
+  // Isolate the core's missing-f0 validation from the separate anomalous-table check.
+  a.ds.inst.anomalousEnabled=false;
   const result = a.core.refine(a.state.problemFor([a.ds]), { evaluateOnly: true });
   assert.equal(result.ok, false); assert.match(result.msg, /Missing X-ray scattering factor/);
   a.state.setCalculation('wppf');
@@ -1197,6 +1200,7 @@ test('excluded zones that are not applied are kept in projects and restore point
 
 test('anomalous dispersion enters the Rietveld structure factors, Friedel-averaged, from the instrument of the dataset', () => {
   const a = model(), ds = a.ds;
+  a.state.setInstrument([ds],{anomalous:'Si 0 0, Na 0 0'});
   const before = a.core.evaluate(a.state.problemFor([ds]), 0).phases[0].refl.find(r => r.inRange);
   a.state.setInstrument([ds], { anomalous: 'si -0.3 0.4; ' });
   assert.equal(ds.inst.anomalous, 'Si -0.3 0.4', 'the text is cleaned');
@@ -1695,4 +1699,68 @@ test('removing an atom drops a constraint equation whole, with its text', () => 
   const a=app(),AC=a.context.AtomicConstraints,gone=[];
   const out=AC.withoutAtom([{kind:'sum',component:'occ',atoms:['A','B','C'],mult:[1,1,1],total:1},{kind:'equiv',component:'B',atoms:['A','C'],mult:[1,1]}],'B',gone);
   assert.equal(out.length,1);assert.equal(out[0].kind,'equiv');assert.equal(gone.length,1);assert.match(gone[0],/= 1$/);
+});
+
+test('automatic anomalous corrections follow wavelength and the enable flag, and never affect neutrons',()=>{
+  const a=model(),ds=a.ds;
+  assert.equal(ds.inst.anomalousEnabled,true);
+  const enabled=a.state.problemFor([ds]).datasets[0];
+  assert.equal(enabled.anomalousData.source,'Chantler');assert.ok(enabled.anomalous.SI[0]>.2 && enabled.anomalous.SI[1]>.3);
+  const first=a.state.calcFor(ds);
+  a.state.setInstrument([ds],{anomalousEnabled:false});
+  assert.deepEqual(plain(a.state.problemFor([ds]).datasets[0].anomalous),{});
+  const off=a.state.calcFor(ds);assert.notStrictEqual(first,off);assert.ok(Array.from(first.ycalc).some((x,i)=>Math.abs(x-off.ycalc[i])>1e-8));
+  a.state.setInstrument([ds],{anomalousEnabled:true,lambda1:.7093,lambda2:0,ratio:0});
+  assert.notDeepEqual(plain(a.state.problemFor([ds]).datasets[0].anomalous.SI),plain(enabled.anomalous.SI));
+  a.state.setInstrument([ds],{radiation:'neutron'});
+  const neutron=a.state.problemFor([ds]).datasets[0];assert.deepEqual(plain(neutron.anomalous),{});assert.equal(neutron.anomalousData.enabled,false);
+});
+test('missing anomalous data blocks enabled X-ray fits but disabling corrections permits the comparison',()=>{
+  const a=model(),copy={...tables};delete copy.anomalous;a.state.setTables(copy);
+  assert.match(a.state.calculationIssue([a.ds]),/anomalous.*unavailable/i);
+  a.state.setInstrument([a.ds],{anomalousEnabled:false});assert.equal(a.state.calculationIssue([a.ds]),'');
+});
+test('used anomalous corrections survive History and projects and appear in reports independently of current tables',()=>{
+  const a=model(),H=a.context.RV.fitHistory,ticket=H.begin([a.ds],false),job=a.state.jobFor(a.ds),result=a.core.refine(job);
+  assert.ok(result.ok,result.msg);a.state.applyResult([a.ds],result,job,false);
+  const used=plain(a.ds.stats.anomalousData),record=H.complete(ticket,[a.ds],false);
+  const report=a.context.RV.results.reportText([a.ds]);assert.match(report,/anomalous scattering\tenabled\tsource: Chantler/);assert.ok(report.includes('SI\t'+used.map.SI[0]+'\t'+used.map.SI[1]));
+  assert.ok(H.runReport(record).includes('Anomalous scattering'));
+  a.state.setInstrument([a.ds],{anomalousEnabled:false});
+  assert.match(a.context.RV.results.reportText([a.ds]),/anomalous scattering\tdisabled/);
+  const changed=JSON.parse(JSON.stringify(tables.anomalous));changed.Si.table.forEach(row=>row[1]+=2);
+  a.state.setTables({...tables,anomalous:changed});
+  H.withResult(record,()=>{assert.deepEqual(plain(a.state.problemFor(a.state.selected()).datasets[0].anomalous),used.map);assert.ok(a.context.RV.results.reportText(a.state.selected()).includes('SI\t'+used.map.SI[0]));});
+  assert.equal(a.ds.inst.anomalousEnabled,false);
+  a.state.commitProject(a.state.prepareProject(JSON.parse(a.state.projectJSON([]))));
+  assert.equal(a.S.datasets[0].inst.anomalousEnabled,false);
+  const saved=H.find(record.id);assert.deepEqual(plain(saved.datasets[0].stats.anomalousData),used);
+  const legacy=plain(saved);legacy.datasets.forEach(d=>{delete d.stats.anomalousData;delete d.inst.anomalousEnabled;});
+  H.withResult(legacy,()=>{const old=a.state.problemFor(a.state.selected()).datasets[0];assert.deepEqual(plain(old.anomalous),{});assert.equal(old.anomalousData.enabled,false);assert.match(a.context.RV.results.reportText(a.state.selected()),/anomalous scattering\tdisabled\tsource: Saved legacy input/);});
+});
+
+test('simulation uses the selected anomalous factors in every starting method and preserves the working setup',()=>{
+  let reference;
+  for(const method of ['rietveld','wppf','lebail']){
+    const a=model();a.state.setCalculation(method);
+    const phase=a.S.phases[0],inst=a.state.instCopy(a.ds.inst);
+    a.S.disabledPhases=[phase.key];
+    const before=plain({method:a.S.calculation,phases:a.S.phases,inst:a.ds.inst,p:a.ds.p,disabled:a.S.disabledPhases});
+    const options={phases:[phase.key],tthMin:10,tthMax:80,step:.25,peak:0,bkg:3,noise:false,seed:7};
+    const on=a.state.simulate({...options,inst:{...inst,anomalousEnabled:true}});
+    const off=a.state.simulate({...options,inst:{...inst,anomalousEnabled:false}});
+    assert.equal(on.sim.anomalousData.source,'Chantler');assert.deepEqual(Object.keys(on.sim.anomalousData.map),['SI']);
+    assert.deepEqual(plain(off.sim.anomalousData.map),{});
+    assert.ok(Array.from(on.y).some((y,i)=>Math.abs(y-off.y[i])>1e-8),method+': the flag must change the generated observations');
+    assert.ok(Math.max(...on.y)>options.bkg,method+': the chosen phase must be simulated even if disabled for fitting');
+    const mo=a.state.simulate({...options,inst:{...inst,lambda1:.7093,anomalousEnabled:true}});
+    assert.notDeepEqual(plain(mo.sim.anomalousData.map.SI),plain(on.sim.anomalousData.map.SI));
+    const neutronOn=a.state.simulate({...options,inst:{...inst,radiation:'neutron',anomalousEnabled:true}});
+    const neutronOff=a.state.simulate({...options,inst:{...inst,radiation:'neutron',anomalousEnabled:false}});
+    assert.equal(neutronOn.sim.anomalousData.enabled,false);assert.deepEqual(Array.from(neutronOn.y),Array.from(neutronOff.y));
+    assert.deepEqual(plain({method:a.S.calculation,phases:a.S.phases,inst:a.ds.inst,p:a.ds.p,disabled:a.S.disabledPhases}),before);
+    if(reference)assert.deepEqual(Array.from(on.y),reference,method+': simulation must not depend on the active fit method');else reference=Array.from(on.y);
+    a.state.insertDatasets([on],{estimate:false});a.state.commitProject(a.state.prepareProject(JSON.parse(a.state.projectJSON([]))));
+    assert.deepEqual(plain(a.S.datasets[0].sim.anomalousData),plain(on.sim.anomalousData));
+  }
 });

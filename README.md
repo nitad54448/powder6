@@ -1,6 +1,6 @@
 # Powder 6
 
-Version **2.37.2**, 25 October 2026. See [corrections](CHANGELOG.md).
+Version **2.39.0**, 25 October 2026. See [corrections](CHANGELOG.md).
 
 Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by **Rietveld**, **Le Bail** or **WPPF**, fitted individually or in one global fit, with **structure solution** from the extracted intensities. Everything runs locally; nothing is uploaded.
 
@@ -73,6 +73,7 @@ Supporting files loaded locally. Without them the program still starts, but lose
 | `lib/jszip.min.js` | compressed projects, `.brml` and `.rasx` files are unavailable |
 | `lib/moyo/moyo_wasm.js` and `lib/moyo/moyo_wasm_bg.wasm` | Find higher symmetry cannot run; the powder-intensity Test remains available |
 | `absorption.json` | automatic elemental attenuation estimates are unavailable; restore the file beside index.html and reload |
+| `scatters/anomalous_chantler.json` | enabled anomalous scattering cannot be calculated; restore the file or disable the correction for comparison |
 
 ## Typical workflow
 
@@ -84,6 +85,8 @@ Supporting files loaded locally. Without them the program still starts, but lose
 6. Press **FIT** or F9 from any view. Inspect the **Le Bail**, **WPPF** or **Rietveld** results tab and choose a completed run. **Use as start** restores that run into the working setup; **Keep** protects it. Save a compressed `.project` file from File (Ctrl+S): after the options, a Save As dialog lets you choose the name and folder; browsers without one download it to their download folder, and the message names the file.
 
 On the pattern, Ctrl+click places a background anchor at the cursor's angle and height; right-drag an anchor to move it. Ctrl+Shift+drag still marks exclusions. Filled magenta anchors are refinable, hollow grey anchors are fixed, and editing an anchor shows a yellow vertical guide. Edit exact X/Y coordinates and the Y refinement flag together in the dataset tab's **Background** group. Plots has separate **Anchors**, **Backgnd**, **Phases**, **Refl** and **Subtract** controls. Autoscale appears after zooming or panning and hides after resetting either plot. Anchors is greyed out when no plotted dataset uses spline anchors, in a multi-dataset Overview, or during background subtraction; its checked preference is preserved. Chebyshev backgrounds use coefficients rather than anchor points; changing the fitted range re-expresses those coefficients to preserve the curve at retained angles. Each dataset has independent **Sample** and **Resolution** refinement checkboxes. Each method retains its own background and fitted results; Le Bail and WPPF results display the retained Rietveld atomic model as unused.
+
+**Anomalous scattering** defaults on for X-rays and is disabled for neutrons. Powder 6 linearly interpolates the bundled Chantler f′ and f″ arrays in photon energy at the dataset's λ1. Untick the checkbox to compare against ordinary f0-only Rietveld calculations. The table, copied from Hephaestus's `data/scattering.json`, covers H–U; values outside its energy range are not extrapolated. The correction is elemental, including for ionic form-factor labels. Text/PDF reports and History retain the source, wavelength, energy and exact factors used by a fit. Legacy explicitly supplied factors remain readable; applying Instrument replaces them with the automatic choice.
 
 ## Atomic-model symmetry
 
@@ -100,6 +103,10 @@ The atomic distance tolerance defaults to **0.2 Å**; the report also scans **0.
 The workspace has two independently navigable panels, inspired by Powder5. **Commands** contains **Datasets, Phases, Method, Structure, Settings**. **Results** contains **Plots, Le Bail, WPPF, Rietveld, Structure, Log, History**. Drag the wider divider by its visible grip to resize them; arrow keys resize it too, and **⇄ Panels** swaps their positions. Dataset checkboxes under **Datasets for fitting and plotting** define one target set for fitting and plotting. Use **Select all**, **Clear selection** or range selection in the Datasets accordion; **Edit** on each row changes its name and colour. Choose Individual / Global and fit from the same accordion. Choose **Overview** or **Inspect one dataset** for large series.
 
 **About** is immediately left of **⇄ Panels**. In Phases, **Edit** beside the colour picker renames the phase; each row in **Choose a phase** has a remove icon. **Delete selected** sits beside the dataset scope menu. Exclusions are inside the active dataset after Background. Profile loads and saves calibrations above the coefficients and detects their profile type automatically.
+
+In **Instrument**, hover the **Monochromator 2θ** label or hover/focus its angle field to see Bragg angles for common graphite, quartz, Ge, Si and LiF reflections at the current **λ1**. The tooltip updates when the source or wavelength changes and lists only accessible reflections. Click any row to fill the angle field, or focus its crystal button and press Enter or Space. Fit-from/to fields are omitted from Instrument; use the dataset Exclusions section to omit regions. Existing dataset range limits are preserved.
+
+**Simulate a pattern** lists only phases with atoms. A single eligible phase is shown by name and included automatically; with several eligible phases, Include checkboxes choose the contributions. It shares Instrument's wavelength-dependent monochromator picker and Anomalous scattering checkbox (disabled for neutrons). Simulated X-ray observations use the chosen corrections even when the active fit method is WPPF or Le Bail, and the generated dataset retains that setting and the factors used.
 
 Choose the instrument profile only in the dataset's **Instrument resolution → Profile** control. TCH is the default; pseudo-Voigt and split pseudo-Voigt also use independent sample size and strain for each phase contribution. There is one TCH choice. Phases contains the crystallographic and sample-broadening models. `absorption.json` loads automatically at startup. The copy controls name their source dataset and copy matching parameter values and refinement flags; they are hidden with fewer than two datasets. FIT runs the method selected in **Commands → Method**, without a separate Next calculation inspector.
 

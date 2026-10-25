@@ -6,7 +6,7 @@
  *  'settings', 'theme', 'tab', 'tables', 'shared'.
  */
 var RV = window.RV || (window.RV = {});
-RV.version = '2.37.2 (25 oct 2026)';
+RV.version = '2.39.0 (25 oct 2026)';
 
 RV.bus = (function () {
   'use strict';
@@ -404,7 +404,7 @@ RV.ui = (function () {
     else { busyStart = 0; busyText = ''; }
   }
 
-  // ---------------------------------------------------------------- the help of a "?" button (.help-q)
+  // ---------------------------------------------------------------- help on buttons, labels and fields
   /* A popup instead of the native tooltip, which browsers cut short: the text of the button's title (paragraphs at blank
      lines), or its data-help-html (markup written by the app). It opens on hover or focus, stays while the pointer is on
      it (long help scrolls), and lives in the open dialog when the button is in one (a modal dialog is above the page). */
@@ -425,8 +425,12 @@ RV.ui = (function () {
     var html = btn.getAttribute('data-help-html'), text = btn.getAttribute('data-help') || '';
     if (!html && !text) return;
     var pop = helpPop(btn.closest('dialog[open]') || document.body);
-    if (helpFor && helpFor !== btn) hideHelp(0);
+    if (helpFor && helpFor !== btn) {
+      helpFor.removeAttribute('aria-describedby');
+      document.querySelectorAll('.help-pop').forEach(function(other){if(other!==pop)other.hidden=true;});
+    }
     pop.innerHTML = html || text.split(/\n\s*\n/).map(function (p) { return '<p>' + esc(p.trim()) + '</p>'; }).join('');
+    pop.setAttribute('role',pop.querySelector('button')?'group':'tooltip');
     pop.style.maxHeight = ''; pop.hidden = false; pop.scrollTop = 0; helpFor = btn; btn.setAttribute('aria-describedby', pop.id);
     // below the button, or above it when that side has more room; too long for either side, it scrolls
     var r = btn.getBoundingClientRect(), below = window.innerHeight - r.bottom - 14, above = r.top - 14, down = pop.offsetHeight <= below || below >= above;
@@ -443,9 +447,9 @@ RV.ui = (function () {
       helpFor = null;
     }, delay || 0);
   }
-  document.addEventListener('pointerover', function (e) { var b = e.target.closest && e.target.closest('.help-q'); if (b) showHelp(b); });
-  document.addEventListener('pointerout', function (e) { var b = e.target.closest && e.target.closest('.help-q'); if (b && b === helpFor && !b.contains(e.relatedTarget)) hideHelp(150); });
-  document.addEventListener('focusin', function (e) { var b = e.target.closest && e.target.closest('.help-q'); if (b) showHelp(b); else if (helpFor && !(e.target.closest && e.target.closest('.help-pop'))) hideHelp(0); });
+  document.addEventListener('pointerover', function (e) { var b = e.target.closest && e.target.closest('.help-q,[data-help],[data-help-html]'); if (b) showHelp(b); });
+  document.addEventListener('pointerout', function (e) { var b = e.target.closest && e.target.closest('.help-q,[data-help],[data-help-html]'); if (b && b === helpFor && !b.contains(e.relatedTarget)) hideHelp(150); });
+  document.addEventListener('focusin', function (e) { var b = e.target.closest && e.target.closest('.help-q,[data-help],[data-help-html]'); if (b) showHelp(b); else if (helpFor && !(e.target.closest && e.target.closest('.help-pop'))) hideHelp(0); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && helpFor) hideHelp(0); });
   window.addEventListener('scroll', function (e) { if (helpFor && !(e.target.closest && e.target.closest('.help-pop'))) hideHelp(0); }, true);
 
