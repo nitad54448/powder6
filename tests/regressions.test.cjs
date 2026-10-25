@@ -29,7 +29,7 @@ function app(withTables = true) {
   });
   context.window = context;
   for (const file of ['constants', 'crystal', 'profile', 'scatterers', 'wppf_linear', 'atomic_constraints', 'wyckoff_limits', 'distance_rules', 'atom_restraints', 'molecule_rules', 'rietveld_core',
-    'cif_reader', 'data_io', 'parsers', 'cif_structure', 'sg_convert']) {
+    'cif_reader', 'data_io', 'parsers', 'cif_structure', 'sg_convert', 'sg_subgroups']) {
     vm.runInContext(read('js/' + file + '.js'), context, { filename: file + '.js' });
   }
   context.SG_DATABASE = database;
@@ -231,6 +231,30 @@ test('Find higher symmetry names the space group of structures given in P1, with
   const d=cases[0][1].map(x=>({...x}));d.find(x=>x.type==='Cl').z+=0.03;
   let f=find(d,cub(5.64),0.2);assert.equal(f.r.group.number,225);assert.ok(f.c.maxShift>0.1 && f.c.maxShift<0.2,'maxShift '+f.c.maxShift);
   f=find(d,cub(5.64),0.1);assert.notEqual(f.r.group.number,225);
+});
+test('Subgroups of Fm-3m: every maximal subgroup is named by the engine and is a subgroup in the transformation found', async () => {
+  const a=app(),St=a.state,K=a.context.SGConvert,SB=a.context.Subgroups;K.useWasm(await moyo());
+  const groups=[];const E=a.context.SG_ENGINE;for(let n=1;n<=230;n++){const s=E.listSettings(n),pick=d=>s.find(x=>x.setting_description===d);groups.push(Object.assign({},St.resolveSG(n,(pick('standard')||pick('b1')||pick('b')||pick('origin choice 2')||s[0]).hall)));}
+  const cub={a:5.64,b:5.64,c:5.64,alpha:90,beta:90,gamma:90};
+  const names=(number,hall,cell=cub)=>{const g=St.resolveSG(number,hall);return SB.enumerate(g.ops).map(c=>{
+    const q=SB.probe(c,cell);let r;for(const tol of SB.TOLERANCES){const x=K.findSymmetryWasm(q.atoms,q.ops,q.cell,groups,{tol,reportAll:true});if(x.group&&x.ops.length===c.nrep){r=x;break;}}
+    assert.ok(r,'no tolerance names '+c.kind+c.index);const t=SB.compose(c,r.P,r.p);
+    return {kind:c.kind,index:c.index,number:r.group.number,symbol:r.group.symbol,rel:K.relation(g.ops,r.group.ops,t.P,t.p),nops:r.ops.length,nrep:c.nrep};});};
+  const list=names(225);
+  const has=(sym,idx,kind)=>list.some(x=>x.symbol===sym && x.index===idx && x.kind===kind);
+  for(const x of list)assert.equal(x.rel,'subgroup',x.symbol+' index '+x.index);
+  for(const x of list)assert.equal(x.nops,x.nrep,x.symbol+' operators');
+  assert.ok(has('I4/mmm',3,'t'),'I4/mmm '+JSON.stringify(list.map(x=>x.kind+x.index+x.symbol)));
+  assert.ok(has('Fm-3',2,'t')||list.some(x=>x.number===202&&x.index===2),'Fm-3');
+  assert.ok(list.some(x=>x.number===216&&x.index===2),'F-43m');assert.ok(list.some(x=>x.number===209&&x.index===2),'F432');
+  assert.ok(list.some(x=>x.number===166&&x.index===4),'R-3m');
+  assert.ok(list.some(x=>x.number===221&&x.index===4&&x.kind==='k'),'Pm-3m');
+  // other lattices: every subgroup named is a subgroup, and the obvious ones are there
+  const hex=names(194,undefined,{a:3.2,b:3.2,c:5.2,alpha:90,beta:90,gamma:120}),mono=names(14,undefined,{a:5,b:6,c:7,alpha:90,beta:100,gamma:90}),orth=names(62,undefined,{a:5,b:6,c:7,alpha:90,beta:90,gamma:90});
+  for(const x of [...hex,...mono,...orth])assert.equal(x.rel,'subgroup',x.symbol+' index '+x.index);
+  assert.ok(hex.some(x=>x.number===186&&x.index===2),'P63mc');assert.ok(hex.some(x=>x.number===176&&x.index===2),'P63/m');assert.ok(hex.some(x=>x.number===63&&x.index===3),'Cmcm');
+  assert.ok(mono.some(x=>x.number===4&&x.index===2),'P21');assert.ok(mono.some(x=>x.number===2&&x.index===2),'P-1');
+  assert.ok(orth.some(x=>x.number===33),'Pna21');assert.ok(orth.some(x=>x.number===26),'Pmc21');
 });
 test('Find higher symmetry treats nearly equal refined occupancies as one species and searches mixed sites', async () => {
   const a=app(),St=a.state,K=a.context.SGConvert;K.useWasm(await moyo());

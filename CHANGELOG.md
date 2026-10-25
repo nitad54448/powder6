@@ -2,6 +2,14 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.41.0 — 25 October 2026
+
+1. **Subgroups….** Structure → Space group → ADDSYM has a Subgroups… button beside Find higher symmetry…. It lists the maximal subgroups of the phase's space group, translationengleiche (the lattice kept, the point group reduced: Fm-3m → I4/mmm, index 3) and klassengleiche (the point group kept, the lattice reduced to a sublattice of index 2, 3 or 4, so the cell grows: Fm-3m → Pm-3m). Each row gives the type, the index, the space group in its standard setting, the new axes and origin, and the new cell. Convert… then opens with that group and transformation: the atoms are kept and the sites the lower symmetry no longer relates are split.
+2. **How the list is made.** `js/sg_subgroups.js` works from the operators of the setting, with no table of groups: it takes the maximal subgroups of the point group (t) and the invariant sublattices with a section of the group over them (k), keeps the maximal ones, and has the bundled Moyo engine name each one from two atoms at general positions under its operators. The list of Fm-3m agrees with the International Tables (F432, F-43m, Fm-3 at index 2; I4/mmm at 3; R-3m, Pm-3m and Pn-3m at 4).
+3. **A correction in Convert….** A transformation to a larger cell was called "another setting of the same group" when the new group matched the old operators: the old lattice was not compared with the new one. The old group is now taken as inside the new one only when its lattice is.
+4. **Clearer Convert… labels.** The Find box, which only shortens the New space group list, is Filter list; the Transformation choice Find it / Enter it is Axes and origin: Work them out / Enter them, with a hint on each, and the dialog introduction points to Subgroups….
+5. **Constraints on a phase added under another method.** A phase added while Le Bail or WPPF was active was missing from the saved Rietveld calculation, and setting an atomic constraint on it failed with "No value for constrained parameter …". Calculations that do not hold the phase are skipped; switching to Rietveld takes their values from the phase.
+
 ## 2.40.0 — 25 October 2026
 
 1. **Dependent parameters follow their tick.** In Parameters, a parameter that follows another (an equivalence constraint, or a parameter link) stays disabled but now shows the refine tick of the parameter it follows, instead of an unchecked box.

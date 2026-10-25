@@ -1074,7 +1074,7 @@ RV.solve = (function () {
         block('sgt-addsym', 'ADDSYM · atomic model',
           '<p class="hint">Find symmetry present in the atomic positions, then preview conversion to the detected space group. This uses the starting model, a dataset’s Rietveld model, or after a Le Bail or WPPF fit the dataset’s refined cell with its atoms; it does not need extracted intensities.</p>' +
           '<div class="form-grid sv-form">'+select('sv-sym-phase','Phase',St.currentPhase() && St.currentPhase().key,S.phases.map(function(p){return [p.key,p.name+' · '+St.sgText(p.sg)];}),'Choose a phase with atoms.','')+'</div>' +
-          '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-addsym" data-sv="find-symmetry" title="Find higher symmetry of the selected atomic model">Find higher symmetry…</button></p>',true,null,'sub'), false) +
+          '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-addsym" data-sv="find-symmetry" title="Find higher symmetry of the selected atomic model">Find higher symmetry…</button><button type="button" id="sv-subgroups" data-sv="find-subgroups" title="List the maximal subgroups of the space group of the phase (translationengleiche and klassengleiche) and convert the atoms to one of them">Subgroups…</button></p>',true,null,'sub'), false) +
       block('wppf-cf', 'Charge flipping',
           formulaRow('cf') +
           '<p class="hint">Charge flipping (Oszlányi and Sütő 2004) on the extracted intensities, on the GPU where there is one, otherwise on the CPU. The peaks of the map, put on the origin of the space group and reduced to the asymmetric unit, become sites; the formula unit names them.</p>' +
@@ -1420,6 +1420,7 @@ RV.solve = (function () {
     switch (b.getAttribute('data-sv')) {
       case 'to-wppf': { var ph = phase(); if (ph) RV.cmd.setMethod(ph, 'wppf'); break; }
       case 'sgt': runSgt(); break;
+      case 'find-subgroups': {var pick=$('#sv-sym-phase'),sp=pick && St.phaseByKey(pick.value);if(sp && !S.busy)RV.phasesTab.findSubgroups(sp);break;}
       case 'find-symmetry': {var select=$('#sv-sym-phase'),ph=select && St.phaseByKey(select.value);if(ph && !S.busy)RV.phasesTab.findSymmetry(ph);break;}
       case 'density-reset': if(typeof Density3D!=='undefined')Density3D.resetView(); break;
       case 'density-map': saveDensityMap(); break;

@@ -360,7 +360,7 @@ RV.phasesTab = (function () {
     var model = symmetryModel(ph, {source:f.source || 'start'});
     var cell = model.cell, norm = function (c) { return normaliseCell(c, sg.system, sg.uniqueAxis); }, t, others = 0;
     if (f.mode === 'auto') {
-      if (sg.hall === ph.sg.hall) return { sg: sg, idle: true, error: ph.name + ' is in ' + St.sgText(sg) + (sg.setting ? ', setting ' + sg.setting : '') + ' now. Choose the new space group above (Find narrows the list); to move only the origin or the axes within this group, choose Enter it.' };
+      if (sg.hall === ph.sg.hall) return { sg: sg, idle: true, error: ph.name + ' is in ' + St.sgText(sg) + (sg.setting ? ', setting ' + sg.setting : '') + ' now. Choose the new space group above (Filter list narrows it); to move only the origin or the axes within this group, choose Enter them.' };
       var found = K.findTransforms(ph.ops, sg.ops, cell, { normalise: norm });
       if (!found.length) return { sg: sg, error: 'No change of axes (entries −1, 0, 1) and origin (in eighths) relates ' + St.sgText(ph.sg) + ' and ' + St.sgText(sg) +
         ' with a cell that fits the ' + sg.system + ' metric within 3 %. The new group must be a subgroup, a supergroup or another setting of the old one, in a compatible cell; otherwise enter the transformation (for example a centred or doubled cell) by hand.' };
@@ -422,10 +422,10 @@ RV.phasesTab = (function () {
     if (typeof SGConvert === 'undefined' || !S.sgReady) { ui.toast('The space-group database is not loaded.', 'warn'); return; }
     var key = ph.key, last = null;
     var fields = [
-      { key: 'find', label: 'Find', type: 'text', value: '', hint: 'A number or a symbol (14, P21/n, Fm-3m, Pnnn:2): the list below keeps the matches.' },
+      { key: 'find', label: 'Filter list', type: 'text', value: '', hint: 'Only shortens the New space group list below: type a number or a symbol (14, P21/n, I4/mmm, Fm-3m, Pnnn:2) and it keeps the matches.' },
       { key: 'target', label: 'New space group', type: 'select', value: preset ? preset.hall : ph.sg.hall, options: St.allSettings().map(function (s) { var std = standardHalls().has(s.hall); return [s.hall, s.number + ' · ' + s.symbol + ' · ' + s.system + (s.setting && s.setting !== 'standard' ? ' · ' + s.setting : '') + (std ? ' · standard' : ''), std ? 'sg-std' : '']; }),
         hint: 'Every setting of the 230 groups; the standard setting of each is in bold and marked standard. A subgroup splits sites, a supergroup merges atoms the new symmetry relates, another setting changes only the axes.' },
-      { key: 'mode', label: 'Transformation', type: 'select', value: preset ? 'manual' : 'auto', options: [['auto', 'Find it'], ['manual', 'Enter it']] },
+      { key: 'mode', label: 'Axes and origin', type: 'select', value: preset ? 'manual' : 'auto', options: [['auto', 'Work them out'], ['manual', 'Enter them']], hint: 'Work them out: the program looks for the new axes and origin. Enter them: type them yourself, needed for centred or larger cells (Subgroups… fills them in).' },
       { key:'source',label:'Atomic model',type:'select',value:preset && preset.source || 'start',options:modelOptions(ph),hint:'The chosen model defines the converted phase starting atoms and cell.' },
       { key: 'basis', label: 'New axes a′, b′, c′', type: 'text', value: preset ? preset.basis : 'a,b,c', when: 'mode:manual', hint: 'In the old axes, e.g. a+b,-a+b,c or 2a,b,c.' },
       { key: 'shift', label: 'New origin', type: 'text', value: preset ? preset.shift : '0,0,0', when: 'mode:manual', hint: 'In the old axes, e.g. 1/8,1/8,1/8.' },
@@ -433,11 +433,11 @@ RV.phasesTab = (function () {
     ];
     function read(body) { var o = {}; fields.forEach(function (f) { var e = body.querySelector('[data-key="' + f.key + '"]'); o[f.key] = f.type === 'number' ? ui.parseNum(e.value) : e.value; }); o.occTol = preset && Number.isFinite(preset.occTol) ? preset.occTol : undefined; return o; }
     var res = await ui.prompt('Convert ' + ph.name + ' to another space group', fields, 'Convert',
-      'Now ' + esc(St.sgText(ph.sg)) + (ph.sg.setting ? ', ' + esc(ph.sg.setting) : '') + ', ' + ph.atoms.length + ' site' + (ph.atoms.length === 1 ? '' : 's') + '. The structure is expanded to the full cell, carried to the new axes and origin, and reduced again with the new symmetry.',
+      'Now ' + esc(St.sgText(ph.sg)) + (ph.sg.setting ? ', ' + esc(ph.sg.setting) : '') + ', ' + ph.atoms.length + ' site' + (ph.atoms.length === 1 ? '' : 's') + '. Pick the new group in the list (Filter list shortens it; Subgroups… in ADDSYM lists the groups this one can go to). The structure is expanded to the full cell, carried to the new axes and origin, and reduced again with the new symmetry.',
       { wide: true, after: '<div class="convert-preview" data-convert-preview aria-live="polite"></div>',
         onOpen: function (body) {
           var timer = 0, out = body.querySelector('[data-convert-preview]'), find = body.querySelector('[data-key="find"]'), pick = body.querySelector('[data-key="target"]');
-          // Find narrows the list to the matches and selects the setting the text names (P21/n -> P121/n1), else the first match
+          // Filter list narrows the list to the matches and selects the setting the text names (P21/n -> P121/n1), else the first match
           find.addEventListener('input', function () {
             var norm = function (s) { return String(s).replace(/\s+/g, '').toLowerCase(); }, q = norm(find.value), named = q ? St.resolveSG(find.value.trim()) : null, first = null, keep = false;
             Array.prototype.forEach.call(pick.options, function (o) {
@@ -460,7 +460,7 @@ RV.phasesTab = (function () {
           }
           body.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(update, 200); });
           body.addEventListener('change', function (e) {
-            // switching to Enter it starts from the transformation that was found
+            // switching to Enter them starts from the transformation that was found
             if (e.target.getAttribute('data-key') === 'mode' && e.target.value === 'manual' && last && last.t) {
               body.querySelector('[data-key="basis"]').value = SGConvert.formatBasis(last.t.P); body.querySelector('[data-key="shift"]').value = SGConvert.formatShift(last.t.p);
             }
@@ -688,6 +688,54 @@ RV.phasesTab = (function () {
     applyConversion(ph, plan);
   }
 
+  // ---------------------------------------------------------------- maximal subgroups (t and k), handed to Convert
+  /* The maximal subgroups of the space group of the phase, from its operators (js/sg_subgroups.js); the engine names each one
+     (a single atom at a general position under the subgroup operators) and gives the transformation to its standard setting.
+     The chosen one opens Convert… with that group, axes and origin, which splits the sites the lower symmetry no longer relates. */
+  async function findSubgroupsDialog(ph) {
+    if (typeof SGConvert === 'undefined' || typeof Subgroups === 'undefined' || !S.sgReady) { ui.toast('The space-group database is not loaded.', 'warn'); return; }
+    var key = ph.key, K = SGConvert, cands = Subgroups.enumerate(ph.ops), cell = St.cellOf(ph, ph.v), chosen = null, closed = false, rows = [];
+    if (!cands.length) { ui.toast(St.sgText(ph.sg) + ' has no subgroup: it is P1.', 'warn'); return; }
+    function listHTML(done) {
+      if (!rows.length) return '<p class="hint">' + (done ? 'No subgroup could be named.' : 'Naming ' + cands.length + ' subgroups…') + '</p>';
+      return '<div class="table-wrap"><table class="grid compact"><thead><tr><th></th><th>Type</th><th>Index</th><th>Space group</th><th>New axes a′, b′, c′</th><th>New cell</th></tr></thead><tbody>' + rows.map(function (r, i) {
+        return '<tr><td><input type="radio" name="sub-pick" data-sub-pick="' + i + '" aria-label="' + esc(St.sgText(r.group)) + '"' + (chosen === i ? ' checked' : '') + '></td><td>' + (r.kind === 't' ? 'translationengleiche' : 'klassengleiche') + '</td><td class="n">' + r.index + '</td><td><b>' + esc(St.sgText(r.group)) + '</b>' + (r.group.setting && r.group.setting !== 'standard' ? ' <span class="hint">' + esc(r.group.setting) + '</span>' : '') + (r.copies > 1 ? ' <span class="hint">(' + r.copies + ' equivalent choices of axes or origin; the first is shown)</span>' : '') + '</td><td><code>' + esc(K.formatBasis(r.P)) + '</code>; origin ' + esc(K.formatShift(r.p)) + '</td><td>' + esc(cellText(r.cell)) + '</td></tr>';
+      }).join('') + '</tbody></table></div>' + (done ? '<p class="hint">Maximal subgroups of ' + esc(St.sgText(ph.sg)) + ' (those of the International Tables, indices 2 to 4 for k); choose one and press Convert…, then repeat for the next step down. A subgroup keeps every atom: sites the lower symmetry no longer relates are split and refine independently. Rows of one group type that differ only by axes or origin are shown once.</p>' : '<p class="hint">Naming the others…</p>');
+    }
+    async function run(body) {
+      var out = body.querySelector('[data-sub-list]'), seen = {};
+      for (var i = 0; i < cands.length && !closed; i++) {
+        var c = cands[i], q = Subgroups.probe(c, cell), r;
+        try {
+          // the engine works to a tolerance: take the tightest at which it finds exactly the operators of the subgroup
+          var res = await K.symmetryJob(q.atoms, q.ops, q.cell, groupsForSearch(), { tol: 0.001, tolerances: Subgroups.TOLERANCES, lenTol: 1, angTol: 90 }).promise;
+          r = (res.filter(function (x) { return x.r && x.r.group && x.r.ops.length === c.nrep; })[0] || {}).r;
+        } catch (e) { if (closed || e.name === 'AbortError') return; r = null; }
+        if (!r) continue;
+        var t = Subgroups.compose(c, r.P, r.p), id = r.group.hall + '|' + c.kind + '|' + c.index;
+        if (K.relation(ph.ops, r.group.ops, t.P, t.p) !== 'subgroup') continue;
+        if (seen[id]) { seen[id].copies++; continue; }
+        seen[id] = { kind: c.kind, index: c.index, group: r.group, P: t.P, p: t.p, cell: K.transformCell(cell, t.P), copies: 1 };
+        rows.push(seen[id]);
+        if (chosen == null) chosen = 0;
+        out.innerHTML = listHTML(false);
+      }
+      if (!closed) out.innerHTML = listHTML(true);
+    }
+    var res = await ui.modal({ title: 'Subgroups of ' + ph.name + ' · ' + St.sgText(ph.sg), wide: true, body: '<div data-sub-list><p class="hint">Naming ' + cands.length + ' subgroups…</p></div>',
+      buttons: [{ label: 'Close', value: null }, { label: 'Convert…', primary: true, value: 'go' }],
+      onOpen: function (body) {
+        body.addEventListener('change', function (e) { var r = e.target.closest('[data-sub-pick]'); if (r) chosen = +r.getAttribute('data-sub-pick'); });
+        run(body);
+      } });
+    closed = true;
+    if (res !== 'go') return;
+    var pick = rows[chosen];
+    ph = St.phaseByKey(key);
+    if (!pick || !ph || busy()) { if (!pick) ui.toast('Choose a subgroup first.', 'warn'); return; }
+    convertDialog(ph, { hall: pick.group.hall, basis: K.formatBasis(pick.P), shift: K.formatShift(pick.p), tol: 0.1, source: 'start' });
+  }
+
   // the space-group browser (spacegroup_ui.js); Apply sets the space group of the phase it was opened for
   var browsing = null;
   function openBrowser(ph) {
@@ -817,5 +865,5 @@ RV.phasesTab = (function () {
     build();
   }
 
-  return { init: init, build: build, values: values, content: content, findSymmetry:findSymmetryDialog };
+  return { init: init, build: build, values: values, content: content, findSymmetry:findSymmetryDialog, findSubgroups:findSubgroupsDialog };
 })();

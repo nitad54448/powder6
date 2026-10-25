@@ -46,7 +46,8 @@ RV.constraints = (function(){
     S.datasets.forEach(function(d){if(!St.hasPhase(d,ph))return;
       if(S.calculation==='rietveld')changes.push({obj:d,key:'p',value:align(ph,d.p,rules)});
       var bank=d.calculations && d.calculations.rietveld;
-      if(bank && bank.p)changes.push({obj:bank,key:'p',value:align(ph,bank.p,rules)});
+      // a saved calculation made before the phase existed holds none of its values: switching to it takes them from the phase
+      if(bank && bank.p && Number.isFinite(bank.p[ph.key+'.a']))changes.push({obj:bank,key:'p',value:align(ph,bank.p,rules)});
     });
     RV.history.take('atomic constraints of '+ph.name);
     ph.constraints=AC.clone(rules);

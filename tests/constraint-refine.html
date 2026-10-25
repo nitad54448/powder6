@@ -23,6 +23,13 @@ field(names[0]).focus();field(names[0]).value='0.3';field(names[0]).dispatchEven
 check(Math.abs(ds.p[names[1]]-.7)<1e-12 && Math.abs(Number(field(names[1]).value)-.7)<1e-6,'typing Na occupancy updates Cl once the typing pauses');
 field(names[1]).focus();field(names[1]).value='0.4';field(names[1]).dispatchEvent(new w.Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,500));await frame();
 check(Math.abs(ds.p[names[0]]-.6)<1e-12 && Math.abs(Number(field(names[0]).value)-.6)<1e-6,'typing Cl occupancy updates Na once the typing pauses');
+// a phase added while another method is active is missing from the saved Rietveld calculation: a constraint on it still applies
+St.setCalculation('lebail');
+const late=St.makePhase({name:'Late',sg:St.resolveSG(1),cell:{a:5,b:5,c:5},atoms:[{label:'Cu1',type:'Cu',x:0,y:0,z:0,occ:1,B:.5},{label:'N1',type:'N',x:.5,y:.5,z:.5,occ:1,B:.5}]});St.addPhase(late);
+St.setCalculation('rietveld');
+check(!Object.keys(ds.calculations.rietveld.p).some(k=>k.startsWith(late.key+'.')),'the saved Rietveld calculation predates the phase');
+late.v[late.key+'.Cu1.B']=1.2;let threw='';try{RV.constraints.apply(late,[{kind:'equiv',component:'B',atoms:['Cu1','N1'],mult:[1,1]}]);}catch(e){threw=e.message;}
+check(!threw && late.constraints.length===1 && late.v[late.key+'.N1.B']===1.2,'a constraint on a phase added under another method applies: '+threw);
 check(!doc.querySelector('#dataset-links h2'),'Links has no redundant title');
 window.browserTestResult={ok:true,results};
 }catch(e){window.browserTestResult={ok:false,results,error:e.stack};}document.querySelector('#results').textContent=JSON.stringify(window.browserTestResult,null,2);})();

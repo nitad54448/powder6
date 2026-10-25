@@ -137,7 +137,8 @@
   function relation(fromOps, toOps, P, p) {
     var Pi = inv3(P), oldIdx = index(fromOps), newIdx = index(toOps);
     var sub = toOps.every(function (o) { return member(opToOld(o, P, p, Pi), oldIdx); });
-    var sup = fromOps.every(function (o) { return member(opToNew(o, P, p, Pi), newIdx); });
+    // the old group is inside the new one only if its lattice is: the old lattice vectors are whole vectors of the new axes
+    var sup = Pi.every(isInt) && fromOps.every(function (o) { return member(opToNew(o, P, p, Pi), newIdx); });
     return sub && sup ? 'same' : sub ? 'subgroup' : sup ? 'supergroup' : '';
   }
 
