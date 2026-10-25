@@ -855,7 +855,8 @@ table.grid.ac-list input.ac-m { width: 64px; min-width: 0; max-width: 64px; padd
 .rs-neighbours { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .rs-neighbours label { display: inline-flex; align-items: center; gap: var(--sp-1); }
 .rs-shape-help { margin: 0; }
-.rs-guide { margin-top: var(--sp-3); }
+.rs-helper-panel { padding-top: var(--sp-3); }
+.rs-collected { margin-top: var(--sp-4); }
 .rs-err { margin: 0; }
 .rs-err:empty { display: none; }
 .rs-err.warn { color: var(--warn); }

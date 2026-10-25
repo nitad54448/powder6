@@ -84,14 +84,7 @@ RV.constraints = (function(){
         (isSum?'<label>Total c <input class="num" data-ac-newtotal value="'+esc(f.total)+'" inputmode="decimal"'+dis+'></label>':'')+
         '<button type="button" class="primary" data-ac-add'+dis+'>Add</button></div>'+
         '<div class="ac-chips" role="group" aria-label="Atoms">'+chips+'</div>'+
-        '<p class="why ac-err" data-ac-error role="status"></p></div>'+
-      '<details class="ac-help"><summary>GSAS-II rules</summary><p class="hint">'+
-        '<b>Equivalence</b>: the first atom ticked is the independent parameter; the others follow it, B = m × A, refined or not. Only the refine flag of the independent parameter counts. '+
-        '<b>Constraint equation</b>: Σ mᵢ Pᵢ = c; multipliers start at 1 and can be edited in the list. The refine checkboxes act on the whole equation: enabling or fixing any term enables or fixes them all. The last term is computed from the others, so an equation with N terms has N - 1 independent values. '+
-        '<b>Hold</b>: the parameter is not refined, whatever its refine flag. '+
-        'A parameter belongs to one relationship only; coordinates fixed by site symmetry cannot be constrained. Multipliers are not zero. '+
-        'Applying a change aligns the starting values of the phase and of its Rietveld calculations and clears their previous fits. Le Bail and WPPF ignore constraints. '+
-        'Relationships whose atoms leave, or whose coordinates become fixed by a new site or space group, are trimmed (see the Log).</p></details>';
+        '<p class="why ac-err" data-ac-error role="status"></p></div>';
   }
   function mount(host,ph){if(!host)return;host.classList.add('ac-editor');host.setAttribute('data-ac-phase',ph.key);host.innerHTML=html(ph);}
   function refreshAll(){document.querySelectorAll('.ac-editor[data-ac-phase]').forEach(function(host){var ph=St.phaseByKey(host.getAttribute('data-ac-phase'));if(ph)host.innerHTML=html(ph);});}
@@ -157,6 +150,7 @@ RV.constraints = (function(){
     return list.reduce(function(n,ph){return n+(ph.constraints||[]).length;},0);
   }
   function init(){
+    var help=document.querySelector('[data-constraints-help]');if(help)help.title='Equivalence: the first atom ticked is the independent parameter; the others follow it, B = m × A, refined or not. Only the refine flag of the independent parameter counts. Constraint equation: Σ mᵢ Pᵢ = c; multipliers start at 1 and can be edited in the list. The refine checkboxes act on the whole equation: enabling or fixing any term enables or fixes them all. The last term is computed from the others, so an equation with N terms has N - 1 independent values. Hold: the parameter is not refined, whatever its refine flag. A parameter belongs to one relationship only; coordinates fixed by site symmetry cannot be constrained. Multipliers are not zero. Applying a change aligns the starting values of the phase and of its Rietveld calculations and clears their previous fits. Le Bail and WPPF ignore constraints. Relationships whose atoms leave, or whose coordinates become fixed by a new site or space group, are trimmed (see the Log).';
     document.querySelectorAll('[data-atomic-constraints]').forEach(function(b){b.addEventListener('click',edit);});
     document.addEventListener('click',onClick);document.addEventListener('change',onChange);
     RV.bus.on('busy',refreshAll);

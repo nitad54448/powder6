@@ -171,6 +171,7 @@
         <p><b>Commands → Structure → Space group</b> contains <b>Test</b> for the systematic absences of powder intensities and <b>ADDSYM</b> for an atomic model. ADDSYM’s <b>Find higher symmetry…</b> calls the public, locally bundled <a href="https://github.com/spglib/moyo" target="_blank" rel="noopener">Moyo</a> WebAssembly engine (0.21.0, <a href="lib/moyo/LICENSE-MIT" target="_blank" rel="noopener">MIT license</a>). ADDSYM is the interface label; the engine is Moyo rather than PLATON’s ADDSYM implementation. Choose either the starting model or a dataset’s Rietveld coordinates and cell, including its saved Rietveld model while using Le Bail or WPPF. The report gives the returned group and atomic mismatches; conversion is previewed with the selected model. ADDSYM works without a WPPF fit. See <a href="Powder6_documentation.html#s-addsym" target="_blank" rel="noopener">atomic-model symmetry</a> and <a href="Powder6_documentation.html#moyo-code" target="_blank" rel="noopener">the bundled Moyo code and license</a>.</p>
         <p><b>Convert…</b> next to the space group of a phase describes the structure in another space group or setting: the cell, the atomic positions and the values of every dataset are transformed with it, sites split for a subgroup and merge for a supergroup (only when the structure has that symmetry). The transformation is found automatically or entered as new axes and origin.</p>
         <p>Instrument resolution belongs to explicitly selected datasets. Sample presets target a phase and datasets. CF and Wyckoff candidates can be copied to an existing or new phase, with affected datasets shown before transfer. The source solution remains in History.</p>
+        <p><b>Datasets: Constraints, Restraints and Links.</b> Constraints impose exact atomic equivalences, sums and holds; sum refine checkboxes act on the whole equation. Restraints apply soft distance and angle rules whenever their textbox contains rules. Helper collects proposals in Geometry, Molecule and Suggest tabs: Copy puts them on the clipboard, and only pasting into the dataset textbox applies them. Duplicate pasted rules are rejected. Links impose target = multiplier &times; source + offset across chosen parameters and datasets; the source refine flag controls refinement, and either value can be edited within limits. Limits and global sharing are under Links / Parameter links and sharing. The last Copy accordion copies values or flags once; it does not create a link. See the <a href="Powder6_documentation.html#constraints" target="_blank" rel="noopener">complete guide and examples</a>.</p>
         <table class="grid"><tbody><tr><th>Parameter ownership</th><th>Controls</th></tr>
           <tr><td>Acquisition / dataset</td><td>Wavelength, radiation, polarization, range, excluded regions and background; zero point defaults to local.</td></tr>
           <tr><td>Sample geometry</td><td>Displacement and transparency, local unless explicitly shared.</td></tr>
@@ -291,7 +292,7 @@
                   <div class="side-h param-head"><span class="sub">Values of</span><span id="param-ds" class="sub strong"></span><span id="param-more" class="sub"></span><span class="tool-gap"></span><span class="ds-step" role="group" aria-label="Show another dataset"><button type="button" id="param-prev" aria-label="Previous dataset">←</button><button type="button" id="param-next" aria-label="Next dataset">→</button></span></div>
                   <div id="param-list" class="param-list"></div>
                   <div id="param-stats" class="param-stats" hidden></div>
-                  <div class="clone-bar"><span class="sub">Copy</span><label><input type="checkbox" id="clone-values" checked> Values</label><label><input type="checkbox" id="clone-flags" checked> Refinement flags</label><label>To <select id="clone-target" aria-label="Copy to dataset"></select></label><button type="button" id="clone-all">Copy</button></div>
+
                 </section>
               </div>
               <details class="object-group">
@@ -307,10 +308,11 @@
               </details>
               <details class="object-group">
                 <summary>Constraints</summary>
-                <div id="dataset-constraints-host"><p class="hint">Choose a relationship and parameter, select the atoms below, then click Add. Constraints apply to the phase in every Rietveld dataset.</p><div class="acc-body ac-host" id="dataset-atomic-constraints"></div></div>
+                <div id="dataset-constraints-host"><p class="hint">Choose a relationship and parameter, select the atoms below, then click Add. Constraints apply to the phase in every Rietveld dataset. <button type="button" class="mini" data-constraints-help aria-label="Constraint rules help">?</button></p><div class="acc-body ac-host" id="dataset-atomic-constraints"></div></div>
               </details>
               <details class="object-group"><summary>Restraints</summary><div class="acc-body" id="dataset-restraints"></div></details>
               <details class="object-group" id="dataset-links-group"><summary>Links</summary><div id="dataset-links"></div></details>
+              <details class="object-group" id="dataset-copy"><summary><span class="sub">Copy</span></summary><div class="acc-body"><div class="clone-bar"><label><input type="checkbox" id="clone-values" checked> Values</label><label><input type="checkbox" id="clone-flags" checked> Refinement flags</label><label>To <select id="clone-target" aria-label="Copy to dataset"></select></label><button type="button" id="clone-all">Copy</button></div></div></details>
             </section>
             </div>
           </details>

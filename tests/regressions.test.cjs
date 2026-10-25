@@ -1482,8 +1482,8 @@ test('restraints reject repeated unordered atom pairs regardless of windows or g
   const AR=require('../js/atom_restraints.js'),atoms=['Si','O1','O2'].map(label=>({label}));
   for(const text of ['Si O1 - 1.5/1.7\nO1 Si - 1.4/1.8','Si O1 4 1.5/1.7 tet angle=3\nSi O1 4 1.5/1.7 tetrahedron angle=5','Si O1 - 1.5/1.7\nsi o1 - 1.6/1.8'])assert.ok(AR.check(atoms,{text}).errors.some(e=>/Duplicate restraint/.test(e)));
   const result=AR.merge(atoms,'Si O1 - 1.5/1.7','O1 Si - 1.4/1.8\nSi O2 - 1.5/1.7\nO2 Si - 1.3/1.9');
-  assert.equal(result.added,1);assert.equal(result.skipped,2);assert.equal(result.text,'Si O1 - 1.5/1.7\nSi O2 - 1.5/1.7');
-  const again=AR.merge(atoms,result.text,result.text);assert.equal(again.added,0);assert.equal(again.text,result.text);
+  assert.equal(result.added,1);assert.equal(result.skipped,2);assert.equal(result.conflicts,2);assert.equal(result.text,'Si O1 - 1.5/1.7\nSi O2 - 1.5/1.7');
+  const again=AR.merge(atoms,result.text,result.text);assert.equal(again.conflicts,0);assert.equal(again.added,0);assert.equal(again.text,result.text);
   assert.throws(()=>AR.merge(atoms,'','Si Missing - 1/2'),/not an atom label/);
 });
 
@@ -1493,4 +1493,14 @@ test('overlapping geometry helpers keep existing bonds and angle-distance rules 
   const initial=AR.merge(atoms,'O1 Si - 1.50/1.70',tetra);assert.equal(initial.added,9);assert.equal(initial.skipped,1);assert.equal(AR.check(atoms,{text:initial.text}).rules.length,10);
   const angle=MR.geometryRules({kind:'angle',center:'Si',neighbours:['O2','O1'],distance:1.62,secondDistance:1.62,distanceTol:.03,angle:109.47,angleTol:3}).text;
   const again=AR.merge(atoms,initial.text,angle);assert.equal(again.added,0);assert.equal(again.skipped,3);assert.equal(again.text,initial.text);
+});
+
+
+test('restraint text applies automatically even with a legacy disabled flag, and clearing removes it', () => {
+  const a=model(),AR=a.context.AtomRestraints,ph=a.S.phases[0],ctx={cellOf:a.core.cellOf,sitePosition:a.core.sitePosition};
+  ph.restraints={on:false,text:'Si1 Si1 - 6/',weight:1,sigmaD:.02,sigmaA:3};
+  assert.equal(AR.active(ph.restraints),true);assert.equal(AR.normalize(ph.restraints).on,true);
+  const plan=AR.prepare(a.state.problemFor([a.ds]),ctx);assert.ok(plan);assert.ok(plan.cost([a.ds.p])>0);
+  ph.restraints.text='';assert.equal(AR.prepare(a.state.problemFor([a.ds]),ctx),null);
+  assert.equal(AR.active({text:'# just a comment'}),false);
 });

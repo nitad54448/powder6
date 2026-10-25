@@ -33,16 +33,19 @@
     record('the dialog validates labels as typed, stores valid rules and shows the geometry against them');
 
     // 2. the guide: a Z-matrix of the phase atoms becomes bond and angle rules
-    const g=dlg.querySelector('.rs-guide');g.open=true;
+    dlg.querySelector('[data-rs-helper]').click();await frame();
+    dlg.querySelector('[data-rs-tab="molecule"]').click();
     dlg.querySelector('[data-rs-paste]').value='O\nH1 1 0.96\nH2 1 0.96 2 104.5\n';
-    dlg.querySelector('[data-rs-make]').click();await frame();
+    dlg.querySelector('[data-rs-molecule-add]').click();await frame();
     const made=dlg.querySelector('[data-rs-madetext]');
     check(made && /O H1 - 0\.930\/0\.990/.test(made.value) && /H1 H2 - 1\.458\/1\.578/.test(made.value),'Guide rules wrong: '+(made&&made.value));
-    dlg.querySelector('[data-rs-replace]').click();await frame();
-    check(/H1 H2/.test(ph.restraints.text) && !/^# *1-3/.test(ph.restraints.text.split('\n')[0]),'Replace did not store the rules: '+ph.restraints.text);
-    dlg.querySelector('[data-rs-stol]').value='0.1';dlg.querySelector('[data-rs-suggest]').click();await frame();
+    const collected=dlg.querySelector('[data-rs-collected]').value;check(/H1 H2/.test(collected) && !/H1 H2/.test(ph.restraints.text),'Helper modified dataset rules before pasting');
+    dlg.querySelector('[data-rs-tab="suggest"]').click();
+    dlg.querySelector('[data-rs-stol]').value='0.1';dlg.querySelector('[data-rs-suggestion-add]').click();await frame();
     check(/O H1 1 /.test(dlg.querySelector('[data-rs-suggested]').textContent+dlg.querySelector('[data-rs-suggested] textarea').value),'Suggest wrote nothing');
     record('the molecule guide writes bond and angle rules from a Z-matrix; Suggest reads the structure');
+    dlg.querySelector('.btns button').click();await frame();
+    t().value=collected;fire(t(),'change');await frame();check(/H1 H2/.test(ph.restraints.text),'Pasted helper rules were not applied');
     dlg.querySelector('.btns .primary').click();await frame();
 
     // 3. Undo restores the previous rules; a Rietveld fit with the restraints pulls the geometry

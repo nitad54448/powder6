@@ -2,6 +2,27 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.31.2 — 25 October 2026
+
+1. **Complete constraints, restraints and links guide.** Add a dedicated Links section covering source/target selection, multipliers, offsets and display units, refinement flags, edits in either direction, limits, dependency conflicts, individual/global fits, removal, method setups and persistence. Add worked occupancy examples, the no-freedom case, and a table distinguishing atomic constraints, soft restraints, exact links, sharing and one-time copies.
+2. **Documentation consistency audit.** Correct mixed-site instructions to use the grouped sum checkboxes; distinguish equivalence flags from sum-dependent flags; replace the obsolete Constraints and links location; put limits under Datasets / Links / Parameter links and sharing; explain rejection of invalid constrained edits rather than silent clipping. Clarify that the tabbed Helper collects rules only for clipboard copying and that duplicate pruning does not establish global geometric consistency. Update README, built-in help, section navigation and release markers. Section links have no missing targets or duplicate IDs.
+
+## 2.31.1 — 25 October 2026
+
+1. **Restraints introduction.** Show the short description and question-mark help once above the phase headings, matching Constraints, rather than repeating them inside each phase editor.
+
+## 2.31.0 — 25 October 2026
+
+1. **Dataset layout.** Move Copy from the parameter list to its own final accordion below Links. Replace the restraint-rules accordion with a question-mark tooltip beside a short description of what restraints do.
+2. **Tabbed rule scratchpad.** Helper uses Geometry, Molecule and Suggest tabs. Add in each tab generates and merges into one collected-rules textbox below the tabs; it does not modify phase or dataset restraints or create Undo entries. Duplicate and conflicting atom-pair rules are pruned, keeping the first rule and reporting conflicts. Cancel closes the helper; Copy validates and copies the collected list to the clipboard. Only the user's paste into the main restraints textbox applies rules; repeated pastes still trigger the main duplicate validator. Clipboard failures offer a selectable manual-copy fallback.
+3. **Validation.** Browser checks cover the final Copy accordion, tooltip, tab switching, all three generators, collection merging, conflicts, clipboard copying, Cancel, main-editor paste validation and Undo. Existing molecule and restrained-fit browser checks continue to pass; numerical tests also check conflict counts.
+
+## 2.30.0 — 25 October 2026
+
+1. **Constraint help.** Replace the GSAS-II rules accordion with a small question-mark help button in the introductory description, retaining its explanations as a tooltip.
+2. **Restraints layout.** Phase headings use the same colour markers and method labels as Constraints. Remove the Apply checkbox: any rule in the textbox is applied in Rietveld fits, and clearing the box removes the restraints. Legacy disabled flags no longer suppress nonempty rules. A collapsed explanation covers syntax, counts, shapes, symmetry, windows versus sigma, duplicate rules, fitting, helpers and persistence.
+3. **One Helper dialog.** Replace the inline geometry, molecule and structure-suggestion panels with a Helper button opening a modal containing all three. Add and Replace update the active phase and its inline textbox, retain duplicate checks and Undo, and return to the editor when invoked from the phase dialog. Browser coverage checks the modal lifecycle, coloured headings, help placement and existing molecule/fit workflows; a numerical regression verifies automatic application and removal.
+
 ## 2.29.1 — 25 October 2026
 
 1. **Unique restraint pairs.** Allow one distance or geometry rule per unordered atom-label pair, resolving label aliases before checking. Direct text edits and refinement validation reject repeated pairs even with different windows, counts, shapes or angular tolerances. Geometry helpers, molecule guides and structure suggestions omit repeated pairs; Add keeps existing rules and reports skipped duplicates. Generated angle-distance rules share the same check, so overlapping fragments and repeated additions cannot double-weight those distances. Regression and browser checks cover reversed pairs, aliases, conflicting geometry rules, overlapping fragments and repeated Add.

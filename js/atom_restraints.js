@@ -35,7 +35,7 @@ var AtomRestraints = (function () {
   /* the stored form of a phase's restraints: {on, text, weight, sigmaD (Å), sigmaA (°)} */
   function normalize(r) {
     r = r || {};
-    return { on: r.on !== false, text: String(r.text == null ? '' : r.text), weight: positive(r.weight, DEFAULTS.weight), sigmaD: positive(r.sigmaD, DEFAULTS.sigmaD), sigmaA: positive(r.sigmaA, DEFAULTS.sigmaA) };
+    return { on: true, text: String(r.text == null ? '' : r.text), weight: positive(r.weight, DEFAULTS.weight), sigmaD: positive(r.sigmaD, DEFAULTS.sigmaD), sigmaA: positive(r.sigmaA, DEFAULTS.sigmaA) };
   }
   function geometries() { return typeof WY_LIMITS !== 'undefined' ? WY_LIMITS.geometries : {}; }
   function parse(text) {
@@ -53,7 +53,7 @@ var AtomRestraints = (function () {
     });return out;
   }
   function hasRules(r) { return !!r && /^\s*[^#\s]/m.test(String(r.text || '')); }
-  function active(r) { return !!r && r.on !== false && hasRules(r); }
+  function active(r) { return hasRules(r); }
 
   /* The rules of a phase against its atom labels: {rules, errors, warnings}. A label is taken as typed, else as the
      one atom whose label differs only in case. */
@@ -80,13 +80,13 @@ var AtomRestraints = (function () {
   // Keep the current rule for an atom pair; helpers append only previously unrestrained pairs.
   function merge(atoms,current,addition){
     var base=check(atoms,{text:current});if(base.errors.length)throw new Error(base.errors[0]);
-    var seen={},lines=String(current || '').trim()?[String(current).trim()]:[],added=0,skipped=0;
-    base.rules.forEach(function(w){seen[ruleKey(w)]=true;});
+    var seen={},lines=String(current || '').trim()?[String(current).trim()]:[],added=0,skipped=0,conflicts=0;
+    base.rules.forEach(function(w){seen[ruleKey(w)]=w;});
     String(addition || '').split(/\r?\n/).forEach(function(line){
       if(!line.trim() || /^\s*#/.test(line))return;
       var c=check(atoms,{text:line});if(c.errors.length)throw new Error(c.errors[0]);
-      c.rules.forEach(function(w){var key=ruleKey(w);if(seen[key]){skipped++;return;}seen[key]=true;lines.push(line.trim());added++;});
-    });return {text:lines.join('\n'),added:added,skipped:skipped};
+      c.rules.forEach(function(w){var key=ruleKey(w);if(seen[key]){skipped++;var old=seen[key];if(['dmin','dmax','count','countMode','geometry','angleTol'].some(function(k){return old[k]!==w[k];}))conflicts++;return;}seen[key]=w;lines.push(line.trim());added++;});
+    });return {text:lines.join('\n'),added:added,skipped:skipped,conflicts:conflicts};
   }
 
   function metric(cell) {
@@ -197,7 +197,7 @@ var AtomRestraints = (function () {
     (problem.phases || []).forEach(function (ph) {
       if (ph.method !== 'rietveld' || !active(ph.restraints)) return;
       var rs = normalize(ph.restraints), c = check(ph.atoms, rs);
-      if (c.errors.length) throw new Error('Restraints of ' + (ph.name || ph.key) + ': ' + c.errors[0] + '. Fix them, or switch them off, under Restraints…');
+      if (c.errors.length) throw new Error('Restraints of ' + (ph.name || ph.key) + ': ' + c.errors[0] + '. Fix them, or clear the rules box, under Restraints…');
       var holders = [];
       (problem.values || []).forEach(function (_, d) { if (!datasets[d] || !datasets[d].phases || datasets[d].phases.indexOf(ph.key) >= 0) holders.push(d); });
       if (holders.length) list.push({ def: ph, rs: rs, rules: c.rules, holders: holders, scale: Math.sqrt(rs.weight / holders.length) });

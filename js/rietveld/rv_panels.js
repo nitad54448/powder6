@@ -232,7 +232,7 @@ RV.panels = (function () {
   }
   var shownGroups = null;
   function renderParams() {
-    var copy=$('#sp-params .clone-bar'),source=editorDataset();copy.hidden=S.datasets.length<2 || !source;copy.querySelector('.sub').textContent=source?'Copy from '+source.name:'Copy';var target=$('#clone-target'),held=target.value;target.innerHTML='<option value="all">All other datasets</option>'+S.datasets.filter(function(d){return d!==source;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');if(Array.from(target.options).some(function(o){return o.value===held;}))target.value=held;
+    var copy=$('#dataset-copy .clone-bar'),source=editorDataset();copy.hidden=S.datasets.length<2 || !source;$('#dataset-copy').hidden=copy.hidden;$('#dataset-copy .sub').textContent=source?'Copy from '+source.name:'Copy';var target=$('#clone-target'),held=target.value;target.innerHTML='<option value="all">All other datasets</option>'+S.datasets.filter(function(d){return d!==source;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');if(Array.from(target.options).some(function(o){return o.value===held;}))target.value=held;
     var host = $('#param-list'), ds = editorDataset(), head = $('#param-ds');
     head.textContent = ds ? ds.name : '';
     $('#param-more').textContent = '';
