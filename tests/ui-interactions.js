@@ -20,9 +20,25 @@
         function view(){plot.auto=false;plot.view={x0:10,x1:70,y0:plot.ty(1),y1:plot.ty(300)};plot.draw();}
         function mouse(type,x,y,button,mods={}){const r=plot.canvas.getBoundingClientRect(),event=new w.MouseEvent(type,{bubbles:true,cancelable:true,clientX:r.left+x,clientY:r.top+y,button,buttons:type==='mouseup'?0:button===2?2:1,...mods});const local=[event.clientX-r.left,event.clientY-r.top];plot.canvas.dispatchEvent(event);return local;}
         function clickData(x,y,mods={ctrlKey:true}){const px=plot.px(x),py=plot.py(plot.ty(y)),point=mouse('mousedown',px,py,0,mods),data=plot.dataAt(...point);mouse('mouseup',px,py,0,mods);return data;}
+        const reset=q('[data-plot-action="auto"]');RV.plots.autoscale();await frame();
+        check(reset.hidden,'Autoscale must hide in the automatic view');
+        for(const p of [plot,RV.plots._plots.diff]){
+            const b=p.box,r=p.canvas.getBoundingClientRect();
+            const point=(type,fx,fy)=>p.canvas.dispatchEvent(new w.MouseEvent(type,{bubbles:true,cancelable:true,button:0,buttons:type==='mouseup'?0:1,clientX:r.left+b.x0+fx*(b.x1-b.x0),clientY:r.top+b.y0+fy*(b.y1-b.y0)}));
+            point('mousedown',.2,.2);point('mousemove',.8,.8);point('mouseup',.8,.8);
+            check(!reset.hidden,'Autoscale must appear after zooming either plot');
+            p.canvas.dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));
+            check(reset.hidden && plot.auto && RV.plots._plots.diff.auto,'Double-click must reset both linked plots and hide Autoscale');
+        }
+        mouse('mousedown',plot.box.x0+30,plot.box.y0+30,0);mouse('mousemove',plot.box.x1-30,plot.box.y1-30,0);mouse('mouseup',plot.box.x1-30,plot.box.y1-30,0);
+        check(!reset.hidden,'Zooming must reveal Autoscale');reset.click();
+        check(reset.hidden && plot.auto && RV.plots._plots.diff.auto,'Autoscale button must reset both plots and hide');
+        record('Autoscale appears after zooming and hides after the button or either plot is reset');
+        St.setSetting('showAnchors',false);await frame();check(!q('#show-anchors').checked,'Anchors preference did not clear its checkbox');
         const placedPoints={};
         for(const [mode,x,y] of [['lin',23,81.25],['sqrt',37,93.75],['log',49,112.125]]){
             St.setSetting('yscale',mode);await frame();view();const point=clickData(x,y);placedPoints[mode]=point;await frame();
+            check(S.settings.showAnchors && q('#show-anchors').checked,'Adding an anchor must enable and check Anchors');
             const index=ds.inst.bkgX.findIndex(a=>Math.abs(a-point[0])<1e-7);check(index>=0,'Anchor angle missing '+JSON.stringify({mode,anchors:ds.inst.bkgX,errors:pageErrors}));near(ds.p['bga'+index],point[1],mode+' cursor height');record('cursor placement on '+mode+' axis');
         }
         St.setSetting('yscale','lin');await frame();view();

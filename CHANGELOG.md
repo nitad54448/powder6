@@ -2,6 +2,20 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.37.2 — 25 October 2026
+
+1. **Wyckoff GPU and CPU documentation.** README, About and the user guide distinguish GPU proposals, fitness and acceptance from CPU enumeration, replica exchange, restart control and final coordinate refinement. The closing quench is CPU-controlled but still evaluates fitness on the GPU. Wyckoff requires WebGPU and has no CPU-only search fallback; charge flipping and parallel-tempering fits retain theirs.
+2. **Restarts, progress and stopping.** Document the initial start plus reseedings, counts per full-search wave and per Z, one-start screening, the closing work after the generation counter, cooperative Stop and immediate second Stop, and the retained History log. Explain CPU/GPU fitness agreement and its limits.
+3. **Consistency.** Correct the claim that fitting cannot run without WebGPU, cap the documented screening work at the requested iterations, and synchronize the application and documentation versions. The previous correction and its regression tests are included in this release commit.
+
+## 2.37.1 — 25 October 2026
+
+1. **Wyckoff restart counts.** The form silently clamped every value above 10 to 10 while leaving the typed value visible. Positive whole-number counts now reach the worker and the GPU search unchanged, with validation at every entry point. Every full-search wave runs the requested count; screening still uses one start. Invalid counts are reported instead of rounded or replaced. CPU control and final refinement remain part of the WebGPU search.
+2. **Plot controls.** Adding an anchor updates the Anchors checkbox as well as its display preference. Autoscale starts hidden, appears after zooming or panning, and hides when the button or a double-click on either linked plot restores the view.
+3. **Keyboard navigation while busy.** Starting a calculation focuses Stop when available, otherwise the workspace; Tab and Shift+Tab remain available. Busy updates preserve navigation focus, and completion restores the original control when focus stayed there. Editing remains guarded.
+4. **Markup and labels.** The Datasets calibration action is named Profile with an explanatory tooltip; help refers to Profile too. A JavaScript-disabled message replaces an unusable silent page, and the fit result no longer contains a redundant nested tab panel.
+5. **Validation.** Regression coverage checks restart validation and worker forwarding, a real GPU search completing 20 starts with CPU fitness cross-checks, linked plot resets, anchor-checkbox synchronization and busy keyboard navigation.
+
 ## 2.37.0 — 25 October 2026
 
 1. **Phases as accordions.** Every phase is an accordion titled in the colour of its plot, with its space group and number of sites beside the name. The current phase is open with its editor; opening another selects it and the editor moves there.

@@ -1,6 +1,6 @@
 # Powder 6
 
-Version **2.31.2**, 25 October 2026. See [corrections](CHANGELOG.md).
+Version **2.37.2**, 25 October 2026. See [corrections](CHANGELOG.md).
 
 Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by **Rietveld**, **Le Bail** or **WPPF**, fitted individually or in one global fit, with **structure solution** from the extracted intensities. Everything runs locally; nothing is uploaded.
 
@@ -32,9 +32,24 @@ Serve the folder over HTTP (browsers block `fetch` on `file://`):
 python -m http.server 8000
 ```
 
-Open `http://localhost:8000/index.html` in a current Chrome, Edge or Firefox. The Wyckoff search needs WebGPU (Chrome or Edge). Its MCMC proposals mix single free-site moves (75%) with collective moves (25%); each independent site always expands through its full symmetry orbit.
+Open `http://localhost:8000/index.html` in a current Chrome, Edge or Firefox. The Wyckoff search requires WebGPU in Web Workers; see the execution table below. Its MCMC proposals mix single free-site moves (75%) with collective moves (25%); each independent site always expands through its full symmetry orbit.
 
 Press **F9** to fit, **Ctrl+S** to save the project, **Ctrl+Z** to undo. Try the **load the demo** link in the empty Datasets panel, or type `demo` (NaCl and Si). **File → Export to GSAS-II** writes a ZIP (CIF per phase, `.xye` and `.instprm` per dataset, README).
+
+## GPU and CPU execution
+
+All calculations run locally. A Web Worker keeps the interface responsive; it can run CPU code and submit GPU work during the same calculation.
+
+| Calculation | GPU and CPU roles | Without WebGPU |
+|---|---|---|
+| LM fitting and WPPF intensity extraction | CPU calculations and uncertainties. | Available. |
+| Parallel-tempering fits | WebGPU trial evaluation when supported, with CPU validation and a final CPU LM fit. | Falls back to CPU PT. |
+| Charge flipping | WebGPU cycles when available, with CPU preparation and map/site processing. | Falls back to CPU, with a smaller practical grid budget. |
+| Wyckoff search | GPU proposals, structure factors, fitness and acceptance; CPU enumeration, replica exchange, restart control, fitness checks and final coordinate refinement. | No CPU-only search backend; WebGPU in a worker is required. |
+
+The Wyckoff closing quench is controlled by the CPU but still evaluates trial structures on the GPU. The subsequent coordinate refinement runs on the CPU. CPU activity and changing GPU utilisation are therefore expected, including after the generation counter ends. GPU/CPU fitness agreement checks the calculation, not whether the proposed crystal structure is correct; inspect geometry, uncertainties and the final fit too.
+
+**Restarts** is the number of starts in **each full-search wave for each Z**. Entering 20 runs 20 starts in every such wave, with the best candidates retained between starts. Two full-search waves therefore perform 40 wave starts for that Z, plus the initial screening. Screening uses one start per wave. The form, worker and search validate positive whole numbers and preserve counts above 10. Stop or a failure can end a run early; increasing Restarts increases the full-search work roughly in proportion. See [Wyckoff execution and validation](Powder6_documentation.html#s-wy-gpu).
 
 ## Files
 
@@ -68,7 +83,7 @@ Supporting files loaded locally. Without them the program still starts, but lose
 5. For an unknown structure: WPPF fit → **Commands → Structure** to select the WPPF intensity source (uncertainties are prepared automatically), test the space group and run charge flipping or a Wyckoff search → inspect **Results → Structure** → transfer atoms to the phase and fit by Rietveld.
 6. Press **FIT** or F9 from any view. Inspect the **Le Bail**, **WPPF** or **Rietveld** results tab and choose a completed run. **Use as start** restores that run into the working setup; **Keep** protects it. Save a compressed `.project` file from File (Ctrl+S): after the options, a Save As dialog lets you choose the name and folder; browsers without one download it to their download folder, and the message names the file.
 
-On the pattern, Ctrl+click places a background anchor at the cursor's angle and height; right-drag an anchor to move it. Ctrl+Shift+drag still marks exclusions. Filled magenta anchors are refinable, hollow grey anchors are fixed, and editing an anchor shows a yellow vertical guide. Edit exact X/Y coordinates and the Y refinement flag together in the dataset tab's **Background** group. Plots has separate **Anchors**, **Backgnd**, **Phases**, **Refl** and **Subtract** controls. Anchors is greyed out when no plotted dataset uses spline anchors, in a multi-dataset Overview, or during background subtraction; its checked preference is preserved. Chebyshev backgrounds use coefficients rather than anchor points; changing the fitted range re-expresses those coefficients to preserve the curve at retained angles. Each dataset has independent **Sample** and **Resolution** refinement checkboxes. Each method retains its own background and fitted results; Le Bail and WPPF results display the retained Rietveld atomic model as unused.
+On the pattern, Ctrl+click places a background anchor at the cursor's angle and height; right-drag an anchor to move it. Ctrl+Shift+drag still marks exclusions. Filled magenta anchors are refinable, hollow grey anchors are fixed, and editing an anchor shows a yellow vertical guide. Edit exact X/Y coordinates and the Y refinement flag together in the dataset tab's **Background** group. Plots has separate **Anchors**, **Backgnd**, **Phases**, **Refl** and **Subtract** controls. Autoscale appears after zooming or panning and hides after resetting either plot. Anchors is greyed out when no plotted dataset uses spline anchors, in a multi-dataset Overview, or during background subtraction; its checked preference is preserved. Chebyshev backgrounds use coefficients rather than anchor points; changing the fitted range re-expresses those coefficients to preserve the curve at retained angles. Each dataset has independent **Sample** and **Resolution** refinement checkboxes. Each method retains its own background and fitted results; Le Bail and WPPF results display the retained Rietveld atomic model as unused.
 
 ## Atomic-model symmetry
 
@@ -84,7 +99,7 @@ The atomic distance tolerance defaults to **0.2 Å**; the report also scans **0.
 
 The workspace has two independently navigable panels, inspired by Powder5. **Commands** contains **Datasets, Phases, Method, Structure, Settings**. **Results** contains **Plots, Le Bail, WPPF, Rietveld, Structure, Log, History**. Drag the wider divider by its visible grip to resize them; arrow keys resize it too, and **⇄ Panels** swaps their positions. Dataset checkboxes under **Datasets for fitting and plotting** define one target set for fitting and plotting. Use **Select all**, **Clear selection** or range selection in the Datasets accordion; **Edit** on each row changes its name and colour. Choose Individual / Global and fit from the same accordion. Choose **Overview** or **Inspect one dataset** for large series.
 
-**About** is immediately left of **⇄ Panels**. In Phases, **Edit** beside the colour picker renames the phase; each row in **Choose a phase** has a remove icon. **Delete selected** sits beside the dataset scope menu. Exclusions are inside the active dataset after Background. Resolution loads and saves calibrations above the coefficients and detects their profile type automatically.
+**About** is immediately left of **⇄ Panels**. In Phases, **Edit** beside the colour picker renames the phase; each row in **Choose a phase** has a remove icon. **Delete selected** sits beside the dataset scope menu. Exclusions are inside the active dataset after Background. Profile loads and saves calibrations above the coefficients and detects their profile type automatically.
 
 Choose the instrument profile only in the dataset's **Instrument resolution → Profile** control. TCH is the default; pseudo-Voigt and split pseudo-Voigt also use independent sample size and strain for each phase contribution. There is one TCH choice. Phases contains the crystallographic and sample-broadening models. `absorption.json` loads automatically at startup. The copy controls name their source dataset and copy matching parameter values and refinement flags; they are hidden with fewer than two datasets. FIT runs the method selected in **Commands → Method**, without a separate Next calculation inspector.
 
@@ -146,12 +161,12 @@ The worker receives lattice vectors, positions and type identifiers; it receives
 - Browser interaction checks: open `tests/ui-interactions.html` through the local server, or run `node tests/run-webgpu.cjs "C:/Program Files/Google/Chrome/Application/chrome.exe" tests/ui-interactions.html`. These check cursor placement on all intensity scales, anchor dragging and undo, marker styles, Solve group controls and atomic model displays.
 - Workspace checks: open `tests/workspace.html`, or pass it as the test-page argument to the same browser runner. Exercises independent panels and swapping, real fits, previous-run inspection/export, explicit restoration, structure output selection, History Set/Keep, resolution/atom-transfer targets, compressed reopening and 250 dataset tabs.
 - Symmetry checks: use `tests/project-symmetry.html` for the public WASM engine, representative space groups and project state; `tests/addsym-pbso4.html` for known Pnma PbSO₄ coordinates supplied as a P1 dataset’s fitted values, source selection, WPPF/Rietveld cells, conversion and undo; and `tests/convert-files.html` for conversion previews and project files. These fixtures verify the integration and transformations; they do not run an actual PbSO₄ refinement. Pass each page to the same browser runner.
-- Wyckoff search: `tests/wyckoff-search.html` runs the real GPU search on a simulated P-1 PbO₂ after a WPPF fit, with enough assignments to be screened and more than eight distance rules, and checks the two stages, the progress and the live best structure. It needs WebGPU.
+- Wyckoff search: `tests/wyckoff-search.html` runs the real GPU search on a simulated P-1 PbO₂ after a WPPF fit. It checks screening, expanded distance-rule capacity, all 20 requested starts in each full-search wave, monotonic progress, CPU/GPU fitness agreement, final CPU coordinate refinement and shaped-shell proposals. It needs WebGPU. `node --test tests/wyckoff-adaptation.test.cjs` checks restart validation, exact worker forwarding and shader adaptation without a GPU.
 - Restraints and Fourier maps: `tests/restraints.html` (editor, molecule guide, restrained fit), `tests/restraints-helper.html` (tabs, collection, clipboard, main-editor validation) and `tests/fourier.html` (a difference map finding an atom the model lacks), with the same runner; the Node suites cover the rule parser, the restraint geometry, the molecule files and the map.
 - CF transfer checks: use `tests/cf-transfer.html` with the same runner. Exercises deferred formula naming, selected-site transfer, manual element types, cancellation and archived-result preservation.
 - Adaptive CF: `node --test tests/cf-adaptive.test.cjs` checks quality response, common overlap grouping, reproducible CPU searches, map translation/inversion and P1 site extraction. Run `tests/cf-adaptive.html` with the browser runner for real WPPF extraction, GPU/CPU CF workers, recorded search metadata, stopping, failed starts and restoration of manual settings.
 
-PT uses WebGPU automatically inside the fit worker for Rietveld, Le Bail and WPPF. Proposals, pattern evaluation, joint nonnegative intensity solves, acceptance and replica exchange run on the GPU. It validates initial and perturbed trial costs against the CPU model and checks promising candidates in double precision. Device failures, resource limits, unconverged intensity solves or failed validation restart the original CPU PT. Results and text exports record the backend and fallback reason. The final LM fit, uncertainties and reported intensities always use the CPU model in double precision. The Wyckoff search already has its own GPU replica-exchange implementation.
+PT uses WebGPU automatically inside the fit worker for Rietveld, Le Bail and WPPF. Proposals, pattern evaluation, joint nonnegative intensity solves, acceptance and replica exchange run on the GPU. It validates initial and perturbed trial costs against the CPU model and checks promising candidates in double precision. Device failures, resource limits, unconverged intensity solves or failed validation restart the original CPU PT. Results and text exports record the backend and fallback reason. The final LM fit, uncertainties and reported intensities always use the CPU model in double precision. Wyckoff has a separate GPU search whose replica exchange and restart orchestration run on the CPU, followed by a CPU-controlled quench with GPU fitness evaluation and final CPU coordinate refinement. Its CPU fitness check uses the same uploaded reflection and scattering arrays and compares against the GPU to a tolerance of 1e-3. It reports a disagreement rather than switching to a CPU-only search.
 
 ## References
 

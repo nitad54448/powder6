@@ -64,6 +64,7 @@
 <script defer src="js/rietveld/rv_app.js"></script>
 </head>
 <body>
+<noscript><p class="load-error">Powder 6 requires JavaScript. Enable it in your browser, then reload this page.</p></noscript>
 <a class="skip-link" href="#work">Skip to the workspace</a>
 <!-- =====================================================================
      POWDER 6. One window: several phases against several powder patterns,
@@ -106,7 +107,7 @@
       <label class="chk" title="One row of reflection ticks per phase, at the bottom of the plot"><input type="checkbox" id="show-ticks"> Refl</label>
       <label class="chk" title="Subtract the calculated background from all plotted observations and curves. Display only; fits retain the original observations. Linear scale keeps negative intensities visible."><input type="checkbox" id="no-background"> Subtract</label>
       <span class="tool-sep" aria-hidden="true"></span>
-      <button type="button" data-plot-action="auto">Autoscale</button>
+      <button type="button" data-plot-action="auto" hidden>Autoscale</button>
       <button type="button" data-plot-action="png">Save PNG</button>
       <span class="note" id="plot-note"></span>
       <span class="info-tip">
@@ -134,7 +135,7 @@
     <!-- Le Bail, WPPF and Rietveld results: one selected run -->
     <div class="pane solve-pane fit-results-pane" id="pane-solve" role="tabpanel" aria-labelledby="tab-result-lebail">
       <div class="result-runbar"><label>Run <select id="result-run-select" aria-label="Result run"></select></label><button type="button" data-run-action="restore">Use as start</button><button type="button" data-run-action="keep">Keep</button><button type="button" data-run-action="history">Manage history</button></div>
-      <div id="calculation-body" role="tabpanel" aria-label="Selected fit result">
+      <div id="calculation-body">
         <p id="last-result-state" class="result-state hint"></p>
         <!-- Le Bail -->
         <div class="calc-layout" data-layout="lebail">
@@ -201,7 +202,7 @@
           <tr><td>Anywhere</td><td>F9 fit, Ctrl+S save the project, Ctrl+Z undo</td></tr>
         </tbody></table>
         <h2>Requirements</h2>
-        <p>Open <code>index.html</code> through a web server (it reads sg/all.json and scatters/), for example <code>python -m http.server</code> in its folder, then <code>http://localhost:8000/index.html</code>. Fits, charge flipping and the Wyckoff search run in Web Workers; WebGPU, where there is one, speeds up the last two.</p>
+        <p>Open <code>index.html</code> through a web server (it reads sg/all.json and scatters/), for example <code>python -m http.server</code> in its folder, then <code>http://localhost:8000/index.html</code>. Fits, charge flipping and the Wyckoff search run in Web Workers. Parallel-tempering fits and charge flipping can use WebGPU and have CPU fallbacks. The Wyckoff search requires WebGPU for sampling and fitness evaluation, with CPU control and final coordinate refinement; see <a href="Powder6_documentation.html#s-wy-gpu" target="_blank" rel="noopener">GPU and CPU execution</a>.</p>
         <p>The methods (WPPF, Le Bail, exact overlaps, constraints, the space-group test, charge flipping, the Wyckoff search) are explained in the documentation, with where each one stops being trustworthy. Powder 6 descends from PowderV2 (Dragoe, N. (2001). <i>J. Appl. Cryst.</i> 34, 535).</p>
         <p>Full documentation: <a href="Powder6_documentation.html" target="_blank" rel="noopener">Powder6_documentation.html</a> (commands, file formats, parameters, structure solution, troubleshooting).</p>
         <p class="hint">Charge flipping: Oszlányi and Sütő (2004). Space-group test: Markvardsen, David, Johnson and Shankland (2001). Peak shapes: Thompson, Cox and Hastings (1987).</p>
@@ -246,7 +247,7 @@
           <div class="dataset-toolbar">
             <button type="button" data-dataset-action="read">Read patterns…</button>
             <button type="button" data-dataset-action="simulate">Simulate…</button>
-            <button type="button" id="ds-phases" class="mini" title="Add or remove phases for each dataset">Phases…</button><button type="button" id="ds-resolution" class="mini">Profile</button><button type="button" id="ds-inst" class="mini" title="Wavelength, polarisation and fitted range of the selected datasets">Instrument…</button><button type="button" id="ds-bkg" class="mini" title="Background of the selected datasets: Chebyshev terms or a spline through anchors">Background…</button>
+            <button type="button" id="ds-phases" class="mini" title="Add or remove phases for each dataset">Phases…</button><button type="button" id="ds-resolution" class="mini" title="Instrument profile and calibration">Profile</button><button type="button" id="ds-inst" class="mini" title="Wavelength, polarisation and fitted range of the selected datasets">Instrument…</button><button type="button" id="ds-bkg" class="mini" title="Background of the selected datasets: Chebyshev terms or a spline through anchors">Background…</button>
           </div>
           <details class="acc dataset-accordion fit-selection" id="fit-selection" data-acc="dataset-selection">
             <summary><span class="acc-t">Datasets</span> <span id="fit-selection-count"></span></summary>

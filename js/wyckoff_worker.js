@@ -657,6 +657,11 @@ async function runWyckoffFromIntensities(cell, symops, job) {
 
     const formula = job.targetComposition;
     if (!formula) return { sites: [] };
+    try {
+        job = Object.assign({}, job, { swarmRestarts: wyckoffRestartCount(job.swarmRestarts) });
+    } catch (e) {
+        return { sites: [], error: e.message };
+    }
 
     let device;
     try {
@@ -1549,7 +1554,7 @@ if (constraintBreak) {
             harkerSites: [],
             numParticles: job.swarmParticles || WY_LIMITS.defaults.particles,
             generations: job.swarmIterations || WY_LIMITS.defaults.iterations,
-            restarts: job.swarmRestarts || WY_LIMITS.defaults.restarts,
+            restarts: job.swarmRestarts,
             shapeWeight: Number.isFinite(job.shapeWeight) ? job.shapeWeight : WY_LIMITS.defaults.shapeWeight,
             polyProb: Number.isFinite(job.polyProb) ? job.polyProb : undefined,
             minContact: Number.isFinite(job.minContact)

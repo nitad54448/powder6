@@ -197,8 +197,8 @@ RV.plots = (function () {
   }
   function syncAutoscale(){var b=$('[data-plot-action="auto"]');if(b)b.hidden=![P.pat,P.diff].some(function(p){return p && !p.auto;});}
   function linkX(a, b) {
-    a.o.onView = function (v) { b.setXView(v.x0, v.x1); syncAutoscale(); };
-    b.o.onView = function (v) { a.setXView(v.x0, v.x1); syncAutoscale(); };
+    a.o.onView = function (v) { if(a.auto){autoscale();return;}b.setXView(v.x0, v.x1); syncAutoscale(); };
+    b.o.onView = function (v) { if(b.auto){autoscale();return;}a.setXView(v.x0, v.x1); syncAutoscale(); };
   }
   function autoscale() { [P.pat, P.diff].forEach(function (p) { p.hidden.clear(); p.autoscale(true); }); syncAutoscale(); }
   function exportPNG() {

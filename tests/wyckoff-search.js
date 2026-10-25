@@ -24,7 +24,7 @@
     q('#tab-structure').click();await frame();
     const set=(sel,v)=>{const e=q(sel);e.value=v;e.dispatchEvent(new w.Event('input',{bubbles:true}));e.dispatchEvent(new w.Event('change',{bubbles:true}));};
     set('#sv-formula-wy','PbO2');set('#sv-z-wy','2');
-    set('#sv-wy-particles','256');set('#sv-wy-iterations','100');set('#sv-wy-restarts','1');
+    set('#sv-wy-particles','256');set('#sv-wy-iterations','10');set('#sv-wy-restarts','20');
     // ten rules: beyond the eight the kernel used to hold
     set('#sv-wy-constraints',['Pb O - /4.5','Pb O - /4.6','Pb O - /4.7','Pb O - /4.8','O O - /4.0','O O - /4.1'].join('\n'));
     await frame();
@@ -34,11 +34,18 @@
     check(q('#sv-wy-shapeWeight').disabled && q('#sv-wy-polyMoves').disabled && q('#sv-wy-polyMoves').value==='0' && /no distance rule has a count/.test(q('#sv-wy-polyMoves').title),'Shape weight / Polyhedron moves are enabled without a shape or a count, or the moves do not default to 0');
     set('#sv-z-wy','');await frame();check(!q('#sv-wy-rhoMin').disabled && !q('#sv-wy-maxZ').disabled,'Density window not enabled again for Z = Auto');set('#sv-z-wy','2');await frame();
     record('Fields without effect are disabled: density and Values of Z for a typed Z, Shape weight and Polyhedron moves without a shape or a count');
+    for(const invalid of ['0','-1','2.5','invalid','Infinity']){
+      set('#sv-wy-restarts',invalid);q('#sv-wy-run').click();
+      check(!RV.solve.state.wyRun && !S.busy && /Restarts must be a positive whole number/.test(q('#status-msg').textContent),'Invalid restart count was silently accepted: '+invalid);
+    }
+    set('#sv-wy-restarts','20');
+    record('Invalid restart counts are rejected before starting a worker');
     const Orig=w.Worker,progress=[];
     w.Worker=function(url,opts){const real=new Orig(url,opts);if(String(url).includes('wyckoff_worker'))real.addEventListener('message',e=>{if(e.data && e.data.type==='wy-progress')progress.push(e.data);});return real;};
     const before=RV.ui.logEntries().length;
     q('#sv-wy-run').click();await wait(100);w.Worker=Orig;
     check(RV.solve.state.wyRun,'The Wyckoff search did not start: '+q('#status-msg').textContent);
+    check(w.document.activeElement===q('#busy-cancel'),'A running search must focus Stop');
     const end=Date.now()+200000;
     while(RV.solve.state.wyRun){if(Date.now()>end)throw Error('The Wyckoff search did not finish: '+((q('#sv-wy-prog')||{}).textContent || ''));await wait(250);}
     const shown=RV.ui.logEntries().slice(before).map(e=>e.msg).join('\n'),wy=RV.solve.state.wy;
@@ -56,9 +63,17 @@
     check(progress.some(p=>Array.isArray(p.bestSites) && p.bestSites.length && typeof p.assignment==='string' && Number.isFinite(p.cc)),'Progress lacks the live best structure');
     const fr=progress.map(p=>p.fraction);check(fr.every(Number.isFinite) && fr.every((f,i)=>i===0 || f>=fr[i-1]-1e-9) && fr[fr.length-1]>.8,'The progress fraction is not monotonic over the plan');
     record('Progress carries the stage, a monotonic fraction and the live best structure',{messages:progress.length});
+    const full=progress.filter(p=>p.stage==='search'),waves=[...new Set(full.map(p=>p.wave))];
+    check(wy.o.restarts===20 && full.every(p=>p.restarts===20),'The requested restart count changed before reaching the GPU');
+    for(const wave of waves)check(full.some(p=>p.wave===wave && p.restart===20 && p.generation===p.generations-1),'A full-search wave did not complete restart 20');
+    check(progress.filter(p=>p.stage==='screen').every(p=>p.restarts===1),'Screening must use one start');
+    const cpuCheck=wy.results.wyckoffResult.cpuCheck;
+    check(cpuCheck && Number.isFinite(cpuCheck.cpu) && Number.isFinite(cpuCheck.gpu) && cpuCheck.delta<=1e-3,'CPU and GPU Wyckoff fitness disagree: '+JSON.stringify(cpuCheck));
+    check(wy.sols[0].refinement && Number.isFinite(wy.sols[0].refinement.R),'CPU coordinate refinement did not finish');
+    record('Every full-search wave completes 20 requested starts; GPU fitness agrees with the CPU and coordinate refinement completes',{waves:waves.length,cpuCheck});
 
     // a shaped shell: the kernel is compiled with neighbour vectors and charges the angles
-    set('#sv-wy-constraints','Pb O 6 1.9/2.9 oct');set('#sv-wy-iterations','60');await frame();
+    set('#sv-wy-constraints','Pb O 6 1.9/2.9 oct');set('#sv-wy-iterations','60');set('#sv-wy-restarts','1');await frame();
     check(!/not a shape|needs exactly/.test(q('#sv-wy-cstat').textContent),'The octahedron line was refused: '+q('#sv-wy-cstat').textContent);
     set('#sv-wy-constraints','Pb O 4 1.9/2.9 oc');await frame();
     check(/needs exactly 6 neighbours/.test(q('#sv-wy-cstat').textContent),'A wrong count for the shape was not reported: '+q('#sv-wy-cstat').textContent);

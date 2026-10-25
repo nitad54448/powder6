@@ -1147,7 +1147,7 @@ RV.cmd = (function () {
     if (ds) { P['param-shft'] = (ds.p.disp || 0).toFixed(4); P['fit-shft'] = !!ds.fit.disp; P['param-trns'] = (ds.p.transp || 0).toFixed(6); P['fit-trns'] = !!ds.fit.transp; }
     var doc = { broadening:C.broadeningConfig(ph.broadening), format: PRESET_FORMAT, version: 2, profileType: ph.profileType, separatedProfile: C.usesSeparatedProfile(ph), sizeUnit: 'nm', label: 'Sample broadening, ' + ph.name, savedAt: new Date().toISOString(), parameters: P };
     ui.download(String(PRESET_FILES[ph.profileType] || 'profile.json').replace('_default', '_' + ph.name.replace(/[^\w-]+/g, '_')), JSON.stringify(doc, null, 2), 'application/json');
-    ui.toast('Saved the peak shape of ' + ph.name + (ds ? ' in ' + ds.name : '') + ' as a sample-broadening preset. Instrument calibration is saved separately using Resolution.', 'ok');
+    ui.toast('Saved the peak shape of ' + ph.name + (ds ? ' in ' + ds.name : '') + ' as a sample-broadening preset. Instrument calibration is saved separately using Profile.', 'ok');
   }
   // the start values of new phases, from Voigt_default.json and its siblings next to the page; silent when absent
   async function loadDefaultPresets() {

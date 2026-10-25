@@ -120,8 +120,10 @@
   }
 
   function initBusyGuard() {
-    var wasBusy=false;
+    var wasBusy=false,returnFocus=null,busyFocus=null;
     function update(b) {
+      var starting=!!b && !wasBusy,restore=!b && wasBusy && document.activeElement===busyFocus;
+      if(starting)returnFocus=document.activeElement;
       document.body.classList.toggle('busy',!!b);
       if(!!b!==wasBusy){wasBusy=!!b;ui.busyRun(wasBusy);}
       $('#busy-guard').hidden=!b;
@@ -129,11 +131,13 @@
       // Navigation and plot inspection remain available during a fit. Mutating commands guard S.busy.
       $('#cmdline').disabled=!!b;
       document.body.setAttribute('aria-busy',String(!!b));
-      if(b && document.activeElement && document.activeElement!==document.body)document.activeElement.blur();
+      if(starting){busyFocus=$('#busy-cancel').disabled?$('#work'):$('#busy-cancel');busyFocus.focus({preventScroll:true});}
+      else if(!b){if(restore && returnFocus && returnFocus.isConnected && !returnFocus.disabled)returnFocus.focus({preventScroll:true});returnFocus=null;busyFocus=null;}
     }
     $('#busy-cancel').addEventListener('click',function(){RV.cmd.stop();});
     function guard(e) {
       if(!S.busy)return;
+      if(e.type==='keydown' && e.key==='Tab')return;
       if(e.type==='keydown' && e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();RV.cmd.stop();return;}
       var stop=e.target && e.target.closest && e.target.closest('#busy-cancel');
       if(stop)return;
@@ -141,8 +145,7 @@
       if(inspect)return;
       e.preventDefault();e.stopImmediatePropagation();
     }
-    // Inert handles keyboard focus; the capture guard also covers dialogs,
-    // drag/drop, plot gestures and browsers without full inert support.
+    // Keep keyboard navigation available while guarding edits, dialogs and plot changes.
     ['click','dblclick','pointerdown','pointermove','pointerup','keydown','beforeinput','change','input','drop','dragstart','wheel'].forEach(function(ev){document.addEventListener(ev,guard,{capture:true,passive:false});});
     RV.bus.on('busy',update);update(S.busy);
   }
@@ -320,7 +323,7 @@
     if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () { if (S.settings.theme !== 'dark' && S.settings.theme !== 'light') applyTheme(); });
     RV.bus.on('settings', function (k) {
       if (k === '*' || k === 'theme') applyTheme();
-      if (k === '*' || /^(yscale|showBkg|showPhases|showTicks|noBackground)$/.test(k)) { syncToolbar(); RV.plots.refresh(false); }
+      if (k === '*' || /^(yscale|showAnchors|showBkg|showPhases|showTicks|noBackground)$/.test(k)) { syncToolbar(); RV.plots.refresh(false); }
     });
     if(RV.absorption)RV.absorption.init();
     if(RV.constraints)RV.constraints.init();

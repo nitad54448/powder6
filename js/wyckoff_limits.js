@@ -37,7 +37,8 @@ const WY_LIMITS = Object.freeze({
   // The form's ranges and defaults.
   particles: [64, 1536],
   iterations: [10, 10000],
-  restarts: [1, 10],
+  // Sequential starts have no hardware cap; reject values that cannot be counted exactly.
+  restarts: [1, Number.MAX_SAFE_INTEGER],
   // Shape weight: how strongly the angles of shaped shells count, as a multiple of the bond penalty.
   shapeWeight: [0, 10],
   // Polyhedron moves: the percentage of proposals that move a counted shell as a unit (swarm_reflection.wgsl,
@@ -62,4 +63,13 @@ const WY_LIMITS = Object.freeze({
   })
 });
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { WY_LIMITS };
+function wyckoffRestartCount(value) {
+  const n = value == null || (typeof value === 'string' && !value.trim()) ? WY_LIMITS.defaults.restarts :
+    typeof value === 'number' || typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isSafeInteger(n) || n < WY_LIMITS.restarts[0] || n > WY_LIMITS.restarts[1]) {
+    throw new Error('Restarts must be a positive whole number.');
+  }
+  return n;
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { WY_LIMITS, wyckoffRestartCount };

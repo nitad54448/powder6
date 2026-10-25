@@ -708,7 +708,7 @@ RV.solve = (function () {
     var mc = ui.parseNum(o.minContact);
     return { maxSites: pos(o.maxSites), maxRepeat: pos(o.maxRepeat), rhoMin: lo, rhoMax: hi, maxZ: readNum(o.maxZ, 1, WL.maxZSearches, true) || WD.maxZ,
              particles: readNum(o.particles,WL.particles[0],gpuBudget.maxParticles,true) || Math.max(WL.particles[0],Math.floor(gpuBudget.maxParticles/3)),
-             iterations: readNum(o.iterations, WL.iterations[0], WL.iterations[1], true) || WD.iterations, restarts: readNum(o.restarts, WL.restarts[0], WL.restarts[1], true) || WD.restarts,
+             iterations: readNum(o.iterations, WL.iterations[0], WL.iterations[1], true) || WD.iterations, restarts: o.restarts,
              minContact: Number.isFinite(mc) ? Math.min(WL.minContact[1], Math.max(WL.minContact[0], mc)) : undefined,
              shapeWeight: Number.isFinite(readNum(o.shapeWeight, WL.shapeWeight[0], WL.shapeWeight[1])) ? readNum(o.shapeWeight, WL.shapeWeight[0], WL.shapeWeight[1]) : WD.shapeWeight,
              // Polyhedron moves, a percentage in the form, a share for the search
@@ -732,6 +732,7 @@ RV.solve = (function () {
       if (Number.isFinite(rho) && !(rho >= RHO_MIN && rho <= RHO_MAX)) { ui.toast('Z = ' + Z + ' gives ρ = ' + rho.toFixed(2) + ' g/cm³ for ' + formula + ' in this cell: no solid has that density. The search was not started.', 'warn'); return; }
     }
     var o = wyOptions(), inp = solveInput(I), W;
+    try { o.restarts=wyckoffRestartCount(o.restarts); } catch(e) { ui.toast(e.message,'warn'); return; }
     try { W = new Worker('js/wyckoff_worker.js'); } catch (e) { ui.toast('Could not start js/wyckoff_worker.js: ' + e.message, 'err'); return; }
     var run = SV.wyRun = { worker: W, stopped: false, formula: formula, vc: vc, o: o, I: I, inp: inp, t0: performance.now(), log: [], partials: [], live: null };
     W.onmessage = function (e) {
@@ -1116,7 +1117,7 @@ RV.solve = (function () {
             field('sv-wy-maxZ', 'Values of Z, at most', o.wy.maxZ, '1–' + WL.maxZSearches + '. The least plausible are left out first.', 'class="num" data-wy="maxZ" inputmode="numeric"') +
             field('sv-wy-particles', 'Particles', o.wy.particles, 'Trial structures held at once ('+WL.particles[0]+'–'+gpuBudget.maxParticles+'). Default is 33% of the conservative hardware budget.', 'class="num" data-wy="particles" inputmode="numeric"') +
             field('sv-wy-iterations', 'Iterations', o.wy.iterations, WL.iterations[0] + '–' + WL.iterations[1] + '. When the assignments need more than ' + WL.fullWaves + ' waves, each is first screened for ' + Math.round(100 * WL.screenFraction) + ' % of them.', 'class="num" data-wy="iterations" inputmode="numeric"') +
-            field('sv-wy-restarts', 'Restarts', o.wy.restarts, WL.restarts[0] + '–' + WL.restarts[1] + '.', 'class="num" data-wy="restarts" inputmode="numeric"') +
+            field('sv-wy-restarts', 'Restarts', o.wy.restarts, 'Positive whole number. Each full-search wave runs this many starts; screening uses one.', 'class="num" data-wy="restarts" inputmode="numeric"') +
             field('sv-wy-minContact', 'Shortest contact (Å)', o.wy.minContact, 'A structure with two unlike atoms closer than this is rejected.', 'class="num" data-wy="minContact" inputmode="decimal"') +
             field('sv-wy-shapeWeight', 'Shape weight', o.wy.shapeWeight, 'How strongly the angles of shaped shells (tet, oct…) count, as a multiple of the bond penalty: 0 off, 1 default, up to ' + WL.shapeWeight[1] + '.', 'class="num" data-wy="shapeWeight" inputmode="decimal"') +
             field('sv-wy-polyMoves', 'Polyhedron moves (%)', o.wy.polyMoves, POLY_HELP, 'class="num" data-wy="polyMoves" inputmode="numeric"') +

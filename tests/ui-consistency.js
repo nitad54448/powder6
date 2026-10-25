@@ -48,6 +48,25 @@
     St.selectIds([datasets[0].id]);await frame();check(q('[data-fitmode-visibility]').hidden,'Batch mode should hide for one selected dataset');
     St.selectAll();q('[aria-label="Batch fit mode"] [data-fitmode="single"]').click();await frame();
     record('Batch fit mode synchronizes with Method, controls fitting, and hides for one dataset');
+    const previousFocus=q('#swap-panels');previousFocus.focus();St.setBusy(true,'Keyboard check');await frame();
+    check(doc.activeElement===q('#work'),'Busy preparation must focus the workspace while Stop is unavailable');
+    for(const shiftKey of [false,true]){
+      const event=new w.KeyboardEvent('keydown',{key:'Tab',shiftKey,bubbles:true,cancelable:true});
+      doc.body.dispatchEvent(event);check(!event.defaultPrevented,'Busy guard trapped '+(shiftKey?'Shift+Tab':'Tab'));
+    }
+    q('#tab-method').focus();q('#tab-method').click();RV.bus.emit('busy',true);
+    check(doc.activeElement===q('#tab-method') && RV.app.commandTab()==='method','Busy updates stole navigation focus');
+    q('#theme-toggle').click();check(S.settings.theme==='system','Busy guard allowed an editing action');
+    St.setBusy(false);previousFocus.focus();St.setBusy(true,'Focus restoration');St.setBusy(false);
+    check(doc.activeElement===previousFocus,'Completion did not restore the control that started the calculation');
+    const originalRunning=RV.solve.running;RV.solve.running=()=>S.busy;
+    previousFocus.focus();St.setBusy(true,'Stoppable calculation');
+    check(doc.activeElement===q('#busy-cancel'),'A stoppable calculation must focus Stop');
+    St.setBusy(false);RV.solve.running=originalRunning;
+    check(doc.activeElement===previousFocus,'Disabling Stop on completion lost the original focus');
+    RV.app.showTab('datasets');await frame();
+    check(q('#ds-resolution').textContent==='Profile','Dataset calibration button must be named Profile');
+    record('Busy calculations allow Tab, Shift+Tab and panel navigation, guard editing, and restore focus');
     for(const theme of ['light','dark']){
       doc.documentElement.dataset.theme=theme;RV.theme.refresh();await frame();
       const surface=w.getComputedStyle(q('.dataset-toolbar')).backgroundColor;

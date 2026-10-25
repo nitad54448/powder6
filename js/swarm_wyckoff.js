@@ -926,6 +926,7 @@ function rampedGroupCount(nGroups, generation, maxGen, startFrac = 0.25, fullBy 
  *   shouldStop()      polled each generation
  */
 async function runWyckoffSearch(o) {
+    const fullRestarts = wyckoffRestartCount(o.restarts);
     const log = [];
     const say = m => { log.push(m); if (o.onLog) o.onLog(m); };
 
@@ -1231,7 +1232,6 @@ async function runWyckoffSearch(o) {
     // resolution, and only the best fullWaves waves' worth are searched in
     // full, starting from what the screening found.
     const fullGenerations = o.generations || SW_DEFAULTS.generations;
-    const fullRestarts = Math.max(1, o.restarts || 1);
     const perWave = assignmentsPerWave(numParticles, minPer, true);
     const screening = Math.ceil(assignments.length / perWave) > WY_LIMITS.fullWaves;
     const screenGenerations = Math.min(fullGenerations,
