@@ -848,6 +848,9 @@ table.grid.ac-list input.ac-m { width: 64px; min-width: 0; max-width: 64px; padd
 .rs-main, .rs-guide-body { display: grid; gap: var(--sp-2); }
 .rs-rules { display: grid; gap: var(--sp-1); color: var(--ink-2); }
 .rs-rules textarea, .rs-guide-body textarea { width: 100%; }
+/* a rules box with its Helper button on the right (Restraints, Wyckoff distance constraints) */
+.text-action { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: var(--sp-2); }
+.text-action textarea { width: 100%; }
 .rs-set { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); }
 .rs-set label { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--ink-2); }
 .rs-set input.num { width: 72px; flex: none; }

@@ -1115,8 +1115,8 @@ RV.solve = (function () {
             field('sv-wy-restarts', 'Restarts', o.wy.restarts, WL.restarts[0] + '–' + WL.restarts[1] + '.', 'class="num" data-wy="restarts" inputmode="numeric"') +
             field('sv-wy-minContact', 'Shortest contact (Å)', o.wy.minContact, 'A structure with two unlike atoms closer than this is rejected.', 'class="num" data-wy="minContact" inputmode="decimal"') +
             field('sv-wy-shapeWeight', 'Shape weight', o.wy.shapeWeight, 'How strongly the angles of shaped shells (tet, oct…) count, as a multiple of the bond penalty: 0 off, 1 default, up to ' + WL.shapeWeight[1] + '.', 'class="num" data-wy="shapeWeight" inputmode="decimal"') +
-            '<label for="sv-wy-constraints"' + tip(CONSTRAINT_HELP) + '>Distance constraints</label><div><textarea id="sv-wy-constraints"' + tip(CONSTRAINT_HELP) + ' data-wy="constraints" rows="3" spellcheck="false" placeholder="S O 4 1.40/1.60 tet&#10;Pb O 8 2.40/3.10&#10;O O - 2.30/">' + esc(o.wy.constraints) + '</textarea>' +
-              '<p class="buttons"><button type="button" id="sv-wy-helper" data-sv="wy-helper" title="Write constraints on the elements of the formula unit: shells, molecules, shortest contacts">Helper</button></p>' +
+            '<label for="sv-wy-constraints"' + tip(CONSTRAINT_HELP) + '>Distance constraints</label><div><div class="text-action"><textarea id="sv-wy-constraints"' + tip(CONSTRAINT_HELP) + ' data-wy="constraints" rows="3" spellcheck="false" placeholder="S O 4 1.40/1.60 tet&#10;Pb O 8 2.40/3.10&#10;O O - 2.30/">' + esc(o.wy.constraints) + '</textarea>' +
+              '<button type="button" id="sv-wy-helper" data-sv="wy-helper" title="Write constraints on the elements of the formula unit: shells, molecules, shortest contacts">Helper</button></div>' +
               '<div class="sv-cstat" id="sv-wy-cstat"></div></div>' +
           '</div>' +
           '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-wy-run" data-sv="wy-run">Run the Wyckoff search</button></p>' +

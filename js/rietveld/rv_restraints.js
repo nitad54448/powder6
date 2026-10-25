@@ -79,13 +79,12 @@ RV.restraints = (function(){
     var r=AR.normalize(ph.restraints),dis=S.busy?' disabled':'';
     if(ph.atoms.length<2)return '<p class="hint">Restraints relate atoms: the phase needs at least two.</p>';
     return '<div class="rs-main">'+
-      '<label class="rs-rules" title="'+esc(RULES_HELP)+'">Restraints<textarea class="code-area" data-rs-text rows="8" spellcheck="false" placeholder="Fe1 C1 6 1.6/2.2 oct&#10;Si1 O1 4 1.58/1.66 tet&#10;O1 O1 - 2.4/"'+dis+'>'+esc(r.text)+'</textarea></label>'+
+      '<div class="rs-rules" title="'+esc(RULES_HELP)+'"><span>Restraints</span><div class="text-action"><textarea class="code-area" data-rs-text rows="8" spellcheck="false" aria-label="Restraints" placeholder="Fe1 C1 6 1.6/2.2 oct&#10;Si1 O1 4 1.58/1.66 tet&#10;O1 O1 - 2.4/"'+dis+'>'+esc(r.text)+'</textarea><button type="button" data-rs-helper'+dis+'>Helper</button></div></div>'+
       '<div class="rs-set">'+
         '<label>Weight <input class="num" data-rs-weight value="'+esc(String(r.weight))+'" inputmode="decimal"'+dis+'></label>'+
         '<label>σ distance (Å) <input class="num" data-rs-sigmaD value="'+esc(String(r.sigmaD))+'" inputmode="decimal"'+dis+'></label>'+
         '<label>σ angle (°) <input class="num" data-rs-sigmaA value="'+esc(String(r.sigmaA))+'" inputmode="decimal"'+dis+'></label></div>'+
-      '<p class="why rs-err" data-rs-error role="status"></p><div data-rs-geom>'+geometry(ph,r)+'</div></div>'+
-      '<p class="buttons"><button type="button" data-rs-helper'+dis+'>Helper</button></p>';
+      '<p class="why rs-err" data-rs-error role="status"></p><div data-rs-geom>'+geometry(ph,r)+'</div></div>';
   }
   function helperHTML(ph){var dis=S.busy?' disabled':'',g=guide[ph.key]||{};return '<nav class="tabs" role="tablist" aria-label="Restraint helper">'+[['geometry','Geometry'],['molecule','Molecule'],['suggest','Suggest']].map(function(t){return '<button type="button" role="tab" id="rs-tab-'+t[0]+'" data-rs-tab="'+t[0]+'" aria-controls="rs-panel-'+t[0]+'" aria-selected="'+(t[0]==='geometry')+'" tabindex="'+(t[0]==='geometry'?'0':'-1')+'">'+t[1]+'</button>';}).join('')+'</nav><section role="tabpanel" class="rs-helper-panel" id="rs-panel-geometry" aria-labelledby="rs-tab-geometry" data-rs-panel="geometry"><div class="rs-guide-body" data-rs-builder>'+builderHTML(ph)+'</div></section>'+
       '<section role="tabpanel" class="rs-helper-panel" id="rs-panel-molecule" aria-labelledby="rs-tab-molecule" data-rs-panel="molecule" hidden><div class="rs-guide-body">'+

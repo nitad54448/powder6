@@ -2,6 +2,10 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.33.1 — 25 October 2026
+
+1. **Helper placement.** The Helper button sits to the right of its rules box, in Datasets / Restraints and in the Wyckoff search Distance constraints, instead of below it.
+
 ## 2.33.0 — 25 October 2026
 
 1. **Wyckoff constraint Helper.** A Helper button under Distance constraints opens the tabbed Helper of the restraints, acting on the elements of the formula unit: Geometry (coordination shell with count or shape, nearest-distance window, shortest contact), Molecule (bonds by element pair from a PDB, XYZ or Z-matrix: counted when every centre has the same number of neighbours, nearest otherwise) and Suggest (shortest contacts from the covalent radii). Add collects into one box with duplicate/conflict pruning and the kernel-limit check; Copy writes to the clipboard and never changes the constraints box; Close closes it. The restraint Helper's Cancel button is now Close as well, since it never had anything to cancel. The button is disabled, with the reason as its tooltip, while there is no readable formula unit or a calculation runs.
