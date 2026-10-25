@@ -11,4 +11,4 @@ jobs:
         with:
           node-version: 24
       # no install step: the app has no dependencies. The browser pages need Chrome with WebGPU and are run locally.
-      - run: node --test tests/regressions.test.cjs tests/cf-adaptive.test.cjs tests/cf-startup.test.cjs tests/numerics.test.cjs tests/project-unpack.test.cjs
+      - run: node --test tests/regressions.test.cjs tests/cf-adaptive.test.cjs tests/cf-startup.test.cjs tests/numerics.test.cjs tests/project-unpack.test.cjs tests/density-boundaries.test.cjs

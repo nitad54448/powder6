@@ -326,7 +326,6 @@ textarea.code-area::placeholder, .sv-form textarea::placeholder { font-style: it
 [data-theme="dark"] .plot-host { box-shadow: none; }
 .plot-host.res { flex: 0 0 24%; min-height: 100px; }
 .plot-canvas { display: block; cursor: crosshair; }
-body.busy .plot-canvas { cursor: progress; }
 .plot-tip {
   position: absolute;
   z-index: 5;
@@ -773,7 +772,8 @@ table.grid tr.off td { color: var(--ink-3); }
 table.sv-sites td { white-space: nowrap; }
 table.sv-sites input.sv-el { width: 64px; min-width: 56px; text-align: left; font-weight: 600; }
 table.sgt td { vertical-align: top; }
-.sgt-sets { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; white-space: normal !important; }
+/* the set chips wrap: the selectors outrank the nowrap of result tables (.results table.grid td) */
+table.sgt td.sgt-sets, .results table.grid td.sgt-sets { display: flex; flex-wrap: wrap; gap: var(--sp-1); align-items: center; white-space: normal; }
 button.sgt-set { padding: 1px 8px; font-size: var(--fs-sm); font-family: var(--font-code); }
 .sgt-p { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sgt-p .bar { display: inline-block; width: 80px; height: 6px; margin-right: 8px; vertical-align: middle; background: var(--rule-2); position: relative; overflow: hidden; }
@@ -826,6 +826,7 @@ button.sgt-set { padding: 1px 8px; font-size: var(--fs-sm); font-family: var(--f
 .busy-track.indet i { width: 30%; transition: none; animation: indet 1.1s linear infinite; }
 .stop-btn { flex: none; font-size: var(--fs-lg); padding: 7px 14px; display: inline-flex; align-items: center; gap: 7px; }
 .stop-btn kbd { font: 600 var(--fs-xs)/1 inherit; padding: 2px 4px; border: 1px solid rgba(255,255,255,.55); border-radius: var(--radius-xs); }
+/* The busy cursor is the only !important besides [hidden]: wait over every control whatever its own cursor rule, pointer on Stop. */
 body.busy, body.busy * { cursor: wait !important; }
 body.busy .stop-btn, body.busy .stop-btn * { cursor: pointer !important; }
 
@@ -1100,5 +1101,5 @@ select:has( > option.sg-std:checked) option:not(.sg-std) { font-weight: 400; }
   .ds.on { outline: 2px solid Highlight; outline-offset: -2px; }
   .plot-host { border-color: CanvasText; }
 }
-@media print { .top, .status, .side, .ptools { display: none !important; } html, body { overflow: visible; height: auto; } }
+@media print { .top, .status, .side, .side-grip, .ptools { display: none; } html, body { overflow: visible; height: auto; } }
 

@@ -19,10 +19,10 @@ box(names[1]).click();await frame();check(names.every(n=>!box(n).checked),'unche
 ds.fit[names[0]]=true;RV.bus.emit('params',{});await frame();check(names.every(n=>box(n).indeterminate),'partial legacy flags are shown as mixed');box(names[0]).click();await frame();check(names.every(n=>box(n).checked),'clicking a mixed checkbox enables the whole sum');
 ph.constraints[0].total=1;names.forEach(n=>ds.p[n]=.5);RV.bus.emit('params',{});await frame();
 const field=n=>doc.querySelector('#param-list [data-name="'+n+'"] .pv');
-field(names[0]).focus();field(names[0]).value='0.3';field(names[0]).dispatchEvent(new w.Event('input',{bubbles:true}));
-check(Math.abs(ds.p[names[1]]-.7)<1e-12 && Math.abs(Number(field(names[1]).value)-.7)<1e-6,'typing Na occupancy immediately updates Cl');
-field(names[1]).focus();field(names[1]).value='0.4';field(names[1]).dispatchEvent(new w.Event('input',{bubbles:true}));
-check(Math.abs(ds.p[names[0]]-.6)<1e-12 && Math.abs(Number(field(names[0]).value)-.6)<1e-6,'typing Cl occupancy immediately updates Na');
+field(names[0]).focus();field(names[0]).value='0.3';field(names[0]).dispatchEvent(new w.Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,500));await frame();
+check(Math.abs(ds.p[names[1]]-.7)<1e-12 && Math.abs(Number(field(names[1]).value)-.7)<1e-6,'typing Na occupancy updates Cl once the typing pauses');
+field(names[1]).focus();field(names[1]).value='0.4';field(names[1]).dispatchEvent(new w.Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,500));await frame();
+check(Math.abs(ds.p[names[0]]-.6)<1e-12 && Math.abs(Number(field(names[0]).value)-.6)<1e-6,'typing Cl occupancy updates Na once the typing pauses');
 check(!doc.querySelector('#dataset-links h2'),'Links has no redundant title');
 window.browserTestResult={ok:true,results};
 }catch(e){window.browserTestResult={ok:false,results,error:e.stack};}document.querySelector('#results').textContent=JSON.stringify(window.browserTestResult,null,2);})();

@@ -1454,7 +1454,10 @@ RV.state = (function () {
     S.nextPhase = 1 + S.phases.reduce(function (m, p) { return Math.max(m, +p.key.slice(1)); }, 0);
     S.phaseSel = S.phases.some(function(p){return p.key===pj.phaseSelection;}) ? pj.phaseSelection : S.phases.length ? S.phases[0].key : null;
     S.datasets = []; S.sel.clear(); S.focus = null; S.version++;
-    S.datasets = pj.raws.map(function(r){var d=makeDataset(r);if(Number.isInteger(r.savedId) && r.savedId>0){d.id=r.savedId;S.nextId=Math.max(S.nextId,d.id+1);}return d;});
+    // Saved ids are reserved first: a dataset saved without one (older files) is numbered after all of them, so it can
+    // no longer take the id a later dataset brings with it.
+    S.nextId=1+pj.raws.reduce(function(m,r){return Number.isInteger(r.savedId) && r.savedId>0?Math.max(m,r.savedId):m;},0);
+    S.datasets = pj.raws.map(function(r){var d=makeDataset(r);if(Number.isInteger(r.savedId) && r.savedId>0)d.id=r.savedId;return d;});
     S.disabledPhases=pj.disabledPhases || [];S.parameterLinks=pj.parameterLinks;
     // Populate the selection before notifying views. They must never observe
     // new instruments with the previous project's dataset selection.
@@ -1505,6 +1508,8 @@ RV.state = (function () {
 
 /*  Restore points, as in Yappari: one is kept before every command that changes datasets or phases. The data arrays are
  *  never changed in place, so a restore point shares them with the datasets; it copies the values, flags and results.
+ *  The extracted intensities (ints) are a result like stats and are never changed in place either: they are kept with
+ *  the point, so an undo no longer leaves Le Bail / WPPF without the intensities of its last fit.
  *  "undo" goes back one step; the Log shows "Restore before" on the line of each action whose restore point is kept.
  */
 RV.history = (function () {
@@ -1517,7 +1522,7 @@ RV.history = (function () {
     Object.keys(S.limits).forEach(function (n) { lim[n] = S.limits[n].slice(); });
     return {
       datasets: S.datasets.map(function (d) {
-        return { calculations: copyBanks(d.calculations), id: d.id, dataKey:d.dataKey, color:d.color || null, name: d.name, tth: d.tth, y: d.y, sig: d.sig, weights: d.weights, step: d.step, inst: RV.state.instCopy(d.inst), phases: d.phases.slice(), apart: copy(d.apart), p: copy(d.p), fit: copy(d.fit), esd: copy(d.esd), stats: d.stats, mem: copy(d.mem), sim: d.sim || null };
+        return { calculations: copyBanks(d.calculations), id: d.id, dataKey:d.dataKey, color:d.color || null, name: d.name, tth: d.tth, y: d.y, sig: d.sig, weights: d.weights, step: d.step, inst: RV.state.instCopy(d.inst), phases: d.phases.slice(), apart: copy(d.apart), p: copy(d.p), fit: copy(d.fit), esd: copy(d.esd), stats: d.stats, ints: d.ints, mem: copy(d.mem), sim: d.sim || null };
       }),
       phases: S.phases.map(function (ph) {
         return { key: ph.key, color: ph.color || null, name: ph.name, method: ph.method, sg: copy(ph.sg), ops: ph.ops, wyckoff: ph.wyckoff, profileType: ph.profileType, separatedProfile: ph.separatedProfile === true, broadening: RVCore.broadeningConfig(ph.broadening), poDir: ph.poDir.slice(),
@@ -1531,7 +1536,7 @@ RV.history = (function () {
   }
   function apply(st) {
     S.datasets = st.datasets.map(function (r) {
-      return { calculations: copyBanks(r.calculations), id: r.id, dataKey:r.dataKey, color:r.color || null, name: r.name, tth: r.tth, y: r.y, sig: r.sig, weights: r.weights, step: r.step, inst: RV.state.instCopy(r.inst), phases: r.phases.slice(), apart: copy(r.apart) || {}, p: copy(r.p), fit: copy(r.fit), esd: copy(r.esd), stats: r.stats, mem: copy(r.mem), calc: null, ints: null, sim: r.sim || null };
+      return { calculations: copyBanks(r.calculations), id: r.id, dataKey:r.dataKey, color:r.color || null, name: r.name, tth: r.tth, y: r.y, sig: r.sig, weights: r.weights, step: r.step, inst: RV.state.instCopy(r.inst), phases: r.phases.slice(), apart: copy(r.apart) || {}, p: copy(r.p), fit: copy(r.fit), esd: copy(r.esd), stats: r.stats, mem: copy(r.mem), calc: null, ints: r.ints || null, sim: r.sim || null };
     });
     S.phases = st.phases.map(function (p) {
       return { key: p.key, color: p.color || null, name: p.name, method: p.method, sg: copy(p.sg), ops: p.ops, wyckoff: p.wyckoff, profileType: p.profileType, separatedProfile: p.separatedProfile === true, broadening: RVCore.broadeningConfig(p.broadening), poDir: p.poDir.slice(),
@@ -1556,11 +1561,6 @@ RV.history = (function () {
     S.sel = new Set(st.sel.filter(function (id) { return !!RV.state.byId(id); })); S.focus = st.focus; S.anchor = st.anchor;
     RV.bus.emit('selection'); RV.bus.emit('data'); RV.bus.emit('params', {}); RV.bus.emit('stats');
   }
-  function info() {
-    var el = document.getElementById('history-info');
-    if (el) el.textContent = points.length ? 'Restore points: ' + points.length + ' kept (at most ' + MAX + '). “Restore before” brings back the datasets, the phases and the selection as they were just before that action; undo goes back one step.'
-                                           : 'A restore point is kept before every action that changes datasets or phases; the line of that action then gets a “Restore before” button.';
-  }
   // opts.merge: a burst of small edits of one parameter (mouse wheel, arrow keys) is one restore point
   function take(label, opts) {
     var last = points[points.length - 1], now = Date.now(), merge = (opts && opts.merge) || null;
@@ -1571,7 +1571,6 @@ RV.history = (function () {
       var old = points.shift(), b = document.querySelector('#log-list [data-restore="' + old.id + '"]');
       if (b) b.remove();
     }
-    info();
     return pt.id;
   }
   function takePending() { var p = pending; pending = null; return p; }
@@ -1590,21 +1589,18 @@ RV.history = (function () {
     if (b) b.remove();
     if (pending === pt.id) pending = null;
     apply(pt.st);
-    info();
     RV.ui.toast('Undone: ' + pt.label + ' (back to ' + pt.time.toLocaleTimeString() + ').', 'ok');
   }
   // every restore point forgotten: an opened project starts its own history
   function clear() {
     points = []; pending = null;
     if (typeof document !== 'undefined' && document.querySelectorAll) Array.prototype.forEach.call(document.querySelectorAll('#log-list [data-restore]'), function (b) { b.remove(); });
-    info();
   }
   function init() {
     document.getElementById('log-list').addEventListener('click', function (e) {
       var b = e.target.closest('[data-restore]');
       if (b) restore(+b.getAttribute('data-restore'));
     });
-    info();
   }
   return { init: init, take: take, takePending: takePending, undo: undo, restore: restore, clear: clear, count: function () { return points.length; } };
 })();

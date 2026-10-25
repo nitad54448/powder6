@@ -32,7 +32,7 @@
     q('[aria-label="Batch fit mode"] [data-fitmode="global"]').click();await frame();
     check(RV.app.fitMode()==='global' && all('[data-fitmode="global"]').every(b=>b.getAttribute('aria-pressed')==='true'),'Batch global mode is not synchronized');
     const originalFit=RV.cmd.fit;let fitMode=null;RV.cmd.fit=()=>{fitMode=RV.app.fitMode();};
-    q('[data-acc="dataset-selection"] [data-workflow="fit"]').click();RV.cmd.fit=originalFit;check(fitMode==='global','Batch fit bypassed the selected mode');
+    q('[aria-label="Calculation actions"] [data-workflow="fit"]').click();RV.cmd.fit=originalFit;check(fitMode==='global','Batch fit bypassed the selected mode');
     St.selectIds([datasets[0].id]);await frame();check(q('[data-fitmode-visibility]').hidden,'Batch mode should hide for one selected dataset');
     St.selectAll();q('[aria-label="Batch fit mode"] [data-fitmode="single"]').click();await frame();
     record('Batch fit mode synchronizes with Method, controls fitting, and hides for one dataset');

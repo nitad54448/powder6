@@ -382,7 +382,7 @@ test('uncertainties and explicit weights follow sorted, filtered and duplicate p
   const parsed = a.run("normalizeParsedData({tth:[12,NaN,10,11,11],intensity:[120,5,100,110,999],sig:[12,1,2,3,9],weights:[.1,.2,.3,0,.9]})");
   assert.deepEqual(plain(parsed), { tth: [10, 11, 12], intensity: [100, 110, 120], sig: [2, 3, 12], weights: [0.3, 0, 0.1] });
   assert.throws(() => a.run("detectAndParseFile('bad.esd','BANK 1 2 1 CONST 1000 100 0 0 ESD\\n100 0 400 30')"), /uncertainty/);
-  assert.throws(() => a.run("parseDataFile('10 100 0\\n11 400 30','bad.xye')"), /uncertainty/);
+  assert.throws(() => a.run("parseDataFile('10 100 -1\\n11 400 30','bad.xye')"), /uncertainty/);
 });
 
 test('pdCIF weights, including zero, survive unit weights, projects and undo', async () => {
@@ -524,10 +524,35 @@ test('a saved project brings back the active method intensities and the remember
   assert.deepEqual(plain(d.mem['p9.gone.B']), [1.25, true]);
 });
 
+test('a dataset saved without an id does not take the id of a later dataset', () => {
+  const a = app();
+  a.state.commitProject(a.state.prepareProject({ format: 'powder6-project', version: 3, phases: [], datasets: [
+    { name: 'old', tth: [10, 11, 12], y: [1, 2, 3] }, { id: 1, name: 'new', tth: [10, 11, 12], y: [4, 5, 6] }] }));
+  const ids = a.S.datasets.map(d => d.id);
+  assert.equal(new Set(ids).size, 2, 'duplicate dataset ids ' + ids);
+  assert.equal(a.state.byId(1).name, 'new');
+  assert.ok(a.S.nextId > Math.max(...ids));
+});
+
+test('undo keeps the Le Bail intensities of the last fit', () => {
+  const a = model(); a.state.setCalculation('lebail');
+  Object.keys(a.ds.fit).forEach(k => { a.ds.fit[k] = k === 'bkg0'; });
+  const job = a.state.jobFor(a.ds), result = a.core.refine(job);
+  assert.equal(result.ok, true, result.msg); a.state.applyResult([a.ds], result, job, false);
+  const ints = a.S.datasets[0].ints;
+  assert.ok(ints, 'the Le Bail fit gave no intensities');
+  const H = a.context.RV.history;
+  H.take('rename'); a.state.rename(a.S.datasets[0].id, 'renamed'); H.undo();
+  assert.equal(a.S.datasets[0].name, 'mixture');
+  assert.equal(a.S.datasets[0].ints, ints, 'undo dropped the intensities');
+});
+
 test('bundled powder data and pdCIF fixtures remain readable', async () => {
   const a = app();
-  for (const name of fs.readdirSync(path.join(root, 'test_files'))) {
-    const bytes = fs.readFileSync(path.join(root, 'test_files', name));
+  const files = dir => fs.readdirSync(path.join(root, dir), { withFileTypes: true })
+    .flatMap(e => e.isDirectory() ? files(dir + '/' + e.name) : [dir + '/' + e.name]);
+  for (const name of files('test_files').filter(f => !/\.pdb$/i.test(f))) {
+    const bytes = fs.readFileSync(path.join(root, name));
     a.context.inputName = name;
     a.context.inputBytes = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     const parsed = await a.run('(async()=>normalizeParsedData(await detectAndParseBuffer(inputName,inputBytes),inputName))()');
@@ -1274,6 +1299,49 @@ test('Philips UDF retains sectioned XY support and rejects malformed RawScan ins
   assert.throws(()=>a.run("detectAndParseFile('bad.udf','DataAngleRange,10,11,/\\nScanStepSize,0.1,/\\nRawScan\\n100,bad,200,/')"),/invalid intensity/);
   assert.throws(()=>a.run("detectAndParseFile('bad.udf','RawScan\\n100,200,/')"),/DataAngleRange/);
   assert.throws(()=>a.run("detectAndParseFile('bad.udf','10 100\\n11 200')"),/No \[Data\] section/);
+});
+
+test('pattern readers: start-step-end files, GSAS counters, UXD and RAS layouts, header wavelengths', async () => {
+  const a=app(),parse=(name,text)=>{a.context.input=text;return a.run('normalizeParsedData(detectAndParseFile('+JSON.stringify(name)+',input),'+JSON.stringify(name)+')');};
+  // "start step end" then the counts, 10 per line: read as (start, step) and (count, count) points before.
+  const cime=parse('cime.dat',read('test_files/cimetidine/cime.dat'));
+  assert.equal(cime.tth.length,7699);assert.equal(cime.tth[0],8.01);assert.ok(Math.abs(cime.tth[7698]-84.99)<1e-9);
+  assert.deepEqual(Array.from(cime.intensity.slice(0,3)),[2707,2648,2666]);assert.equal(cime.intensity[7698],939);
+  // A three-column file whose first row is three numbers is still x y sigma.
+  const xye=parse('a.xye','10.00 523 22.8\n10.02 530 23\n10.04 540 23.2\n10.06 520 22.8\n');
+  assert.deepEqual(Array.from(xye.tth),[10,10.02,10.04,10.06]);assert.deepEqual(Array.from(xye.sig),[22.8,23,23.2,22.8]);
+  // A misread axis fails instead of loading a pattern reaching 2-theta = 2700.
+  assert.throws(()=>parse('bad.xy','10 5\n2700 6\n'),/outside -180\.\.180/);
+  // sigma = 0 for an empty point takes counting statistics, with a warning.
+  const zero=parse('z.xye','10 5 2\n10.02 0 0\n10.04 6 2\n');
+  assert.deepEqual(Array.from(zero.sig),[2,1,2]);assert.ok(zero.warnings.some(w=>/standard uncertainty of 0/.test(w)));
+  // GSAS STD 10(I2,F6.0): a filled counter field is not an intensity.
+  const std=parse('a.xra','title\nBANK 1 4 1 CONST 1000 2.5 0 0 STD\n 1   179 1   147 1   165 1   172\n');
+  assert.deepEqual(Array.from(std.intensity),[179,147,165,172]);
+  // A title starting with "Bank" is not a GSAS bank.
+  assert.deepEqual(Array.from(parse('b.xy','Bank of samples\n10 5\n10.02 6\n').intensity),[5,6]);
+  // Decimal commas; whole-number fields only for the first data line.
+  assert.deepEqual(Array.from(parse('c.csv','Angle;Int\n10,02;1234\n10,04;1300,5\n').intensity),[1234,1300.5]);
+  assert.deepEqual(Array.from(parse('e.xy','2Theta 3Counts\n10 5\n10.02 6\n').tth),[10,10.02]);
+  // Header wavelengths: a free title, and the PANalytical CSV keys.
+  assert.equal(parse('C61Br2_079764.XY',read('test_files/C61Br2_079764.XY')).wavelength,0.79764);
+  const csv=parse('h.csv',read('test_files/H183-10-90-30min_1.csv'));
+  assert.equal(csv.wavelength,1.540598);assert.equal(csv.wavelength2,1.544426);assert.equal(csv.ratio21,0);
+  // UXD: spaces around "=", one pattern per range, CPS times the step time, 2-theta/count pairs.
+  const uxd=a.run('detectAndParseFile("a.uxd",'+JSON.stringify('_WL1 = 1.5406\n_START = 10\n_STEPSIZE = 0.02\n_STEPTIME = 2\n_CPS\n1 2 3\n_START=20\n_COUNTS\n4 5 6\n')+')');
+  assert.equal(uxd.patterns.length,2);assert.equal(uxd.wavelength,1.5406);
+  assert.deepEqual(Array.from(uxd.patterns[0].intensity),[2,4,6]);assert.deepEqual(Array.from(uxd.patterns[1].tth),[20,20.02,20.04]);
+  assert.deepEqual(Array.from(parse('b.uxd','_FILEVERSION=1\n_2THETACOUNTS\n10 5\n10.02 6\n').tth),[10,10.02]);
+  assert.throws(()=>parse('c.uxd','_COUNTS\n1 2 3\n'),/_START and _STEPSIZE/);
+  // RAS: quoted wavelength, attenuator factor, every scan block.
+  const ras=a.run('detectAndParseFile("a.ras",'+JSON.stringify('*RAS_HEADER_START\n*HW_XG_WAVE_LENGTH_ALPHA1 "1.540593"\n*RAS_INT_START\n10 5 1\n10.02 6 2\n*RAS_INT_END\n*RAS_INT_START\n20 5 1\n20.02 6 1\n*RAS_INT_END\n')+')');
+  assert.equal(ras.wavelength,1.540593);assert.deepEqual(Array.from(ras.intensity),[5,12]);assert.equal(ras.patterns.length,2);
+  // UTF-16 text is decoded; a binary scan is refused by name.
+  const u16=Buffer.from('﻿10 5\r\n10.02 6\r\n','utf16le');
+  a.context.inputBytes=u16.buffer.slice(u16.byteOffset,u16.byteOffset+u16.length);
+  assert.deepEqual(Array.from((await a.run('detectAndParseBuffer("u.xy",inputBytes)')).intensity),[5,6]);
+  a.context.inputBytes=new Uint8Array([86,51,82,68,0,0,1,2,0,0,0,9]).buffer;
+  await assert.rejects(a.run('detectAndParseBuffer("x.rd",inputBytes)'),/binary file/);
 });
 
 test('distance rules are shared: the Wyckoff parser keeps elements upper case, restraints keep atom labels', () => {

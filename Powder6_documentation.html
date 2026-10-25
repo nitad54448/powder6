@@ -278,10 +278,11 @@ td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabul
 <p>Drop files on the window or use <b>Read patterns…</b> in the Datasets tab or the File menu. The reader detects the format from the name and the content.</p>
 <div class="tablewrap"><table class="wrapfirst">
 <tr><th>Format</th><th>Notes</th></tr>
-<tr><td>Two-column text (<code>.xy .csv .txt .dat .asc</code>)</td><td>The fallback for anything that is not recognised.</td></tr>
-<tr><td>PANalytical <code>.xrdml</code></td><td>Wavelength read from the file.</td></tr>
+<tr><td>Two-column text (<code>.xy .csv .txt .dat .asc</code>, <code>.xye</code> with &sigma;)</td><td>The fallback for anything that is not recognised. Decimal commas are recognised; a wavelength stated in the header ("Wavelength 0.79764", PANalytical CSV keys) is used.</td></tr>
+<tr><td>Free-format constant step (FullProf, WinPLOTR, EXPO <code>.dat</code>)</td><td>First line <code>start step end</code>, then the intensities, any number per line.</td></tr>
+<tr><td>PANalytical <code>.xrdml</code></td><td>Wavelengths and K&alpha;2 ratio read from the file; each scan becomes a dataset.</td></tr>
 <tr><td>Bruker <code>.brml</code>, Rigaku <code>.rasx</code></td><td>ZIP archives; need <code>lib/jszip.min.js</code>.</td></tr>
-<tr><td>Bruker <code>.uxd</code>, Rigaku <code>.ras</code>, Philips <code>.udf .rd .sd</code></td><td>Legacy text and binary formats.</td></tr>
+<tr><td>Bruker <code>.uxd</code>, Rigaku <code>.ras</code>, Philips <code>.udf</code></td><td>Text formats; each UXD range or RAS scan becomes a dataset. Binary scans (Philips <code>.rd .sd</code>, binary <code>.raw</code>) are not read: export them as one of the formats above.</td></tr>
 <tr><td>GSAS <code>.xra</code>, <code>.esd</code> (BANK lines)</td><td>Standard and ESD banks.</td></tr>
 <tr><td>Jade <code>.mdi</code></td><td>Read as two columns.</td></tr>
 <tr><td>pdCIF / CIF with a powder profile</td><td>Brings back wavelength, cell, space group, peak-shape parameters and, for a calculated profile, reflections and background. A structure CIF is not a pattern and is refused with a message.</td></tr>
@@ -1104,6 +1105,7 @@ const dataset = analyze_cell(JSON.stringify(cell), tolerance, 'Standard');</code
 
 <section id="corrections">
 <h2>Recent changes</h2>
+<p>Version 2.34.0 reads "start step end" pattern files (FullProf, WinPLOTR, EXPO), refuses a misread 2&theta; axis, and corrects the GSAS STD, UXD, RAS, XRDML and BRML readers (several scans per file, wavelengths, attenuators, counter fields). It also gives a dataset saved without an id in an older project its own id, and keeps the Le Bail / WPPF intensities through Undo and Restore before.</p>
 <p>Version 2.33.3 gives every question-mark help button the same round look and shows its help whole in a popup (the Restraints rules help was cut short as a tooltip).</p>
 <p>Version 2.33.2 explains the Factor of the Wyckoff Helper's Suggest tab in a tooltip.</p>
 <p>Version 2.33.1 places the Helper buttons to the right of their rules boxes, in Datasets / Restraints and in the Wyckoff search.</p>
