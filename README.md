@@ -16,7 +16,8 @@ Full documentation: [`Powder6_documentation.html`](Powder6_documentation.html): 
 - Profile diagnostics for negative Gaussian variance, dependent refinement variables and missing uncertainties; explanations remain with saved results. See [ill-conditioned profile refinements](Powder6_documentation.html#profile-conditioning).
 - Space-group test, charge flipping (WebGPU with CPU fallback) and a Wyckoff-site search (WebGPU), handing the atoms back for a Rietveld fit.
 - Fourier maps (difference, observed, 2Fo−Fc) of a phase from its WPPF intensities and the atoms of its model, with a peak list that adds atoms to the phase.
-- Soft distance and angle restraints in Rietveld, in the rule language of the Wyckoff search, with a guide that writes them from a PDB, XYZ or Z-matrix molecule.
+- Soft distance and angle restraints in Rietveld, in the rule language of the Wyckoff search, with a guide that writes them from a PDB, MOL/SDF, XYZ or Z-matrix molecule.
+- Atoms into an existing phase: from a structure CIF, or a molecule as a fragment (atoms on general positions, with restraints for its bonds and angles).
 - Readers for xy/csv/txt, PANalytical `.xrdml`, Bruker `.brml`/`.uxd`, Rigaku `.ras`/`.rasx`, Philips `.udf`, GSAS `.xra`/`.esd`, Jade `.mdi`, "start step end" free format (FullProf/WinPLOTR/EXPO), pdCIF, and project files.
 - Results as text, CIF, pdCIF, SHELX HKLF 4 and a PDF report; command line, edit undo, and persistent calculation History with Set/Keep.
 - Structure → Space group has **Test** for systematic absences of the extracted powder intensities and **ADDSYM** for symmetry of an atomic model. Find higher symmetry… calls the public, locally bundled Moyo 0.21.0 WebAssembly API in a worker. The starting model, a dataset’s Rietveld model, or after a Le Bail or WPPF fit the dataset’s refined cell with its atoms can be selected. See [atomic-model symmetry](#atomic-model-symmetry) and the [bundled Moyo code](#bundled-moyo-code).

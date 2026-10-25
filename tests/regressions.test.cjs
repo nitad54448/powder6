@@ -27,7 +27,7 @@ function app(withTables = true) {
     } }
   });
   context.window = context;
-  for (const file of ['constants', 'crystal', 'profile', 'wppf_linear', 'atomic_constraints', 'wyckoff_limits', 'distance_rules', 'atom_restraints', 'rietveld_core',
+  for (const file of ['constants', 'crystal', 'profile', 'wppf_linear', 'atomic_constraints', 'wyckoff_limits', 'distance_rules', 'atom_restraints', 'molecule_rules', 'rietveld_core',
     'cif_reader', 'data_io', 'parsers', 'cif_structure', 'sg_convert']) {
     vm.runInContext(read('js/' + file + '.js'), context, { filename: file + '.js' });
   }
@@ -522,6 +522,82 @@ test('a saved project brings back the active method intensities and the remember
   const d = a.S.datasets[0];
   assert.equal(JSON.stringify(d.ints), ints, 'the Le Bail intensities were dropped on load');
   assert.deepEqual(plain(d.mem['p9.gone.B']), [1.25, true]);
+});
+
+test('MOL/SDF and PDB CRYST1 are read; a fragment lands on general positions with its geometry and restraints', () => {
+  const MR = require('../js/molecule_rules.js');
+  const mol = MR.read(`x
+  prog
+
+  2  1  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0
+    1.5400    0.0000    0.0000 O   0  0
+  1  2  1  0
+M  END
+$$$$
+`, { name: 'x.sdf' });
+  assert.equal(mol.format, 'MOL'); assert.deepEqual(mol.atoms.map(a => a.name), ['C1', 'O1']);
+  assert.throws(() => MR.read(`x
+
+
+  0  0  0     0  0            999 V3000
+`, { name: 'x.mol' }), /V3000/);
+  const pdb = `CRYST1   10.000   12.000    8.000  90.00 100.00  90.00 P 1 21/c 1     4
+ATOM      1  C1  MOL     1       1.000   2.000   3.000  1.00  0.00           C
+ATOM      2  O1  MOL     1       2.200   2.000   3.000  1.00  0.00           O
+`;
+  const withCell = MR.read(pdb, { name: 'x.pdb' });
+  assert.equal(withCell.cell.beta, 100);
+  const asIs = MR.fragment(withCell, {});
+  assert.ok(Math.abs(asIs.atoms[0].z - 3 / (8 * Math.sin(100 * Math.PI / 180))) < 1e-9, 'CRYST1 orthogonalisation');
+  assert.equal(MR.read(read('test_files/cimetidine/cime.pdb'), { name: 'cime.pdb' }).cell, null);
+
+  const a = app(), St = a.state, cif = a.context.CifStructure.parse(read('test_files/cimetidine_C10H16N6S.CIF'));
+  const ph = St.makePhase({ name: 'cimetidine', sg: St.resolveFileSG({ symbol: cif.sgName, hall: cif.sgHall, number: cif.sgNumber }, cif.cell), cell: cif.cell, atoms: [] });
+  St.addPhase(ph);
+  const cime = MR.read(read('test_files/cimetidine/cime.pdb'), { name: 'cime.pdb' });
+  const p = MR.generalPoint(ph.ops, cif.cell);
+  const r = a.context.RV.cmd.fragmentInto(ph, cime, { mode: 'add', centre: p, skipH: true, restraints: true, B: 3 });
+  assert.equal(r.atoms, 17); assert.equal(ph.atoms.length, 17); assert.equal(r.special.length, 0);
+  assert.deepEqual(plain(ph.atoms.map(at => at.label).slice(0, 5)), ['C1', 'N1', 'C2', 'N2', 'C3']);
+  assert.ok(ph.atoms.every(at => at.site.mult === ph.ops.length), 'every fragment atom on a general position');
+  // the fragment keeps the bond lengths of the file: C1-N1 of cime.pdb
+  const cart = f => { const c = cif.cell, d = Math.PI / 180, cb = Math.cos(c.beta * d), sb = Math.sin(c.beta * d); return [c.a * f[0] + c.c * cb * f[2], c.b * f[1], c.c * sb * f[2]]; };
+  const at = l => cart(['x', 'y', 'z'].map(k => ph.v[ph.key + '.' + l + '.' + k]));
+  const d = (u, v) => Math.hypot(u[0] - v[0], u[1] - v[1], u[2] - v[2]);
+  assert.ok(Math.abs(d(at('C1'), at('N1')) - d(cime.atoms[0].xyz, cime.atoms[1].xyz)) < 1e-6);
+  assert.ok(r.bonds >= 17 && r.angles > 0, 'restraints written');
+  assert.ok(/^C1 N1 - /m.test(ph.restraints.text));
+  assert.equal(a.context.AtomRestraints.check(ph.atoms, ph.restraints).errors.length, 0);
+  // a second fragment is numbered past the first; replace starts again at 1
+  a.context.RV.cmd.fragmentInto(ph, cime, { mode: 'add', centre: [0.1, 0.6, 0.7], skipH: true, restraints: false });
+  assert.equal(ph.atoms.length, 34); assert.ok(ph.atoms.some(x => x.label === 'C11'));
+  a.context.RV.cmd.fragmentInto(ph, cime, { mode: 'replace', centre: p, skipH: false, restraints: true });
+  assert.equal(ph.atoms.length, 33); assert.equal(ph.atoms[0].label, 'C1');
+  assert.ok(!/C11|C20/.test(ph.restraints.text), 'rules of the replaced atoms were pruned');
+});
+
+const PBSO4_CIF = ['data_PbSO4', '_cell_length_a 8.4818', '_cell_length_b 5.3998', '_cell_length_c 6.9614', '_cell_angle_alpha 90', '_cell_angle_beta 90', '_cell_angle_gamma 90',
+  "_space_group_name_H-M_alt 'P n m a'", '_space_group_IT_number 62', 'loop_', '_atom_site_label', '_atom_site_type_symbol', '_atom_site_fract_x', '_atom_site_fract_y', '_atom_site_fract_z', '_atom_site_B_iso_or_equiv',
+  'Pb1 Pb 0.1879 0.25 0.1671 1.5', 'S1 S 0.0654 0.25 0.6845 0.8', 'O1 O 0.9083 0.25 0.5953 1.6', 'O2 O 0.1932 0.25 0.5432 1.5', 'O3 O 0.0811 0.0272 0.8086 1.3'].join(String.fromCharCode(10));
+test('atoms from a structure CIF go into an existing phase: replace or add, with what does not match said', () => {
+  const a = app(), St = a.state, text = PBSO4_CIF, cif = a.context.CifStructure.parse(text);
+  const ph = St.makePhase({ name: 'PbSO4', sg: St.resolveSG(62), cell: cif.cell, atoms: [{ label: 'X1', type: 'O', x: 0.1, y: 0.25, z: 0.1 }] });
+  St.addPhase(ph);
+  let r = a.context.RV.cmd.atomsFromCifText(ph, text, 'replace');
+  assert.equal(r.n, cif.atoms.length); assert.equal(ph.atoms.length, cif.atoms.length); assert.equal(r.notes.length, 0, r.notes.join(' | '));
+  assert.ok(!ph.atoms.some(x => x.label === 'X1'));
+  r = a.context.RV.cmd.atomsFromCifText(ph, text, 'add');
+  assert.equal(ph.atoms.length, 2 * cif.atoms.length);
+  assert.equal(new Set(ph.atoms.map(x => x.label)).size, ph.atoms.length, 'added labels are made unique');
+  const p1 = St.makePhase({ name: 'P1', sg: St.resolveSG(1), cell: { a: 5, b: 6, c: 7, alpha: 90, beta: 90, gamma: 90 }, atoms: [] });
+  St.addPhase(p1);
+  r = a.context.RV.cmd.atomsFromCifText(p1, text, 'add');
+  assert.ok(r.notes.some(n => /Pnma|62/.test(n) && /sites of/.test(n)), r.notes.join(' | '));
+  assert.ok(r.notes.some(n => /differs/.test(n)));
+  assert.throws(() => a.context.RV.cmd.atomsFromCifText(p1, `data_x
+_cell_length_a 5
+`, 'add'), /no atom sites/);
 });
 
 test('a dataset saved without an id does not take the id of a later dataset', () => {

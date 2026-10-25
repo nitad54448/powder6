@@ -32,7 +32,7 @@ RV.phasesTab = (function () {
   // ---------------------------------------------------------------- building
   function renderBar() {
     var bar = $('#phase-select'), cur = St.currentPhase();
-    ui.able($('#ph-tab-atom'), cur ? '' : 'No phase yet.');
+    ['#ph-tab-atom', '#ph-tab-cif-atoms', '#ph-tab-fragment'].forEach(function (s) { ui.able($(s), cur ? '' : 'No phase yet.'); });
     var cb=document.querySelector('[data-atomic-constraints]');if(cb){ui.able(cb,cur && cur.atoms.length?'':'Select a phase with atoms.');cb.textContent='Atomic constraints…'+(cur && cur.constraints && cur.constraints.length?' ('+cur.constraints.length+')':'');}
     var rb=document.querySelector('[data-restraints]');if(rb){ui.able(rb,cur && cur.atoms.length>1?'':'Select a phase with at least two atoms.');var rn=cur && RV.restraints?RV.restraints.summary(cur):'';rb.textContent='Restraints…'+(rn?' ('+rn.replace(/ rules?.*/,'')+')':'');}
     if (!bar) return;
@@ -103,7 +103,7 @@ RV.phasesTab = (function () {
         '<div class="table-wrap"><table class="grid atoms"><thead><tr><th>Label</th><th>Scatterer</th><th>x</th><th>y</th><th>z</th><th>Occ.</th><th>B /Å²</th>' +
         '<th title="Wyckoff position (multiplicity and letter) and the coordinates it allows">Site</th><th></th></tr></thead><tbody id="ph-atoms">' +
         (ph.atoms.map(atomRow).join('') || '<tr><td colspan="9" class="hint">No atoms: Le Bail and WPPF use the cell and space group. Add atoms or import a CIF for Rietveld.</td></tr>') +
-        '</tbody></table></div><p class="buttons"><button type="button" data-act="atom">Add atom…</button></p>' +
+        '</tbody></table></div><p class="buttons"><button type="button" data-act="atom">Add atom…</button><button type="button" data-act="atoms-cif" title="Read the atom sites of a structure CIF into this phase (add or replace); the phase keeps its cell and space group">Atoms from CIF…</button><button type="button" data-act="fragment" title="Put a molecule (PDB, MOL/SDF, XYZ, Z-matrix) into this phase as atoms on general positions, with restraints for its bonds and angles">Fragment…</button></p>' +
         '<p class="hint">x, y, z are fractional. A coordinate in grey is set by the site of the atom (shown on the right); typing a value there moves the atom off that site. Occ. is the fraction of the site occupied.</p></section>' +
       (ph.atoms.length ? '<section class="pblock constraints-block"><h2>Atomic constraints <span class="sub" id="ph-ac-n"></span></h2>' +
         '<p class="hint">GSAS-II relationships between the atomic parameters of ' + esc(ph.name) + ': hold, equivalence and constraint equation. Rietveld applies them exactly in every dataset' + (ph.method === 'rietveld' ? '' : '; ' + esc(ph.name) + ' is fitted by ' + esc(C.METHOD_LABELS[ph.method]) + ' now, so they are kept but unused') + '. Constrained parameters are marked in Parameters.</p>' +
@@ -297,6 +297,8 @@ RV.phasesTab = (function () {
     else if (a === 'simulate') RV.cmd.simulate();
     else if (a === 'orientation') RV.cmd.orientation();
     else if (a === 'atom') RV.cmd.addAtom();
+    else if (a === 'atoms-cif') RV.cmd.atomsFromCif();
+    else if (a === 'fragment') RV.cmd.fragment();
     else if (a === 'rename-phase' && ph && !busy()) renamePhase(ph);
     else if (a === 'sg-browse' && ph && !busy()) openBrowser(ph);
     else if (a === 'sg-convert' && ph && !busy()) convertDialog(ph);

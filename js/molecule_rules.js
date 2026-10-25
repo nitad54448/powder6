@@ -1,7 +1,10 @@
-/* Molecules to restraint rules: read a molecule (PDB, XYZ or Z-matrix) and write the distance rules
+/* Molecules to restraint rules: read a molecule (PDB, MOL/SDF V2000, XYZ or Z-matrix) and write the distance rules
  * (js/distance_rules.js, used by js/atom_restraints.js) that keep its bonded geometry in a Rietveld phase.
  *
- *   MoleculeRules.read(text, {name})  -> {format, atoms: [{name, el, xyz: [x, y, z] (Å)}]}   throws on a bad file
+ *   MoleculeRules.read(text, {name})  -> {format, atoms: [{name, el, xyz: [x, y, z] (Å)}], cell (PDB CRYST1) or null}
+ *                                        throws on a bad file
+ *   MoleculeRules.fragment(mol, opts) -> the molecule as atoms of a phase, in fractional coordinates (see below)
+ *   MoleculeRules.generalPoint(ops, cell) -> a fractional point far from every symmetry element
  *   MoleculeRules.rules(atoms, opts)  -> {text, bonds, angles, skipped}
  *       opts.bondTol (Å, 0.03), opts.angleTol (Å on the 1-3 distance, 0.06), opts.factor (bond if d < factor × the
  *       sum of the covalent radii, 1.2), opts.angles (true), opts.only (a set of atom names: the rules for the
@@ -51,6 +54,28 @@ var MoleculeRules = (function () {
     if (Number.isFinite(n) && atoms.length > n) atoms.length = n;
     return atoms;
   }
+  // MDL MOL / SDF (V2000), the first molecule: the counts line, then x y z element per atom. Names are the element and
+  // its running number (C1, C2, N1 …), since the format has none.
+  function readMOL(lines) {
+    var c = lines.findIndex(function (l) { return /V2000\s*$/.test(l); });
+    if (c < 0) { if (lines.some(function (l) { return /V3000/.test(l); })) throw new Error('MOL V3000 is not read; save the molecule as MOL V2000 (or SDF, PDB, XYZ).'); c = 3; }
+    var n = parseInt(String(lines[c] || '').substr(0, 3), 10), atoms = [], count = {};
+    if (!(n > 0)) throw new Error('MOL: no atom count on the counts line.');
+    for (var i = c + 1; i <= c + n && i < lines.length; i++) {
+      var t = lines[i].trim().split(/\s+/), xyz = [num(t[0]), num(t[1]), num(t[2])], el = elementOf(t[3]);
+      if (xyz.some(function (v) { return !Number.isFinite(v); })) throw new Error('MOL: atom line ' + (i - c) + ' has no coordinates.');
+      count[el] = (count[el] || 0) + 1;
+      atoms.push({ name: el + count[el], el: el, xyz: xyz });
+    }
+    return atoms;
+  }
+  // CRYST1 of a PDB: the cell its orthogonal coordinates are in (a along x, b in the xy plane); none for the 1 1 1 dummy
+  function pdbCell(lines) {
+    var l = lines.filter(function (x) { return /^CRYST1/.test(x); })[0];
+    if (!l) return null;
+    var c = { a: num(l.substr(6, 9)), b: num(l.substr(15, 9)), c: num(l.substr(24, 9)), alpha: num(l.substr(33, 7)), beta: num(l.substr(40, 7)), gamma: num(l.substr(47, 7)) };
+    return ['a', 'b', 'c', 'alpha', 'beta', 'gamma'].every(function (k) { return c[k] > 0; }) && !(c.a === 1 && c.b === 1 && c.c === 1) ? c : null;
+  }
   function readPDB(lines) {
     var atoms = [];
     lines.forEach(function (l) {
@@ -90,12 +115,75 @@ var MoleculeRules = (function () {
   }
 
   function read(text, opts) {
-    var lines = String(text || '').split(/\r?\n/), name = String((opts && opts.name) || '').toLowerCase(), atoms, format;
-    if (/\.pdb$|\.ent$/.test(name) || lines.some(function (l) { return /^(ATOM  |HETATM)/.test(l); })) { format = 'PDB'; atoms = readPDB(lines); }
+    var lines = String(text || '').split(/\r?\n/), name = String((opts && opts.name) || '').toLowerCase(), atoms, format, cell = null;
+    if (/\.(mol|sdf|sd)$/.test(name) || /V[23]000\s*$/.test(lines[3] || '')) { format = 'MOL'; atoms = readMOL(lines); }
+    else if (/\.pdb$|\.ent$/.test(name) || lines.some(function (l) { return /^(ATOM  |HETATM)/.test(l); })) { format = 'PDB'; atoms = readPDB(lines); cell = pdbCell(lines); }
     else if (/\.xyz$/.test(name) || /^\s*\d+\s*$/.test(lines[0] || '') || lines.filter(function (l) { return l.trim(); }).every(function (l) { var t = l.trim().split(/\s+/); return t.length === 4 && /^[A-Za-z]/.test(t[0]) && Number.isFinite(num(t[1])) && Number.isFinite(num(t[2])) && Number.isFinite(num(t[3])); })) { format = 'XYZ'; atoms = readXYZ(lines); }
     else { format = 'Z-matrix'; atoms = readZMatrix(lines); }
-    if (!atoms.length) throw new Error('No atoms found (PDB, XYZ or Z-matrix expected).');
-    return { format: format, atoms: unique(atoms) };
+    if (!atoms.length) throw new Error('No atoms found (PDB, MOL/SDF, XYZ or Z-matrix expected).');
+    return { format: format, atoms: unique(atoms), cell: cell };
+  }
+
+  // ---------------------------------------------------------------- a molecule put into a cell (Phases → Fragment)
+  // Cartesian -> fractional in the standard setting (a along x, b in the xy plane; the PDB convention)
+  function toFractional(cell) {
+    var d = Math.PI / 180, ca = Math.cos(cell.alpha * d), cb = Math.cos(cell.beta * d), cg = Math.cos(cell.gamma * d), sg = Math.sin(cell.gamma * d);
+    var bx = cell.b * cg, by = cell.b * sg, cx = cell.c * cb, cy = cell.c * (ca - cb * cg) / sg, cz = Math.sqrt(Math.max(1e-12, cell.c * cell.c - cx * cx - cy * cy));
+    return function (r) { var f2 = r[2] / cz, f1 = (r[1] - cy * f2) / by; return [(r[0] - bx * f1 - cx * f2) / cell.a, f1, f2]; };
+  }
+  function toCartesian(cell) {
+    var d = Math.PI / 180, ca = Math.cos(cell.alpha * d), cb = Math.cos(cell.beta * d), cg = Math.cos(cell.gamma * d), sg = Math.sin(cell.gamma * d);
+    var bx = cell.b * cg, by = cell.b * sg, cx = cell.c * cb, cy = cell.c * (ca - cb * cg) / sg, cz = Math.sqrt(Math.max(1e-12, cell.c * cell.c - cx * cx - cy * cy));
+    return function (f) { return [cell.a * f[0] + bx * f[1] + cx * f[2], by * f[1] + cy * f[2], cz * f[2]]; };
+  }
+  /* A point of the cell far from every symmetry element: on a 1/20 grid (shifted by 1/40, off the special fractions),
+     the point whose nearest symmetry image is farthest. A molecule centred there sits on a general position and its
+     images overlap it least. ops: [{r: 9 numbers by rows, t: 3}], the full list of the space group. */
+  function generalPoint(ops, cell) {
+    var cart = toCartesian(cell), best = [0.3, 0.2, 0.35], bestD = -1, steps = 20;
+    var moving = (ops || []).filter(function (op) {
+      var I = op.r.every(function (v, k) { return v === (k % 4 === 0 ? 1 : 0); });
+      return !(I && op.t.every(function (t) { return Math.abs(t - Math.round(t)) < 1e-9; }));
+    });
+    if (!moving.length) return best;
+    for (var i = 0; i < steps; i++) for (var j = 0; j < steps; j++) for (var k = 0; k < steps; k++) {
+      var p = [(i + 0.5) / steps, (j + 0.5) / steps, (k + 0.5) / steps], m = Infinity;
+      for (var o = 0; o < moving.length && m > bestD; o++) {
+        var r = moving[o].r, t = moving[o].t, q = [0, 1, 2].map(function (a) { var v = r[3 * a] * p[0] + r[3 * a + 1] * p[1] + r[3 * a + 2] * p[2] + t[a] - p[a]; return v - Math.round(v); });
+        var c = cart(q), dd = c[0] * c[0] + c[1] * c[1] + c[2] * c[2];
+        if (dd < m) m = dd;
+      }
+      if (m > bestD) { bestD = m; best = p; }
+    }
+    return best;
+  }
+  /* The atoms of a molecule as atoms of a phase.
+       o.cell     the phase cell (Å, °), used when o.centre is given
+       o.centre   [x, y, z] fractional: the centroid of the kept atoms goes there, in the orientation of the file;
+                  without it, the file's own cell (mol.cell, a PDB CRYST1) gives the fractional coordinates as they are
+       o.skipH    leave the hydrogens out
+       o.used     labels already in the phase (a Set): the new ones are numbered past them
+     -> {atoms: [{label, el, x, y, z}], named: the molecule with the new labels (hydrogens left out keep a name of
+         their own), for rules(named, {only}) }                                                                    */
+  function fragment(mol, o) {
+    o = o || {};
+    var used = new Set(o.used || []), next = {}, named = [], atoms = [];
+    var frame = o.centre ? o.cell : mol.cell;
+    if (!frame) throw new Error('The file has no cell (CRYST1): give the position of the molecule in the cell.');
+    var frac = toFractional(frame), keep = mol.atoms.filter(function (a) { return !(o.skipH && a.el === 'H'); });
+    if (!keep.length) throw new Error('The molecule has no atom left once the hydrogens are left out.');
+    var g = [0, 1, 2].map(function (k) { return keep.reduce(function (s, a) { return s + a.xyz[k]; }, 0) / keep.length; });
+    var g0 = o.centre ? frac(g) : [0, 0, 0], shift = o.centre ? [0, 1, 2].map(function (k) { return o.centre[k] - g0[k]; }) : [0, 0, 0];
+    mol.atoms.forEach(function (a, i) {
+      if (o.skipH && a.el === 'H') { named.push({ name: '#H' + (i + 1), el: a.el, xyz: a.xyz }); return; }
+      var n = next[a.el] || 1;
+      while (used.has(a.el + n)) n++;
+      next[a.el] = n + 1; used.add(a.el + n);
+      var f = frac(a.xyz);
+      atoms.push({ label: a.el + n, el: a.el, x: f[0] + shift[0], y: f[1] + shift[1], z: f[2] + shift[2] });
+      named.push({ name: a.el + n, el: a.el, xyz: a.xyz });
+    });
+    return { atoms: atoms, named: named };
   }
 
   function dist(a, b) { return Math.hypot(a.xyz[0] - b.xyz[0], a.xyz[1] - b.xyz[1], a.xyz[2] - b.xyz[2]); }
@@ -153,7 +241,7 @@ var MoleculeRules = (function () {
     }
     return {text:lines.join('\n'),bonds:nb.length,angles:pairs.length,pairs:pairs};
   }
-  return { read: read, rules: rules, radius: radius, elementOf: elementOf, geometryRules:geometryRules };
+  return { read: read, rules: rules, radius: radius, elementOf: elementOf, geometryRules:geometryRules, fragment: fragment, generalPoint: generalPoint };
 
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = MoleculeRules;

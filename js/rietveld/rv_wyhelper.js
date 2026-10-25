@@ -102,8 +102,8 @@ RV.wyHelper = (function(){
       '<nav class="tabs" role="tablist" aria-label="Constraint helper">'+tabs.map(function(t){return '<button type="button" role="tab" id="wh-tab-'+t[0]+'" data-wh-tab="'+t[0]+'" aria-controls="wh-panel-'+t[0]+'" aria-selected="'+(t[0]==='geometry')+'" tabindex="'+(t[0]==='geometry'?'0':'-1')+'">'+t[1]+'</button>';}).join('')+'</nav>'+
       '<section role="tabpanel" class="rs-helper-panel" id="wh-panel-geometry" aria-labelledby="wh-tab-geometry" data-wh-panel="geometry"><div class="rs-guide-body" data-wh-geometry>'+geometryHTML(els)+'</div></section>'+
       '<section role="tabpanel" class="rs-helper-panel" id="wh-panel-molecule" aria-labelledby="wh-tab-molecule" data-wh-panel="molecule" hidden><div class="rs-guide-body">'+
-        '<p class="hint">Read a molecule (PDB, XYZ or Z-matrix) and write the bonds between its elements: "A B N" when every A has N neighbours B, the nearest B otherwise. Only the elements of the formula unit are used.</p>'+
-        '<div class="rs-set"><label>File <input type="file" data-wh-file accept=".pdb,.ent,.xyz,.txt,.zmat,.gjf,.mol"></label></div>'+
+        '<p class="hint">Read a molecule (PDB, MOL/SDF, XYZ or Z-matrix) and write the bonds between its elements: "A B N" when every A has N neighbours B, the nearest B otherwise. Only the elements of the formula unit are used.</p>'+
+        '<div class="rs-set"><label>File <input type="file" data-wh-file accept=".pdb,.ent,.mol,.sdf,.xyz,.txt,.zmat"></label></div>'+
         '<label class="rs-rules">…or paste it here<textarea class="code-area" data-wh-paste rows="4" spellcheck="false" placeholder="S&#10;O1 1 1.47&#10;O2 1 1.47 2 109.47">'+esc(mol.paste)+'</textarea></label>'+
         '<div class="rs-set"><label>Bond window ± (Å) <input class="num" data-wh-btol value="'+esc(mol.btol)+'" inputmode="decimal"></label><label><input type="checkbox" data-wh-skiph'+(mol.skiph?' checked':'')+'> skip hydrogens</label></div>'+
         '<div data-wh-made></div><p class="buttons"><button type="button" data-wh-add="molecule">Add</button></p></div></section>'+

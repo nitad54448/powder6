@@ -2,6 +2,13 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.35.0 — 25 October 2026
+
+1. **Atoms from CIF.** Phases → Atoms from CIF… (also under the atom table and in the Refine menu) reads the atom sites of a structure CIF into the current phase, replacing its atoms or adding to them; the phase keeps its cell and space group. A CIF in another space group or a cell more than 2 % different is read and said, not refused. Read CIF… still makes a new phase.
+2. **Fragment.** Phases → Fragment… puts a molecule (PDB, MOL/SDF, XYZ or Z-matrix) into the current phase: atoms labelled by element (C1, C2 …, numbered past those already there), the centroid at a point of the cell farthest from every symmetry element (editable) in the orientation of the file, or at the coordinates of its own cell for a PDB with CRYST1. Hydrogens are left out by default for X-rays; a rule for every bond and angle of the molecule is added to the restraints of the phase by the same labels, so no atom matching is needed. An atom that falls on a symmetry element is reported.
+3. **Molecule files.** MOL/SDF (V2000) is read by the molecule readers (Fragment and the Molecule tabs of both Helpers); the file pickers offered `.mol` without a reader for it and `.gjf`, which was not read either (removed). A PDB CRYST1 cell is read.
+4. **Tests.** Node regressions for MOL/SDF, CRYST1, fragment placement (bond lengths kept, general positions, labels, restraints, replace) and atoms from CIF (replace, add, mismatch notes); a browser page (`tests/phase-atoms`) for the buttons, dialogs and Undo.
+
 ## 2.34.0 — 25 October 2026
 
 1. **"Start step end" patterns.** A file whose first line is `start step end` followed by the intensities, any number per line (FullProf INSTRM=0, WinPLOTR, EXPO `.dat`, e.g. `test_files/cimetidine/cime.dat`), is read as a constant-step scan. It used to fall to the two-column reader, which took the header as the point (start, step) and each row of counts as a point at 2θ = its first count. The number of values must match (end − start)/step + 1 within 1 %, which keeps three-column x y σ files apart.

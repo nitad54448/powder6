@@ -188,11 +188,7 @@ RV.cmd = (function () {
     var hm = cif.sgName && cif.sgName !== cif.sgHall ? cif.sgName : null;
     var sg = St.resolveFileSG({ symbol: hm, hall: cif.sgHall, number: cif.sgNumber }, cif.cell);
     if (!sg) throw new Error('space group ' + (cif.sgName || cif.sgNumber || '(none given)') + ' not recognised');
-    var atoms = cif.atoms.map(function (a) {
-      return { label: a.siteLabel, type: a.type || St.elementOf(a.siteLabel) || a.siteLabel, x: a.x, y: a.y, z: a.z, occ: Number.isFinite(a.occ) ? a.occ : 1,
-               B: Number.isFinite(a.biso) ? a.biso : Number.isFinite(a.uiso) ? 8 * Math.PI * Math.PI * a.uiso : 0.5 };
-    });
-    var ph = St.makePhase({ name: cif.blockName && !/^global$/i.test(cif.blockName) ? cif.blockName : baseName(fileName), sg: sg, cell: cif.cell, atoms: atoms });
+    var ph = St.makePhase({ name: cif.blockName && !/^global$/i.test(cif.blockName) ? cif.blockName : baseName(fileName), sg: sg, cell: cif.cell, atoms: cifAtoms(cif) });
     return { ph: ph, cif: cif, how: sg.how };
   }
   function readStructures(items) {
@@ -297,6 +293,104 @@ RV.cmd = (function () {
     St.phaseChanged(ph);
     var at = ph.atoms.filter(function (a) { return a.label === label; })[0];
     ui.toast('Atom ' + label + ' added to ' + ph.name + ' on ' + at.site.wyck + ' (' + at.site.expr + ').', 'ok');
+  }
+  // ---------------------------------------------------------------- atoms into the current phase: from a CIF, or a molecule (fragment)
+  function cifAtoms(cif) {
+    return cif.atoms.map(function (a) {
+      return { label: a.siteLabel, type: a.type || St.elementOf(a.siteLabel) || a.siteLabel, x: a.x, y: a.y, z: a.z, occ: Number.isFinite(a.occ) ? a.occ : 1,
+               B: Number.isFinite(a.biso) ? a.biso : Number.isFinite(a.uiso) ? 8 * Math.PI * Math.PI * a.uiso : 0.5 };
+    });
+  }
+  // the cell the new atoms are placed in: that of the first dataset holding the phase (its fitted cell), else the starting model
+  function modelCell(ph) { var ds = St.first(), src = ds && St.hasPhase(ds, ph) ? ds.p : ph.v; return St.cellOf(ph, src); }
+  // mode 'add' keeps the atoms of the phase, 'replace' clears them (with their values, flags and constraints) first
+  function putAtoms(ph, atoms, mode) {
+    var cell = modelCell(ph);
+    if (mode === 'replace') St.replaceAtoms(ph, atoms, cell);
+    else { var used = new Set(ph.atoms.map(function (a) { return a.label; })); atoms.forEach(function (a) { St.addAtomTo(ph, a, cell, used); }); St.phaseChanged(ph); }
+  }
+  /* The atoms of a structure CIF into ph, at the fractional coordinates of the file: the phase keeps its cell and space
+     group. -> {n, notes}: what does not match (another space group, another cell) is said, not refused. */
+  function atomsFromCifText(ph, text, mode) {
+    var cif = CifStructure.parse(text), notes = [];
+    if (!cif.atoms.length) throw new Error('no atom sites (_atom_site_fract_x …) in the file');
+    var sg = St.resolveFileSG({ symbol: cif.sgName && cif.sgName !== cif.sgHall ? cif.sgName : null, hall: cif.sgHall, number: cif.sgNumber }, cif.cell || modelCell(ph));
+    if (sg && sg.hall !== ph.sg.hall) notes.push('the file is in ' + St.sgText(sg) + ', the phase in ' + St.sgText(ph.sg) + ': the sites are read as sites of ' + St.sgText(ph.sg));
+    else if (!sg) notes.push('the space group of the file is not given or not recognised: the sites are read as sites of ' + St.sgText(ph.sg));
+    var cell = modelCell(ph);
+    if (cif.cell && cell && ['a', 'b', 'c'].some(function (k) { return Math.abs(cif.cell[k] - cell[k]) > 0.02 * cell[k]; })) notes.push('the cell of the file (' + ['a', 'b', 'c'].map(function (k) { return cif.cell[k].toFixed(3); }).join(', ') + ' Å) differs from that of the phase by more than 2 %');
+    var atoms = cifAtoms(cif);
+    putAtoms(ph, atoms, mode);
+    return { n: atoms.length, notes: notes };
+  }
+  async function atomsFromCif() {
+    var ph = St.currentPhase();
+    if (!idle() || !havePhase()) return;
+    var fs = await ui.pickFiles({ accept: '.cif' });
+    if (!fs.length) return;
+    var text;
+    try { text = new TextDecoder().decode(await ui.readBuffer(fs[0])); } catch (e) { ui.toast(fs[0].name + ': ' + e.message, 'err'); return; }
+    var mode = 'add';
+    if (ph.atoms.length) {
+      var v = await ui.prompt('Atoms from ' + fs[0].name, [{ key: 'mode', label: 'Atoms of ' + ph.name, type: 'select', value: 'replace', options: [['replace', 'Replace the ' + plural(ph.atoms.length, 'atom') + ' of the phase'], ['add', 'Add to them']] }],
+        'Read atoms', 'The atom sites of the CIF go into ' + ui.esc(ph.name) + ' at their fractional coordinates; the cell and the space group of the phase stay as they are.');
+      if (!v) return;
+      mode = v.mode;
+    }
+    if (!idle() || St.currentPhase() !== ph) return;
+    snapshot((mode === 'replace' ? 'replacing the atoms of ' : 'adding atoms to ') + ph.name + ' from ' + fs[0].name);
+    try { var r = atomsFromCifText(ph, text, mode); }
+    catch (e) { ui.toast(fs[0].name + ': ' + e.message, 'err'); return; }
+    ui.toast(plural(r.n, 'atom') + ' of ' + fs[0].name + (mode === 'replace' ? ' now make ' : ' added to ') + ph.name + (r.notes.length ? '; ' + r.notes.join('; ') + '.' : '.'), r.notes.length ? 'warn' : 'ok');
+  }
+  /* A molecule (PDB, MOL/SDF, XYZ, Z-matrix) into ph, as a fragment: labels by element (C1, C2 …, past those in the
+     phase), its centroid at o.centre in the orientation of the file, or at the coordinates of its own cell (a PDB with
+     CRYST1, o.centre null). o.restraints: the bonds and angles of the molecule are added to the restraints of the phase,
+     by the labels just made. -> {atoms, bonds, angles} */
+  function fragmentInto(ph, mol, o) {
+    var used = new Set(o.mode === 'replace' ? [] : ph.atoms.map(function (a) { return a.label; }));
+    var fr = MoleculeRules.fragment(mol, { cell: modelCell(ph), centre: o.centre, skipH: o.skipH, used: used });
+    putAtoms(ph, fr.atoms.map(function (a) { return { label: a.label, type: a.el, x: a.x, y: a.y, z: a.z, occ: 1, B: Number.isFinite(o.B) ? o.B : 3 }; }), o.mode);
+    // an atom within 0.02 Å of a symmetry element is put on it, with a lower multiplicity: said, since the molecule is meant on general positions
+    var mine = new Set(fr.atoms.map(function (a) { return a.label; }));
+    var out = { atoms: fr.atoms.length, bonds: 0, angles: 0, special: ph.atoms.filter(function (a) { return mine.has(a.label) && a.site.mult < ph.ops.length; }).map(function (a) { return a.label; }) };
+    if (o.restraints) {
+      var made = MoleculeRules.rules(fr.named, { only: new Set(fr.atoms.map(function (a) { return a.label; })) });
+      if (made.text) {
+        var merged = AtomRestraints.merge(ph.atoms, ph.restraints.text, made.text);
+        ph.restraints = AtomRestraints.normalize(Object.assign({}, ph.restraints, { text: merged.text }));
+        out.bonds = made.bonds; out.angles = made.angles; S.version++; RV.bus.emit('phases');
+      }
+    }
+    return out;
+  }
+  async function fragment() {
+    var ph = St.currentPhase();
+    if (!idle() || !havePhase()) return;
+    var fs = await ui.pickFiles({ accept: '.pdb,.ent,.mol,.sdf,.xyz,.zmat,.txt' });
+    if (!fs.length) return;
+    var mol;
+    try { mol = MoleculeRules.read(new TextDecoder().decode(await ui.readBuffer(fs[0])), { name: fs[0].name }); } catch (e) { ui.toast(fs[0].name + ': ' + e.message, 'err'); return; }
+    var nH = mol.atoms.filter(function (a) { return a.el === 'H'; }).length, ds = St.first(), neutron = ds && ds.inst.radiation === 'neutron';
+    var p = MoleculeRules.generalPoint(ph.ops, modelCell(ph)), f3 = function (x) { return +x.toFixed(3); };
+    var fields = [];
+    if (ph.atoms.length) fields.push({ key: 'mode', label: 'Atoms of ' + ph.name, type: 'select', value: 'add', options: [['add', 'Add the fragment to the ' + plural(ph.atoms.length, 'atom')], ['replace', 'Replace them by the fragment']] });
+    if (mol.cell) fields.push({ key: 'place', label: 'Position', type: 'select', value: 'file', options: [['file', 'As in the file (its CRYST1 cell)'], ['point', 'Centred at a point']] });
+    fields.push({ key: 'x', label: 'Centre x', type: 'number', value: f3(p[0]), when: mol.cell ? 'place:point' : '' }, { key: 'y', label: 'Centre y', type: 'number', value: f3(p[1]), when: mol.cell ? 'place:point' : '' },
+                { key: 'z', label: 'Centre z', type: 'number', value: f3(p[2]), when: mol.cell ? 'place:point' : '', hint: 'Fractional. The default is the point of the cell farthest from every symmetry element (a general position).' },
+                { key: 'B', label: 'B /Å²', type: 'number', value: 3 });
+    if (nH) fields.push({ key: 'skipH', label: 'Leave out the ' + nH + ' H', type: 'checkbox', value: !neutron, hint: 'X-rays barely see hydrogen; the restraints still follow the full molecule.' });
+    fields.push({ key: 'restraints', label: 'Restraints', type: 'checkbox', value: true, hint: 'Add a rule for every bond and every angle (1-3 distance) of the molecule to the restraints of the phase.' });
+    fields.forEach(function (f) { if (!f.when) delete f.when; });
+    var v = await ui.prompt('Fragment from ' + fs[0].name, fields, 'Add fragment',
+      ui.esc(mol.format) + ': ' + plural(mol.atoms.length, 'atom') + '. The molecule keeps the orientation of the file; its atoms are labelled by element (C1, C2 …) and placed in the cell of ' + ui.esc(ph.name) + ' on general positions. It is a starting model: refine it with restraints, or move it.');
+    if (!v || !idle() || St.currentPhase() !== ph) return;
+    var mode = v.mode || 'add', centre = mol.cell && v.place === 'file' ? null : [v.x, v.y, v.z];
+    snapshot((mode === 'replace' ? 'replacing the atoms of ' : 'adding a fragment to ') + ph.name + ' from ' + fs[0].name);
+    try { var r = fragmentInto(ph, mol, { mode: mode, centre: centre, skipH: !!v.skipH, B: v.B, restraints: v.restraints }); }
+    catch (e) { ui.toast(fs[0].name + ': ' + e.message, 'err'); return; }
+    ui.toast('Fragment ' + fs[0].name + ': ' + plural(r.atoms, 'atom') + (mode === 'replace' ? ' now make ' : ' added to ') + ph.name + (r.bonds ? ', with ' + r.bonds + ' bond and ' + r.angles + ' angle restraints' : '') + '.' +
+      (r.special.length ? ' ' + r.special.join(', ') + ' fell on a symmetry element (special position): move the fragment to another centre.' : ''), r.special.length ? 'warn' : 'ok');
   }
   async function deletePhase(key) {
     var ph = typeof key==='string'?St.phaseByKey(key):St.currentPhase();if(!ph)return;
@@ -1587,7 +1681,7 @@ RV.cmd = (function () {
                ['… and peak shapes', function () { tickSteps('profile'); }, 'edit'], ['… and atoms', function () { tickSteps('atoms'); }, 'edit'],
                ['Untick everything', function () { tickSteps('none'); }, 'edit'], ['Estimate scales and background', estimate, 'withPhase'], null,
                ['Sharing in the global fit…', function () { sharing(); }, 'global'], null,
-               ['Phases of the datasets…', phaseMap, 'phaseMap'], ['Add an atom to the current phase…', addAtom, 'havePhase'], ['Delete the current phase…', deletePhase, 'havePhase']]
+               ['Phases of the datasets…', phaseMap, 'phaseMap'], ['Add an atom to the current phase…', addAtom, 'havePhase'], ['Atoms from CIF into the current phase…', atomsFromCif, 'havePhase'], ['Fragment (molecule) into the current phase…', fragment, 'havePhase'], ['Delete the current phase…', deletePhase, 'havePhase']]
     };
     document.querySelectorAll('[data-menu]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -1599,7 +1693,7 @@ RV.cmd = (function () {
     syncButtons();
   }
 
-  return { init: init, readFiles: readFiles, readStructure: readStructure, newPhase: newPhase, addAtom: addAtom, deletePhase: deletePhase, setMethod: setMethod,
+  return { init: init, readFiles: readFiles, readStructure: readStructure, newPhase: newPhase, addAtom: addAtom, atomsFromCif: atomsFromCif, atomsFromCifText: atomsFromCifText, fragment: fragment, fragmentInto: fragmentInto, deletePhase: deletePhase, setMethod: setMethod,
            readData: readData0, orientation: orientation, resolution: resolution, setInstrumentProfile:setInstrumentProfile, instrument: instrument, background: background, excludeRegions: excludeRegions, markAt: markAt, removeAnchor: removeAnchor, addZone: addZone, editZone: editZone, applyZone: applyZone, removeZone: removeZone, regionAt: regionAt, simulate: simulate,
            loadPreset: loadPreset, savePreset: savePreset, loadDefaultPresets: loadDefaultPresets, extract: extract,
            deleteDatasets: deleteDatasets, estimate: estimate, cloneTo: cloneTo, tickSteps: tickSteps, fitGroupState: fitGroupState, setFitGroup: setFitGroup,
