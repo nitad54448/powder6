@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.40.0 — 25 October 2026
+
+1. **Dependent parameters follow their tick.** In Parameters, a parameter that follows another (an equivalence constraint, or a parameter link) stays disabled but now shows the refine tick of the parameter it follows, instead of an unchecked box.
+2. **Restraint table lists every restrained value.** The geometry table under the restraint rules showed only values outside their window, so a rule that is satisfied (for example C1–N1 inside 1.00/1.20) seemed to be missing. All restrained values are listed, violations first, with "in window" for the satisfied ones.
+3. **Save peaks.** The Fourier Peaks block saves the peak list (sign, x, y, z, σ, height, nearest atom, distance, copies) as CSV.
+
 ## 2.39.0 — 25 October 2026
 
 1. **Automatic anomalous scattering.** Copy Hephaestus's 92-element Chantler data file into `scatters/anomalous_chantler.json` and interpolate signed f′ and f″ linearly in photon energy at each dataset's λ1. The Instrument checkbox defaults on for X-rays and is disabled for neutrons. Turning it off removes the corrections from CPU and GPU fit jobs. Table bounds are respected without extrapolation; ionic species use their element's anomalous values.

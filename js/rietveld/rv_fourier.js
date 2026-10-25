@@ -77,7 +77,7 @@ RV.fourier = (function(){
     var rows=res.peaks.map(function(p,i){
       return '<tr><td>'+(p.sign>0?'+':'−')+'</td><td class="n">'+[p.x,p.y,p.z].map(function(x){return x.toFixed(4);}).join('</td><td class="n">')+'</td><td class="n">'+Math.abs(p.sigmas).toFixed(1)+'</td><td class="n">'+p.height.toFixed(2)+'</td><td>'+esc(p.atom||'')+'</td><td class="n">'+p.distance.toFixed(2)+'</td><td class="n">'+p.copies+'</td><td>'+(p.sign>0?'<button type="button" class="mini" data-fo-add="'+i+'">Add atom…</button>':'')+'</td></tr>';
     }).join('');
-    return '<div class="table-wrap"><table class="grid compact"><thead><tr><th></th><th>x</th><th>y</th><th>z</th><th>σ</th><th>Height ('+unit(R)+')</th><th>Nearest atom</th><th>d (Å)</th><th>Copies</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    return '<p class="buttons"><button type="button" data-fo="peaks">Save peaks</button></p><div class="table-wrap"><table class="grid compact"><thead><tr><th></th><th>x</th><th>y</th><th>z</th><th>σ</th><th>Height ('+unit(R)+')</th><th>Nearest atom</th><th>d (Å)</th><th>Copies</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
       '<p class="hint">Peaks of the '+esc(typeLabel(R.type))+' map above '+R.res.minSigma+' σ, one per set of symmetry-equivalent positions (Copies: how many were found). Heights are approximate: the observed amplitudes are put on the scale of Fc by one factor. A positive peak of a difference map far from every atom (≳ 1 Å) is a candidate atom: Add atom… puts it into the phase with the scatterer you name, on its special position if it is on one. Negative peaks mark atoms that are too heavy, misplaced or have too large an occupancy.</p>';
   }
   function render(){
@@ -117,6 +117,12 @@ RV.fourier = (function(){
     var R=FO.result;if(!R)return;
     ui.download('fourier_'+R.type+'_'+ui.fileStamp()+'.json',JSON.stringify({format:'powder6-density',version:1,kind:'fourier-'+R.type,phase:R.phaseName,dataset:R.dsName,gridSize:R.res.N,cell:R.cell,axisOrder:'x-fastest: x + N*(y + N*z)',unit:unit(R),sigma:R.res.sigma,map:Array.from(R.res.map)},null,2),'application/json');
   }
+  // the peak list as CSV: sign, fractional x y z, height in sigma and in e/A^3 (fm/A^3), nearest atom, its distance, copies
+  function savePeaks(){
+    var R=FO.result;if(!R||!R.res.peaks.length)return;
+    var rows=[['sign','x','y','z','sigma','height ('+unit(R)+')','nearest atom','distance (A)','copies']].concat(R.res.peaks.map(function(p){return [p.sign>0?'+':'-',p.x.toFixed(5),p.y.toFixed(5),p.z.toFixed(5),Math.abs(p.sigmas).toFixed(2),p.height.toFixed(4),p.atom||'',p.distance.toFixed(3),p.copies];}));
+    ui.download('fourier_peaks_'+R.type+'_'+ui.fileStamp()+'.csv',rows.map(function(r){return r.map(function(c){c=String(c);return /[",\r\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',');}).join('\r\n')+'\r\n','text/csv');
+  }
   async function addAtom(i){
     var R=FO.result,p=R&&R.res.peaks[i],ph=R&&St.phaseByKey(R.phaseKey);
     if(!p||!ph||S.busy)return;
@@ -145,6 +151,7 @@ RV.fourier = (function(){
       case 'reset':if(typeof Density3D!=='undefined')Density3D.resetView();break;
       case 'png':{var cv=$('#sv-fo-canvas');if(cv){var l=document.createElement('a');l.href=cv.toDataURL('image/png');l.download='fourier_'+ui.fileStamp()+'.png';l.click();}break;}
       case 'save':saveMap();break;
+      case 'peaks':savePeaks();break;
     }
   }
   function onChange(e){

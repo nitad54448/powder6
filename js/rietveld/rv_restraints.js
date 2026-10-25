@@ -36,11 +36,11 @@ RV.restraints = (function(){
     var chk=AR.check(ph.atoms,r);if(chk.errors.length)return '';
     var src=source(ph),rows;try{rows=AR.rows(def(ph),r,src.v,ctx());}catch(e){return '<p class="why">'+esc(e.message)+'</p>';}
     var chi=0,off=0;rows.forEach(function(x){var q=x.dev/x.sigma;chi+=q*q;if(x.dev!==0)off++;});
-    var shown=rows.filter(function(x){return x.dev!==0;}).slice(0,60),head='<p class="hint">Geometry of the '+esc(src.name)+': '+rows.length+' restrained values, '+off+' outside their window; Σ(deviation/σ)² = '+(chi*r.weight).toFixed(1)+' (weight '+r.weight+').</p>';
+    var shown=rows.slice().sort(function(a,b){return (b.dev!==0)-(a.dev!==0);}).slice(0,60),head='<p class="hint">Geometry of the '+esc(src.name)+': '+rows.length+' restrained values, '+off+' outside their window; Σ(deviation/σ)² = '+(chi*r.weight).toFixed(1)+' (weight '+r.weight+').</p>';
     if(!shown.length)return head;
     return head+'<div class="table-wrap"><table class="grid compact rs-geom"><thead><tr><th>Restrained value</th><th>Now</th><th>Wanted</th><th>Off by</th></tr></thead><tbody>'+shown.map(function(x){
       var u=x.kind==='ang'?'°':' Å',want=x.kind==='ang'?x.lo.toFixed(1)+(x.hi!==x.lo?'–'+x.hi.toFixed(1):'')+u:x.lo!=null&&x.hi!=null?x.lo.toFixed(2)+'–'+x.hi.toFixed(2)+u:x.lo!=null?'≥ '+x.lo.toFixed(2)+u:'≤ '+x.hi.toFixed(2)+u;
-      return '<tr><td>'+esc(x.text)+'</td><td class="n">'+x.val.toFixed(x.kind==='ang'?1:3)+u+'</td><td class="n">'+want+'</td><td class="n">'+(x.dev>0?'+':'')+x.dev.toFixed(x.kind==='ang'?1:3)+'</td></tr>';}).join('')+'</tbody></table></div>'+(off>shown.length?'<p class="hint">…and '+(off-shown.length)+' more.</p>':'');
+      return '<tr><td>'+esc(x.text)+'</td><td class="n">'+x.val.toFixed(x.kind==='ang'?1:3)+u+'</td><td class="n">'+want+'</td><td class="n">'+(x.dev===0?'in window':(x.dev>0?'+':'')+x.dev.toFixed(x.kind==='ang'?1:3))+'</td></tr>';}).join('')+'</tbody></table></div>'+(rows.length>shown.length?'<p class="hint">…and '+(rows.length-shown.length)+' more.</p>':'');
   }
   function status(ph,text){
     var r=Object.assign({},AR.normalize(ph.restraints),{text:text}),chk=AR.check(ph.atoms,r);

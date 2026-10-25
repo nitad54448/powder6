@@ -298,7 +298,7 @@ RV.panels = (function () {
     host.classList.toggle('global', g);
     // GSAS-II atomic constraints (Rietveld only): held, independent, dependent and equation terms are marked
     var acRoles = {};
-    S.parameterLinks.filter(function(l){return l.target.datasetId===ds.id;}).forEach(function(l){acRoles[l.target.name]={role:'dependent',ignore:true,editable:true,text:'Follows '+l.factor+' × '+l.source.name+' in '+(St.byId(l.source.datasetId)||{}).name+' + '+(l.offset || 0)};});
+    S.parameterLinks.filter(function(l){return l.target.datasetId===ds.id;}).forEach(function(l){acRoles[l.target.name]={role:'dependent',ignore:true,editable:true,follows:{name:l.source.name,datasetId:l.source.datasetId},text:'Follows '+l.factor+' × '+l.source.name+' in '+(St.byId(l.source.datasetId)||{}).name+' + '+(l.offset || 0)};});
     if (S.calculation === 'rietveld' && typeof AtomicConstraints !== 'undefined') S.phases.forEach(function (ph) {
       if (ph.method === 'rietveld' && ph.constraints && ph.constraints.length && St.hasPhase(ds, ph)) { try { Object.assign(acRoles, AtomicConstraints.roles(ph, ds.fit)); } catch (e) { /* shown by the editor */ } }
     });
@@ -332,6 +332,8 @@ RV.panels = (function () {
         if(info.noFreedom)pf.title+=' These limits leave no freedom to refine.';
       }
       if (ar && ar.ignore) pf.title = ar.text + '.';
+      // a dependent (equivalence or parameter link) is disabled but shows the tick of the parameter it follows
+      if (ar && ar.follows) { var src = ar.follows.datasetId != null ? St.byId(ar.follows.datasetId) : ds; fit = !!(src && src.fit[ar.follows.name]); mixed = false; pf.checked = fit; pf.indeterminate = false; pf.title = ar.text + '; its tick follows ' + ar.follows.name + ' (' + (fit ? 'refined' : 'fixed') + ').'; }
       row.classList.toggle('fixed', !fit && !mixed);
       var pl = row.querySelector('.pl'), can = St.shareable(n), sh = St.isShared(n);
       pl.hidden = !g;

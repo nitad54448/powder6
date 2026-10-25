@@ -170,7 +170,7 @@ var AtomicConstraints = (function () {
       var names=c.atoms.map(function(a){return ph.key+'.'+a+'.'+c.component;}), t=text(c);
       if(c.kind==='hold'){names.forEach(function(n){out[n]={role:'held',ignore:true,text:'Held (GSAS-II hold): not refined'};});return;}
       if(c.kind==='equiv'){out[names[0]]={role:'independent',text:'Independent parameter of: '+t};
-        names.slice(1).forEach(function(n,i){var m=c.mult[i+1];out[n]={role:'dependent',ignore:true,editable:true,text:'= '+(m===1?'':fmtMult(m)+' × ')+c.atoms[0]+'.'+c.component+' (equivalence); its refine flag is ignored'};});return;}
+        names.slice(1).forEach(function(n,i){var m=c.mult[i+1];out[n]={role:'dependent',ignore:true,editable:true,follows:{name:names[0]},text:'= '+(m===1?'':fmtMult(m)+' × ')+c.atoms[0]+'.'+c.component+' (equivalence); its refine flag is ignored'};});return;}
       var ticked=names.filter(function(n){return !!fit[n];}), dep=ticked.length?ticked[ticked.length-1]:null;
       names.forEach(function(n){out[n]=n===dep?{role:'dependent',text:'Dependent term of '+t+' (computed from the others)'}:{role:'term',text:(fit[n]?'Refined':'Fixed')+' term of '+t};out[n].sum=c;out[n].group=names;});
     });
