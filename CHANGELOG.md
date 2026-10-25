@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.33.3 — 25 October 2026
+
+1. **One look for the help buttons.** The "?" buttons of Constraints, Restraints, the formula unit and Fourier maps were small rectangular buttons; they now share the round style of the command-bar "?" (one `.help-q` rule with `.cmd-help`), on the line of their help text.
+2. **Example rules read as suggestions.** The example rules shown in the empty Restraints and Wyckoff Distance constraints boxes (and the other rules boxes) are faint and italic, so they no longer look like entered rules.
+3. **Help no longer truncated.** The "?" help opens in a popup at the button (on hover or keyboard focus) instead of the native tooltip, which browsers cut short: the Restraints rules help (about 3000 characters) is shown whole, with its paragraphs and list, and scrolls when it is taller than the window; the popup stays open while the pointer is on it, closes with Escape, and opens inside a dialog when the button is in one.
+
 ## 2.33.2 — 25 October 2026
 
 1. **Factor tooltip.** In the Wyckoff constraint Helper (Suggest tab), the Factor label and its value show "shortest contact = Factor × (covalent radius of A + covalent radius of B)" on hover.

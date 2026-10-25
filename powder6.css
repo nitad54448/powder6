@@ -187,6 +187,8 @@ input.invalid { border-color: var(--err); background: color-mix(in srgb, var(--e
 :where(:focus-visible) { outline: 2px solid var(--blue); outline-offset: 2px; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
 :where(input, textarea)::placeholder { color: var(--ink-3); opacity: 1; }
 textarea.code-area, .sv-form textarea { font-family: var(--font-code); font-size: var(--fs-sm); resize: vertical; }
+/* the example rules of a rules box are a suggestion, not content: faint and italic */
+textarea.code-area::placeholder, .sv-form textarea::placeholder { font-style: italic; opacity: .55; }
 .warn, .sv-warn { color: var(--warn); }
 .chk.disabled {color:var(--ink-3);opacity:.55;}
 .skip-link {
@@ -290,18 +292,15 @@ textarea.code-area, .sv-form textarea { font-family: var(--font-code); font-size
 .ptools .note { margin-left: auto; color: var(--warn); font-size: var(--fs-sm); }
 /* the mouse controls of the plot: a round "i" at the top right of the toolbar, its list on hover or keyboard focus */
 .info-tip { position: absolute; top: var(--sp-3); right: var(--inset); }
-.info-btn, .cmd-help { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--ctl-h-sm); height: var(--ctl-h-sm); min-width: var(--ctl-h-sm); min-height: var(--ctl-h-sm); padding: 0; border: 1px solid var(--control-border); border-radius: 50%; background: var(--control-bg); color: var(--ink-3); line-height: 1; cursor: help; }
+.info-btn, .cmd-help, .help-q { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--ctl-h-sm); height: var(--ctl-h-sm); min-width: var(--ctl-h-sm); min-height: var(--ctl-h-sm); padding: 0; border: 1px solid var(--control-border); border-radius: 50%; background: var(--control-bg); color: var(--ink-3); line-height: 1; cursor: help; }
 .info-btn { font: italic 700 var(--fs-sm)/1 Georgia, "Times New Roman", serif; }
-.cmd-help { font-weight: 600; font-size: var(--fs-sm); color: var(--ink-2); background: var(--panel); }
-.info-btn:hover, .info-tip:focus-within .info-btn, .cmd-help:enabled:hover { color: var(--blue); border-color: var(--blue); background: var(--blue-tint); }
-.info-pop {
-  display: none;
-  position: absolute;
+.cmd-help, .help-q { font-weight: 600; font-size: var(--fs-sm); color: var(--ink-2); background: var(--panel); }
+/* a "?" inside a line of help text: the round help button, on the text line */
+.help-q { vertical-align: middle; margin-left: var(--sp-1); }
+.info-btn:hover, .info-tip:focus-within .info-btn, .cmd-help:enabled:hover, .help-q:hover, .help-q:focus-visible { color: var(--blue); border-color: var(--blue); background: var(--blue-tint); }
+.info-pop, .help-pop {
   z-index: 30;
-  top: calc(100% + 6px);
-  right: 0;
   width: max-content;
-  max-width: min(380px, 80vw);
   box-sizing: border-box;
   padding: var(--sp-3);
   background: var(--panel);
@@ -312,8 +311,14 @@ textarea.code-area, .sv-form textarea { font-family: var(--font-code); font-size
   font-size: var(--fs-sm);
   line-height: 1.4;
   text-align: left;
-  pointer-events: none;
 }
+.info-pop { display: none; position: absolute; top: calc(100% + 6px); right: 0; max-width: min(380px, 80vw); pointer-events: none; }
+/* the help of a "?" button (rv_ui.js places it at the button, in the viewport): long help scrolls inside it */
+.help-pop { position: fixed; max-width: min(520px, calc(100vw - var(--sp-4))); overflow: auto; overscroll-behavior: contain; }
+.help-pop p, .help-pop ul { margin: 0 0 var(--sp-2); }
+.help-pop ul { padding-left: var(--sp-4); }
+.help-pop > :last-child { margin-bottom: 0; }
+.help-pop .hint { color: var(--ink-2); }
 .info-tip:hover .info-pop, .info-tip:focus-within .info-pop { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; }
 .info-pop b { font-weight: 600; white-space: nowrap; }
 .plot-pane { padding: var(--sp-1) var(--inset) var(--inset); gap: var(--sp-2); overflow: auto; }

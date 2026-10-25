@@ -6,7 +6,7 @@
  *  'settings', 'theme', 'tab', 'tables', 'shared'.
  */
 var RV = window.RV || (window.RV = {});
-RV.version = '2.33.2 (25 oct 2026)';
+RV.version = '2.33.3 (25 oct 2026)';
 
 RV.bus = (function () {
   'use strict';
@@ -403,6 +403,51 @@ RV.ui = (function () {
     if (on) { busyStart = Date.now(); busyProgress(-1, ''); busyTimer = setInterval(paintBusyDetail, 1000); }
     else { busyStart = 0; busyText = ''; }
   }
+
+  // ---------------------------------------------------------------- the help of a "?" button (.help-q)
+  /* A popup instead of the native tooltip, which browsers cut short: the text of the button's title (paragraphs at blank
+     lines), or its data-help-html (markup written by the app). It opens on hover or focus, stays while the pointer is on
+     it (long help scrolls), and lives in the open dialog when the button is in one (a modal dialog is above the page). */
+  var helpFor = null, helpTimer = 0;
+  function helpPop(parent) {
+    var pop = parent.querySelector(':scope > .help-pop');
+    if (!pop) {
+      pop = h('div', { class: 'help-pop', role: 'tooltip', id: parent === document.body ? 'help-pop' : 'help-pop-dlg', hidden: '' });
+      pop.addEventListener('pointerenter', function () { clearTimeout(helpTimer); });
+      pop.addEventListener('pointerleave', function () { hideHelp(150); });
+      parent.appendChild(pop);
+    }
+    return pop;
+  }
+  function showHelp(btn) {
+    clearTimeout(helpTimer);
+    if (btn.hasAttribute('title')) { btn.setAttribute('data-help', btn.getAttribute('title')); btn.removeAttribute('title'); }
+    var html = btn.getAttribute('data-help-html'), text = btn.getAttribute('data-help') || '';
+    if (!html && !text) return;
+    var pop = helpPop(btn.closest('dialog[open]') || document.body);
+    if (helpFor && helpFor !== btn) hideHelp(0);
+    pop.innerHTML = html || text.split(/\n\s*\n/).map(function (p) { return '<p>' + esc(p.trim()) + '</p>'; }).join('');
+    pop.style.maxHeight = ''; pop.hidden = false; pop.scrollTop = 0; helpFor = btn; btn.setAttribute('aria-describedby', pop.id);
+    // below the button, or above it when that side has more room; too long for either side, it scrolls
+    var r = btn.getBoundingClientRect(), below = window.innerHeight - r.bottom - 14, above = r.top - 14, down = pop.offsetHeight <= below || below >= above;
+    pop.style.maxHeight = Math.max(120, down ? below : above) + 'px';
+    var pw = pop.offsetWidth, ph = pop.offsetHeight;
+    pop.style.left = Math.round(Math.max(8, Math.min(window.innerWidth - pw - 8, r.left + r.width / 2 - pw / 2))) + 'px';
+    pop.style.top = Math.round(down ? r.bottom + 6 : Math.max(8, r.top - 6 - ph)) + 'px';
+  }
+  function hideHelp(delay) {
+    clearTimeout(helpTimer);
+    helpTimer = setTimeout(function () {
+      document.querySelectorAll('.help-pop').forEach(function (p) { p.hidden = true; });
+      if (helpFor) helpFor.removeAttribute('aria-describedby');
+      helpFor = null;
+    }, delay || 0);
+  }
+  document.addEventListener('pointerover', function (e) { var b = e.target.closest && e.target.closest('.help-q'); if (b) showHelp(b); });
+  document.addEventListener('pointerout', function (e) { var b = e.target.closest && e.target.closest('.help-q'); if (b && b === helpFor && !b.contains(e.relatedTarget)) hideHelp(150); });
+  document.addEventListener('focusin', function (e) { var b = e.target.closest && e.target.closest('.help-q'); if (b) showHelp(b); else if (helpFor && !(e.target.closest && e.target.closest('.help-pop'))) hideHelp(0); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && helpFor) hideHelp(0); });
+  window.addEventListener('scroll', function (e) { if (helpFor && !(e.target.closest && e.target.closest('.help-pop'))) hideHelp(0); }, true);
 
   return { modal: modal, prompt: prompt, confirm: confirm, fieldHTML: fieldHTML, collect: collect, toast: toast, log: log,
            logEntries: logEntries, logLoad: logLoad, menu: menu, closeMenu: closeMenu, able: able, pickFiles: pickFiles,

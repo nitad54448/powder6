@@ -25,8 +25,8 @@
     check(!q('#dataset-restraints .rs-builder') && !q('#dataset-restraints .rs-guide'),'helpers are absent from the inline editor');
     check(!q('#dataset-restraints [data-rs-on]'),'no Apply checkbox');
     check(q('#dataset-restraints .ac-phase h3 .sw-inline'),'phase heading has its colour swatch');
-    check(!q('#dataset-restraints .rs-rule-help') && q('#dataset-restraints [aria-label="Restraint rules and tolerances"]').title.includes('angle=3'),'rule explanation is an inline tooltip');
-    check(q('[data-constraints-help]').title.includes('Equivalence') && !q('#dataset-atomic-constraints .ac-help'),'constraint rules appear only in the inline help icon');
+    check(!q('#dataset-restraints .rs-rule-help') && (q('#dataset-restraints [aria-label="Restraint rules and tolerances"]').getAttribute('data-help-html') || '').includes('angle=3'),'rule explanation is an inline tooltip');
+    check((q('[data-constraints-help]').title || q('[data-constraints-help]').getAttribute('data-help') || '').includes('Equivalence') && !q('#dataset-atomic-constraints .ac-help'),'constraint rules appear only in the inline help icon');
     check(q('#dataset-restraints [data-rs-text]').value===ph.restraints.text,'textbox shows active restraints');
     check(q('#dataset-restraints').firstElementChild.classList.contains('hint') && q('#dataset-restraints').firstElementChild.nextElementSibling.classList.contains('ac-phase') && q('#dataset-restraints').querySelectorAll('[aria-label="Restraint rules and tolerances"]').length===1,'restraint description and help appear once before the phase headings');
     check(q('#dataset-copy').previousElementSibling.id==='dataset-links-group' && !q('#dataset-copy').nextElementSibling,'Copy accordion is last below Links');
