@@ -59,11 +59,7 @@ var AtomRestraints = (function () {
      one atom whose label differs only in case. */
   function check(atoms, r) {
     var p = parse(normalize(r).text), errors = p.bad.slice(), warnings = p.warn.slice(), labels = (atoms || []).map(function (a) { return a.label; });
-    function resolve(name) {
-      if (labels.indexOf(name) >= 0) return name;
-      var hit = labels.filter(function (l) { return l.toLowerCase() === name.toLowerCase(); });
-      return hit.length === 1 ? hit[0] : null;
-    }
+    function resolve(name) { return resolveLabel(labels, name); }
     var unknown = {};
     var rules = p.windows.map(function (w) {
       var a = resolve(w.a), b = resolve(w.b);
@@ -71,12 +67,36 @@ var AtomRestraints = (function () {
       if (b == null) unknown[w.b] = true;
       return Object.assign({}, w, { a: a == null ? w.a : a, b: b == null ? w.b : b, ok: a != null && b != null });
     });
-    var seen={};rules.forEach(function(w){if(!w.ok)return;var key=ruleKey(w);if(seen[key])errors.push('Duplicate restraint for '+[w.a,w.b].sort().join(' - ')+': keep one distance or geometry rule for this atom pair.');seen[key]=true;});
+    var seen={};rules.forEach(function(w){if(!w.ok)return;var key=ruleKey(w);if(seen[key])errors.push('Duplicate restraint for '+(w.count==null?[w.a,w.b].sort().join(' - ')+': keep one nearest-distance rule for this atom pair.':'the '+w.b+' around '+w.a+': keep one counted or geometry rule for them.'));seen[key]=true;});
     Object.keys(unknown).forEach(function (n) { errors.push('"' + n + '" is not an atom label of this phase (' + (labels.length ? labels.join(', ') : 'no atoms') + ')'); });
     return { rules: rules, errors: errors, warnings: warnings };
   }
 
-  function ruleKey(w){return JSON.stringify([w.a,w.b].sort());}
+  /* A nearest-distance rule "A B -" is about the pair (the nearest B to A is as far as the nearest A to B); a counted
+     rule is about the B around A: "Fe1 O1 6" (six O1 around Fe1) and "O1 Fe1 2" (two Fe1 around O1) are different rules */
+  function ruleKey(w){return w.count==null?JSON.stringify(['-'].concat([w.a,w.b].sort())):JSON.stringify(['n',w.a,w.b]);}
+  // the label a rule name resolves to (as typed, else the one label that differs only in case), null if none
+  function resolveLabel(labels,name){if(labels.indexOf(name)>=0)return name;var hit=labels.filter(function(l){return l.toLowerCase()===name.toLowerCase();});return hit.length===1?hit[0]:null;}
+  function ruleNames(line){var t=String(line).trim();if(!t || t.charAt(0)==='#')return null;var p=t.split(/[\s,]+/);return p.length>=2?p.slice(0,2):null;}
+  /* The rules after an atom was renamed: the names A and B that resolved to the old label (labels: those before the
+     rename) are written as the new one; the rest of each line is kept. */
+  function relabel(labels,text,from,to){
+    return String(text || '').split(/\r?\n/).map(function(line){
+      var m=ruleNames(line)?/^(\s*)([^\s,]+)([\s,]+)([^\s,]+)/.exec(line):null;if(!m)return line;
+      var a=resolveLabel(labels,m[2])===from?to:m[2],b=resolveLabel(labels,m[4])===from?to:m[4];
+      return m[1]+a+m[3]+b+line.slice(m[0].length);
+    }).join('\n');
+  }
+  /* The rules that still name atoms of the phase: lines whose A or B is no longer a label are removed.
+     Returns {text, dropped: [the removed lines]}. */
+  function prune(atoms,r){
+    var labels=(atoms || []).map(function(a){return a.label;}),dropped=[];
+    var text=String(normalize(r).text).split(/\r?\n/).filter(function(line){
+      var n=ruleNames(line);if(!n || (resolveLabel(labels,n[0])!=null && resolveLabel(labels,n[1])!=null))return true;
+      dropped.push(line.trim());return false;
+    }).join('\n');
+    return {text:text,dropped:dropped};
+  }
   // Keep the current rule for an atom pair; helpers append only previously unrestrained pairs.
   function merge(atoms,current,addition){
     var base=check(atoms,{text:current});if(base.errors.length)throw new Error(base.errors[0]);
@@ -102,17 +122,23 @@ var AtomRestraints = (function () {
     var seen = {}, out = [];
     ops.forEach(function (o) {
       var r = o.r, t = o.t, q = [wrap1(r[0] * p[0] + r[1] * p[1] + r[2] * p[2] + t[0]), wrap1(r[3] * p[0] + r[4] * p[1] + r[5] * p[2] + t[1]), wrap1(r[6] * p[0] + r[7] * p[1] + r[8] * p[2] + t[2])];
-      var key = q.map(function (x) { return Math.round(x * 1e4); }).join(',');
+      var key = q.map(function (x) { return Math.round(x * 1e4) % 10000; }).join(',');
       if (!seen[key]) { seen[key] = true; out.push(q); }
     });
     return out;
   }
+  /* the cells to search on each axis for every vector shorter than rmax: a vector of length d has a fractional
+     component of at most d·|a*_i| (|a*_i|² the diagonal of the inverse metric), the offset to the nearest image at most 1/2 */
+  function ranges(G, rmax) {
+    var c0 = G[4] * G[8] - G[5] * G[7], c4 = G[0] * G[8] - G[2] * G[6], c8 = G[0] * G[4] - G[1] * G[3], det = G[0] * c0 - G[1] * (G[3] * G[8] - G[5] * G[6]) + G[2] * (G[3] * G[7] - G[4] * G[6]);
+    return [c0, c4, c8].map(function (c) { return Math.max(1, Math.min(8, Math.ceil(rmax * Math.sqrt(Math.max(0, c / det)) + 0.5))); });
+  }
   // the images of the list within rmax of the point a, nearest first: {d, v (fractional vector a -> b)}
-  function near(G, a, list, rmax, R, skipSelf) {
-    var out = [], r2max = rmax * rmax;
+  function near(G, a, list, rmax, skipSelf) {
+    var out = [], r2max = rmax * rmax, R = ranges(G, rmax);
     list.forEach(function (b) {
       var d0 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], n = [Math.round(d0[0]), Math.round(d0[1]), Math.round(d0[2])];
-      for (var i = -R; i <= R; i++) for (var j = -R; j <= R; j++) for (var k = -R; k <= R; k++) {
+      for (var i = -R[0]; i <= R[0]; i++) for (var j = -R[1]; j <= R[1]; j++) for (var k = -R[2]; k <= R[2]; k++) {
         var v = [d0[0] - n[0] + i, d0[1] - n[1] + j, d0[2] - n[2] + k], r2 = quad(G, v, v);
         if (r2 > r2max || (skipSelf && r2 < 1e-6)) continue;
         out.push({ d: Math.sqrt(r2), v: v });
@@ -125,17 +151,19 @@ var AtomRestraints = (function () {
 
   /* The rows of the rules at the values v of one dataset (or the starting model): [{rule, kind 'd'|'gap'|'ang', text,
      val, lo, hi, dev, sigma}]; dev is the distance (Å) or angle (°) outside the window, 0 inside. A fixed number of
-     rows per rule, whatever the geometry (a missing neighbour is taken at the search radius).
+     rows per rule, whatever the geometry (the search widens until it holds every neighbour a rule needs).
      def: {key, atoms [{label, site}], ops, system, uniqueAxis}; ctx: {cellOf, sitePosition} (RVCore's). */
   function rowsOf(def, rs, rules, v, ctx) {
     var pre = def.key + '.', cell = ctx.cellOf(def.system, def.uniqueAxis, function (c) { return v[pre + c]; }), G = metric(cell), pos = {}, imgs = {}, rows = [];
     (def.atoms || []).forEach(function (at) { pos[at.label] = ctx.sitePosition(at.site, [v[pre + at.label + '.x'], v[pre + at.label + '.y'], v[pre + at.label + '.z']]); });
     function images(l) { return imgs[l] || (imgs[l] = imagesOf(def.ops, pos[l])); }
-    var shortest = Math.min(cell.a, cell.b, cell.c);
+    var longest = Math.max(cell.a, cell.b, cell.c);
     rules.forEach(function (w, ri) {
       if (!w.ok || !pos[w.a] || !pos[w.b]) return;
-      var base = Number.isFinite(w.dmax) ? w.dmax : Number.isFinite(w.dmin) ? w.dmin : 3, rmax = Math.max(base * 1.5 + 0.5, 3), R = Math.max(1, Math.min(3, Math.ceil(rmax / shortest)));
-      var nb = near(G, pos[w.a], images(w.b), rmax, R, w.a === w.b), name = w.a + '–' + w.b;
+      var base = Number.isFinite(w.dmax) ? w.dmax : Number.isFinite(w.dmin) ? w.dmin : 3, rmax = Math.max(base * 1.5 + 0.5, 3);
+      // every restrained neighbour is a real atom (one taken at the search radius would be a constant, with no gradient): widen the search
+      var need = (w.count >= 0 && w.count != null ? w.count : 0) + 1, nb = near(G, pos[w.a], images(w.b), rmax, w.a === w.b), name = w.a + '–' + w.b;
+      while (nb.length < need && rmax < 2 * longest + 2 * base) { rmax *= 2; nb = near(G, pos[w.a], images(w.b), rmax, w.a === w.b); }
       function dist(k, bounded, label) {
         var d = nb[k] ? nb[k].d : rmax, lo = Number.isFinite(w.dmin) ? w.dmin : null, hi = Number.isFinite(w.dmax) ? w.dmax : null;
         var dev = lo != null && d < lo ? d - lo : hi != null && d > hi ? d - hi : 0;
@@ -162,14 +190,13 @@ var AtomRestraints = (function () {
      {A: [{b, d}]}. What "Suggest from the structure" reads; rmax is a function so that it can follow the radii. */
   function contacts(def, v, ctx, rmax) {
     var pre = def.key + '.', cell = ctx.cellOf(def.system, def.uniqueAxis, function (c) { return v[pre + c]; }), G = metric(cell), pos = {}, imgs = {}, out = {};
-    var atoms = def.atoms || [], shortest = Math.min(cell.a, cell.b, cell.c);
+    var atoms = def.atoms || [];
     atoms.forEach(function (at) { pos[at.label] = ctx.sitePosition(at.site, [v[pre + at.label + '.x'], v[pre + at.label + '.y'], v[pre + at.label + '.z']]); });
     function images(l) { return imgs[l] || (imgs[l] = imagesOf(def.ops, pos[l])); }
     atoms.forEach(function (a) {
       out[a.label] = [];
       atoms.forEach(function (b) {
-        var r = rmax(a.label, b.label), R = Math.max(1, Math.min(3, Math.ceil(r / shortest)));
-        near(G, pos[a.label], images(b.label), r, R, a.label === b.label).forEach(function (n) { out[a.label].push({ b: b.label, d: n.d }); });
+        near(G, pos[a.label], images(b.label), rmax(a.label, b.label), a.label === b.label).forEach(function (n) { out[a.label].push({ b: b.label, d: n.d }); });
       });
       out[a.label].sort(function (p, q) { return p.d - q.d; });
     });
@@ -216,6 +243,6 @@ var AtomRestraints = (function () {
       prefixes: list.map(function (e) { return e.def.key + '.'; })
     };
   }
-  return { DEFAULTS: DEFAULTS, normalize: normalize, hasRules: hasRules, active: active, check: check, rows: rows, contacts: contacts, describe: describe, prepare: prepare, parse: parse, merge: merge };
+  return { DEFAULTS: DEFAULTS, normalize: normalize, hasRules: hasRules, active: active, check: check, rows: rows, contacts: contacts, describe: describe, prepare: prepare, parse: parse, merge: merge, prune: prune, relabel: relabel };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = AtomRestraints;

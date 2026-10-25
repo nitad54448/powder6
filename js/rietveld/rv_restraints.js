@@ -78,7 +78,6 @@ RV.restraints = (function(){
   function html(ph){
     var r=AR.normalize(ph.restraints),dis=S.busy?' disabled':'';
     if(ph.atoms.length<2)return '<p class="hint">Restraints relate atoms: the phase needs at least two.</p>';
-    var g=guide[ph.key]||{};
     return '<div class="rs-main">'+
       '<label class="rs-rules" title="'+esc(RULES_HELP)+'">Restraints<textarea class="code-area" data-rs-text rows="8" spellcheck="false" placeholder="Fe1 C1 6 1.6/2.2 oct&#10;Si1 O1 4 1.58/1.66 tet&#10;O1 O1 - 2.4/"'+dis+'>'+esc(r.text)+'</textarea></label>'+
       '<div class="rs-set">'+
@@ -109,12 +108,12 @@ RV.restraints = (function(){
     '<p class="hint">Rules apply automatically whenever this box contains a rule. Clear the box to remove the restraints. Changes are validated when you leave the textbox and can be undone. They apply to Rietveld fits of this phase in every dataset that holds it; Le Bail, WPPF and Wyckoff searches do not use this box.</p>'+
     '<p class="hint">Use atom labels, one rule per line; blank lines and lines starting with # are ignored. Labels are case-sensitive; a unique case-insensitive match is also accepted. Distances are in &#197; and angles in degrees. Every symmetry image and neighbouring cell is considered.</p>'+
     '<ul class="hint"><li><code>A B - 1.50/1.60</code>: nearest B to A, within the distance window.</li><li><code>A B - 1.55/1.55</code>: an exact distance target.</li><li><code>A B - 2.4/</code>: lower bound only; <code>A B - /3.0</code>: upper bound only. A may equal B to restrain contacts between symmetry copies of one site.</li><li><code>A B 4 1.50/1.60</code>: the four nearest B neighbours must be within the window, and the fifth is pushed outside its upper bound. <code>4+</code> requires at least four, without excluding a fifth.</li><li><code>A B 4 1.50/1.60 tet</code>: tetrahedral angles in this shell. Shapes and required counts: lin (2, 180&#176;), tri (3, 120&#176;), tet (4, 109.47&#176;), sq (4, 90/180&#176;), oct (6, 90/180&#176;). A shape requires its count and an upper distance.</li><li><code>A B 4 1.50/1.60 tet angle=3</code>: each shell angle has a flat window of &plusmn;3&#176; around its ideal angle. Without angle=, the ideal angle is a point target. This suffix is specific to Rietveld restraints.</li></ul>'+
-    '<p class="hint">Only one rule per unordered atom-label pair is allowed, including geometry rules: A&#8211;B and B&#8211;A are the same pair. Helper collects rules independently: the first rule for a pair is kept and duplicate or conflicting additions are skipped. Copy the collection and paste it into this box to apply it. Edit the original rule to change a tolerance or geometry. Invalid or missing labels prevent applying the edit and stop refinement of invalid saved rules.</p>'+
+    '<p class="hint">Nearest-distance rules (<code>A B - …</code>) allow one rule per atom-label pair: A&#8211;B and B&#8211;A are the same pair. Counted and geometry rules are about the B around A, one per ordered pair: <code>Fe1 O1 6 … oct</code> and <code>O1 Fe1 2 …</code> are two different rules. Rules naming an atom that is deleted are removed (see the Log); a renamed atom is renamed in the rules. Helper collects rules independently: the first rule for a pair is kept and duplicate or conflicting additions are skipped. Copy the collection and paste it into this box to apply it. Edit the original rule to change a tolerance or geometry. Invalid or missing labels prevent applying the edit and stop refinement of invalid saved rules.</p>'+
     '<p class="hint">Windows and sigma have different roles: inside a window there is no penalty; outside it the contribution to chi-squared is weight &times; ((value minus nearest bound) / sigma)&sup2;. Sigma distance and sigma angle set the strength beyond the window, rather than its width. Defaults: weight 1, sigma distance 0.02 &#197;, sigma angle 3&#176;. These soft restraints can deform; they are not an exact rigid body. Restraints contribute to refinement and uncertainties; pattern R factors remain based on the pattern. Global fits count a phase once across its datasets. Parallel tempering with restraints runs on the CPU.</p>'+
     '<p class="hint">Helper offers geometry presets, molecule import (PDB, XYZ, Z-matrix), and suggestions from current contacts. Distinct-label angles use 1-3 distance windows at the target bond lengths, so the angular window is approximate when bond lengths vary. Square and octahedral neighbour selections use opposite pairs #1/#2, #3/#4, #5/#6. Symmetry-copy mode generates counted shell rules with per-rule angular windows. Review collected rules before copying and pasting them; all saved rules follow the phase into projects and reports.</p></div></details>';var box=document.createElement('div');box.innerHTML=html.replace(/<\/(?:p|li)>/g,'$& ');return box.textContent.replace('Restraint rules and tolerances','').trim();}
   async function openHelper(ph,returnToEditor){
     if(S.busy)return;var key=ph.key;
-    await ui.modal({title:'Restraint helper - '+ph.name,wide:true,body:'<div class="rs-editor" data-rs-phase="'+esc(key)+'" data-rs-helper-only>'+helperHTML(ph)+'<p class="why rs-err" data-rs-error role="status"></p></div>',buttons:[{label:'Cancel',value:null},{label:'Copy',primary:true,close:false,onClick:function(body){copyCollected(body.querySelector('[data-rs-helper-only]'),ph);return false;}}],onOpen:function(body){body.addEventListener('keydown',function(e){var tab=e.target.closest('[data-rs-tab]');if(!tab || !/^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key))return;e.preventDefault();var tabs=Array.from(body.querySelectorAll('[data-rs-tab]')),i=tabs.indexOf(tab),next=tabs[e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length];selectTab(body,next.dataset.rsTab);next.focus();});}});
+    await ui.modal({title:'Restraint helper - '+ph.name,wide:true,body:'<div class="rs-editor" data-rs-phase="'+esc(key)+'" data-rs-helper-only>'+helperHTML(ph)+'<p class="why rs-err" data-rs-error role="status"></p></div>',buttons:[{label:'Close',value:null},{label:'Copy',primary:true,close:false,onClick:function(body){copyCollected(body.querySelector('[data-rs-helper-only]'),ph);return false;}}],onOpen:function(body){body.addEventListener('keydown',function(e){var tab=e.target.closest('[data-rs-tab]');if(!tab || !/^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key))return;e.preventDefault();var tabs=Array.from(body.querySelectorAll('[data-rs-tab]')),i=tabs.indexOf(tab),next=tabs[e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length];selectTab(body,next.dataset.rsTab);next.focus();});}});
     if(returnToEditor && St.phaseByKey(key))edit(St.phaseByKey(key));
   }
   function madeHtml(g){
@@ -137,7 +136,8 @@ RV.restraints = (function(){
   function commit(host,ph,patch){
     if(S.busy){ui.toast('A fit is running. Wait for it to finish or press Stop.','warn');return false;}
     if(patch.text!=null){var st=status(ph,patch.text);if(st.errors.length){say(host,st.errors[0]);return false;}}
-    apply(ph,patch);return true;
+    try{apply(ph,patch);}catch(e){refreshAll();say(host,e.message);return false;}
+    return true;
   }
   function appendRules(host,ph,text){
     try{var box=host.querySelector('[data-rs-collected]'),base=AR.merge(ph.atoms,'',box.value),result=AR.merge(ph.atoms,base.text,text);result.skipped+=base.skipped;result.conflicts+=base.conflicts;box.value=result.text;
@@ -157,7 +157,7 @@ RV.restraints = (function(){
     }catch(e){say(host,e.message);}
   }
   function phaseOf(e){var host=e.target.closest('.rs-editor');return host?{host:host,ph:St.phaseByKey(host.getAttribute('data-rs-phase'))}:null;}
-  function positive(host,t,key,min){var v=ui.parseNum(t.value);if(!(v>0)||(min&&v<min)){say(host,'Give a positive number.');t.value=String(AR.normalize(St.phaseByKey(host.getAttribute('data-rs-phase')).restraints)[key]);return null;}return v;}
+  function positive(host,t,key){var v=ui.parseNum(t.value);if(!(v>0)){say(host,'Give a positive number.');t.value=String(AR.normalize(St.phaseByKey(host.getAttribute('data-rs-phase')).restraints)[key]);return null;}return v;}
 
   // ---------------------------------------------------------------- the guide
   function guideOf(host,ph){

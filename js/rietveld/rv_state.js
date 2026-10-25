@@ -812,6 +812,11 @@ RV.state = (function () {
       ph.constraints = pr.constraints;
       if (pr.dropped.length) { pr.dropped.forEach(function (m) { RV.ui.log('Atomic constraints of ' + ph.name + ': ' + m + '.', 'warn'); }); RV.ui.toast(pr.dropped.length + ' constraint term' + (pr.dropped.length === 1 ? '' : 's') + ' of ' + ph.name + ' no longer apply (site symmetry or missing atom) and were removed. See the Log.', 'warn'); }
     }
+    // restraint rules that name an atom the phase no longer has are removed
+    if (ph && ph.restraints && typeof AtomRestraints !== 'undefined') {
+      var rp = AtomRestraints.prune(ph.atoms, ph.restraints);
+      if (rp.dropped.length) { ph.restraints = Object.assign({}, ph.restraints, { text: rp.text }); rp.dropped.forEach(function (m) { RV.ui.log('Restraints of ' + ph.name + ': removed "' + m + '" (an atom it names is gone).', 'warn'); }); RV.ui.toast(rp.dropped.length + ' restraint rule' + (rp.dropped.length === 1 ? '' : 's') + ' of ' + ph.name + ' removed: ' + (rp.dropped.length === 1 ? 'it names' : 'they name') + ' a missing atom (see the Log).', 'warn'); }
+    }
     S.datasets.forEach(function (d) { d.stats = null; d.esd = {}; });
     S.version++;
     remapAll();
@@ -826,9 +831,10 @@ RV.state = (function () {
     used.delete(oldLabel);
     var label = cleanLabel(newLabel, used), from = ph.key + '.' + oldLabel + '.', to = ph.key + '.' + label + '.';
     if (label === oldLabel) return oldLabel;
+    var before = ph.atoms.map(function (a) { return a.label; });
     ph.atoms.forEach(function (a) { if (a.label === oldLabel) a.label = label; });
     (ph.constraints || []).forEach(function(c){c.atoms=c.atoms.map(function(a){return a===oldLabel?label:a;});});
-    if(ph.restraints && ph.restraints.text)ph.restraints.text=ph.restraints.text.split(/\r?\n/).map(function(line){return /^\s*#/.test(line)?line:line.replace(/\S+/g,function(t){return t===oldLabel?label:t;});}).join('\n');
+    if(ph.restraints && ph.restraints.text)ph.restraints.text=AtomRestraints.relabel(before,ph.restraints.text,oldLabel,label);
     [ph.v, ph.fit, S.shared, S.limits].forEach(function (m) { renameKeys(m, from, to); });
     S.datasets.forEach(function (ds) { [ds.p, ds.fit, ds.esd, ds.mem, ds.apart].forEach(function (m) { renameKeys(m, from, to); });Object.keys(ds.calculations || {}).forEach(function(k){var bank=ds.calculations[k];[bank.p,bank.fit,bank.esd,bank.apart].forEach(function(m){if(m)renameKeys(m,from,to);});bank.stats=null;bank.ints=null;}); });
     phaseChanged(ph);
@@ -837,7 +843,8 @@ RV.state = (function () {
   // returns true when the phase lost its last atom and went from Rietveld to Le Bail
   function removeAtom(ph, label) {
     ph.atoms = ph.atoms.filter(function (a) { return a.label !== label; });
-    ph.constraints=AtomicConstraints.withoutAtom(ph.constraints || [],label);
+    var gone=[];ph.constraints=AtomicConstraints.withoutAtom(ph.constraints || [],label,gone);
+    if(gone.length){gone.forEach(function(t){RV.ui.log('Atomic constraints of '+ph.name+': '+t+' dropped, its total no longer applies without '+label+'.','warn');});RV.ui.toast(gone.length+' constraint equation'+(gone.length===1?'':'s')+' of '+ph.name+' dropped with '+label+': re-enter '+(gone.length===1?'it':'them')+' for the remaining atoms if wanted (see the Log).','warn');}
     var switched = false;
     phaseChanged(ph);
     return switched;
@@ -1014,8 +1021,16 @@ RV.state = (function () {
       if (ds === from) return;
       Object.keys(from.p).forEach(function (n) { if (own(ds.p, n)) { if(values!==false)ds.p[n] = from.p[n]; if(flags!==false)ds.fit[n] = from.fit[n]; } });
       ds.stats = null; ds.esd = {}; ds.ints = null;
-      invalidate(ds);
     });
+    // the copied values follow the atomic constraints and parameter links of the datasets they land in
+    if (values !== false && typeof AtomicConstraints !== 'undefined' && (S.parameterLinks.length || S.phases.some(function (ph) { return ph.method === 'rietveld' && ph.constraints && ph.constraints.length; }))) {
+      try {
+        var plan = AtomicConstraints.prepare({ phases: phaseDefs(), datasets: S.datasets.map(function (d) { return { id: d.id, phases: d.phases }; }), values: S.datasets.map(function (d) { return Object.assign({}, d.p); }), parameterLinks: S.parameterLinks, limits: S.limits });
+        S.datasets.forEach(function (d, i) { if (d !== from && list.indexOf(d) >= 0) { d.p = plan.values[i]; syncSites(d); } });
+        if (!plan.valid(plan.values)) RV.ui.toast('The copied values put a constrained or linked parameter outside its limits; check the limits before fitting.', 'warn');
+      } catch (e) { RV.ui.toast('Values copied, but they do not satisfy the constraints or links: ' + e.message, 'warn'); }
+    }
+    list.forEach(function (ds) { if (ds !== from) invalidate(ds); });
     RV.bus.emit('params', {});
   }
 

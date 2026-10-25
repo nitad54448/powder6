@@ -1478,9 +1478,12 @@ test('symmetry geometry rules retain independent angular windows and penalize on
 });
 
 
-test('restraints reject repeated unordered atom pairs regardless of windows or geometry', () => {
+test('restraints reject repeated atom pairs (ordered for counted rules) regardless of windows or geometry', () => {
   const AR=require('../js/atom_restraints.js'),atoms=['Si','O1','O2'].map(label=>({label}));
   for(const text of ['Si O1 - 1.5/1.7\nO1 Si - 1.4/1.8','Si O1 4 1.5/1.7 tet angle=3\nSi O1 4 1.5/1.7 tetrahedron angle=5','Si O1 - 1.5/1.7\nsi o1 - 1.6/1.8'])assert.ok(AR.check(atoms,{text}).errors.some(e=>/Duplicate restraint/.test(e)));
+  // the O1 around Si and the Si around O1 are two different rules
+  assert.deepEqual(AR.check(atoms,{text:'Si O1 4 1.5/1.7 tet\nO1 Si 2 1.5/1.7'}).errors,[]);
+  assert.ok(AR.check(atoms,{text:'Si O1 4 1.5/1.7 tet\nSi O1 4+ 1.5/1.8'}).errors.some(e=>/Duplicate restraint/.test(e)));
   const result=AR.merge(atoms,'Si O1 - 1.5/1.7','O1 Si - 1.4/1.8\nSi O2 - 1.5/1.7\nO2 Si - 1.3/1.9');
   assert.equal(result.added,1);assert.equal(result.skipped,2);assert.equal(result.conflicts,2);assert.equal(result.text,'Si O1 - 1.5/1.7\nSi O2 - 1.5/1.7');
   const again=AR.merge(atoms,result.text,result.text);assert.equal(again.conflicts,0);assert.equal(again.added,0);assert.equal(again.text,result.text);
@@ -1503,4 +1506,47 @@ test('restraint text applies automatically even with a legacy disabled flag, and
   const plan=AR.prepare(a.state.problemFor([a.ds]),ctx);assert.ok(plan);assert.ok(plan.cost([a.ds.p])>0);
   ph.restraints.text='';assert.equal(AR.prepare(a.state.problemFor([a.ds]),ctx),null);
   assert.equal(AR.active({text:'# just a comment'}),false);
+});
+
+test('restraint rules follow renamed atoms (any case) and lose deleted ones', () => {
+  const AR=require('../js/atom_restraints.js'),labels=['Fe1','O1','O2'];
+  assert.equal(AR.relabel(labels,'fe1 O1 6 1.9/2.1 oct angle=3\n# Fe1 kept\nO1 Fe1 - /2.2',  'Fe1','Fe9'),'Fe9 O1 6 1.9/2.1 oct angle=3\n# Fe1 kept\nO1 Fe9 - /2.2');
+  const p=AR.prune(['Fe1','O1'].map(label=>({label})),{text:'Fe1 O1 - 1.9/2.1\nFe1 O2 - 1.9/2.1\n# O2 note'});
+  assert.equal(p.text,'Fe1 O1 - 1.9/2.1\n# O2 note');assert.deepEqual(p.dropped,['Fe1 O2 - 1.9/2.1']);
+});
+
+test('restraint neighbours: oblique cells, images across the cell face, and far shells', () => {
+  const AR=require('../js/atom_restraints.js'),I={r:[1,0,0,0,1,0,0,0,1],t:[0,0,0]},inv={r:[-1,0,0,0,-1,0,0,0,-1],t:[0,0,0]};
+  const ctxOf=cell=>({cellOf:()=>cell,sitePosition:(s,p)=>p});
+  const def={key:'p1',atoms:[{label:'A'},{label:'B'}],ops:[I]};
+  // gamma = 170 degrees: the cell is 0.87 A high along a and b, so shells reach many cells away
+  const cell={a:5,b:5,c:6,alpha:90,beta:90,gamma:170},v={'p1.A.x':0,'p1.A.y':0,'p1.A.z':0,'p1.B.x':0.3,'p1.B.y':0.1,'p1.B.z':0};
+  const rows=AR.rows(def,{text:'A B 6 /3'},v,ctxOf(cell)).filter(r=>r.kind==='d').map(r=>r.val);
+  const cg=Math.cos(170*Math.PI/180),all=[];
+  for(let i=-15;i<=15;i++)for(let j=-15;j<=15;j++)for(let k=-2;k<=2;k++){const x=0.3+i,y=0.1+j,z=k;all.push(Math.sqrt(25*x*x+25*y*y+36*z*z+2*25*x*y*cg));}
+  all.sort((p,q)=>p-q);rows.forEach((d,n)=>assert.ok(Math.abs(d-all[n])<1e-9,'neighbour '+(n+1)));
+  // an atom 2e-5 inside the cell face and its inverse 2e-5 beyond it are one image, not two
+  const cub={a:5,b:5,c:5,alpha:90,beta:90,gamma:90},d2={key:'p1',atoms:[{label:'A'},{label:'B'}],ops:[I,inv]};
+  const w={'p1.A.x':0.99998,'p1.A.y':0,'p1.A.z':0,'p1.B.x':0.2,'p1.B.y':0,'p1.B.z':0};
+  const near=AR.rows(d2,{text:'B A 2 /9'},w,ctxOf(cub)).filter(r=>r.kind==='d');
+  assert.ok(Math.abs(near[0].val-1)<1e-3);assert.ok(Math.abs(near[1].val-4)<1e-3,'second neighbour is the next cell, got '+near[1].val);
+  // a shell wider than the first search radius is still real atoms, not a constant at the radius
+  const far=AR.rows(def,{text:'A B 3 /1.0'},{'p1.A.x':0,'p1.A.y':0,'p1.A.z':0,'p1.B.x':0.5,'p1.B.y':0.5,'p1.B.z':0.5},ctxOf({a:20,b:20,c:20,alpha:90,beta:90,gamma:90})).filter(r=>r.kind==='d');
+  far.forEach(r=>assert.ok(Math.abs(r.val-Math.sqrt(300))<1e-9));
+});
+
+test('an equivalence whose independent parameter is a link target follows the link source', () => {
+  const a=app(),AC=a.context.AtomicConstraints,site={free:[0,1,2]};
+  const plan=AC.prepare({phases:[{key:'p1',method:'rietveld',atoms:[{label:'A',site},{label:'B',site}],constraints:[{kind:'equiv',component:'B',atoms:['A','B'],mult:[1,2]}]}],
+    datasets:[{id:1,phases:['p1']},{id:2,phases:['p1']}],values:[{'p1.A.B':1,'p1.B.B':2},{'p1.A.B':3,'p1.B.B':6}],vars:[{name:'p1.A.B',d:0},{name:'p1.A.B',d:1}],
+    parameterLinks:[{target:{datasetId:2,name:'p1.A.B'},source:{datasetId:1,name:'p1.A.B'},factor:1}],limits:{}});
+  assert.equal(plan.vars.length,1);
+  const out=plan.apply(plan.values.map(v=>Object.assign({},v)),[0.5]);
+  assert.equal(out[1]['p1.A.B'],0.5);assert.equal(out[1]['p1.B.B'],1);assert.equal(out[0]['p1.B.B'],1);
+});
+
+test('removing an atom drops a constraint equation whole, with its text', () => {
+  const a=app(),AC=a.context.AtomicConstraints,gone=[];
+  const out=AC.withoutAtom([{kind:'sum',component:'occ',atoms:['A','B','C'],mult:[1,1,1],total:1},{kind:'equiv',component:'B',atoms:['A','C'],mult:[1,1]}],'B',gone);
+  assert.equal(out.length,1);assert.equal(out[0].kind,'equiv');assert.equal(gone.length,1);assert.match(gone[0],/= 1$/);
 });

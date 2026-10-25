@@ -25,7 +25,7 @@ var DistanceRules = (function () {
   function parse(text, geometries, opts) {
     var keepCase = !!(opts && opts.keepCase), SHAPE_LIST = shapeList(geometries);
     var out = [], bad = [], warn = [];
-    String(text || '').split(/\n+/).forEach(function (line, i) {
+    String(text || '').split(/\r?\n/).forEach(function (line, i) {
       var t = line.trim();
       if (!t || t.charAt(0) === '#') return;
       var p = t.split(/[\s,]+/), geometry = null, last = p[p.length - 1].toLowerCase();

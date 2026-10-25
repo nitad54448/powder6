@@ -52,10 +52,12 @@
     q('#dlg [data-rs-paste]').value='Si\nO1 1 1.62\nO2 1 1.62 2 109.47';q('#dlg [data-rs-molecule-add]').click();await frame();
     check(collected().value===draft && ph.restraints.text===original,'Molecule Add merges into the same collection only');
     q('#dlg [data-rs-tab="suggest"]').click();q('#dlg [data-rs-suggestion-add]').click();await frame();
-    check(q('#dlg [data-rs-suggested] textarea') && collected().value===draft && ph.restraints.text===original,'Suggest Add merges into the same collection only');
+    // the counted rules around each neighbour (O1 Si 1 ...) are new rules; the nearest-distance pairs already collected are kept once
+    check(q('#dlg [data-rs-suggested] textarea') && collected().value.indexOf(draft)===0 && ph.restraints.text===original,'Suggest Add merges into the same collection only');
+    draft=collected().value;
     q('#dlg .btns .primary').click();await frame();
     check(copied===draft && ph.restraints.text===original,'Copy writes the collection to the clipboard without applying it');
-    q('#dlg .btns button').click();await frame();check(!q('#dlg').open && ph.restraints.text===original,'Cancel leaves dataset restraints unchanged');
+    var closeBtn=q('#dlg .btns button');check(closeBtn.textContent==='Close','the Helper has Close, not Cancel');closeBtn.click();await frame();check(!q('#dlg').open && ph.restraints.text===original,'Close leaves dataset restraints unchanged');
     var input=q('#dataset-restraints [data-rs-text]');input.value=copied;input.dispatchEvent(new w.Event('change',{bubbles:true}));await frame();
     check(ph.restraints.text===copied,'pasting copied rules applies them in the main editor');
     input=q('#dataset-restraints [data-rs-text]');input.value=copied+'\n'+copied;input.dispatchEvent(new w.Event('change',{bubbles:true}));await frame();

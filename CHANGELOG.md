@@ -2,6 +2,25 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.33.0 — 25 October 2026
+
+1. **Wyckoff constraint Helper.** A Helper button under Distance constraints opens the tabbed Helper of the restraints, acting on the elements of the formula unit: Geometry (coordination shell with count or shape, nearest-distance window, shortest contact), Molecule (bonds by element pair from a PDB, XYZ or Z-matrix: counted when every centre has the same number of neighbours, nearest otherwise) and Suggest (shortest contacts from the covalent radii). Add collects into one box with duplicate/conflict pruning and the kernel-limit check; Copy writes to the clipboard and never changes the constraints box; Close closes it. The restraint Helper's Cancel button is now Close as well, since it never had anything to cancel. The button is disabled, with the reason as its tooltip, while there is no readable formula unit or a calculation runs.
+2. **Tests.** A browser page (`tests/wyckoff-helper`) covers the disabled state, element choices, the three generators, pruning, Copy and Cancel.
+
+## 2.32.0 — 25 October 2026
+
+1. **Restraints after atom edits.** Deleting an atom (or a site/space-group change that loses one) removes the restraint rules that name it, with a Log entry and a warning, instead of leaving rules that stop every Rietveld fit. Renaming an atom renames the A and B of each rule that resolved to it, including case-insensitive matches; the rest of the line (numbers, comments) is left alone.
+2. **Restraint settings.** Changing weight, σ distance or σ angle while the saved rules are invalid shows the error and restores the inputs instead of throwing an uncaught exception.
+3. **Directional counted rules.** Counted and geometry rules are about the B around A: `Fe1 O1 6 … oct` and `O1 Fe1 2 …` are no longer rejected as duplicates. Nearest-distance rules (`A B -`) stay one per unordered pair, since the distance is symmetric.
+4. **Neighbour search.** The cells searched on each axis follow the reciprocal metric (exact in strongly oblique cells; the shortest edge underestimated the reach). Symmetry images within 1e-4 across a cell face are merged. When fewer neighbours than a rule needs lie within the first radius, the search widens instead of using a constant distance at the radius (which gave a penalty with no gradient).
+5. **Restraint derivatives.** Variables of other phases that drive a restrained parameter through a link or atomic constraint are differentiated as well.
+6. **Constraint dependencies.** The independent parameter of an equivalence, or a term of a constraint equation, may be a parameter-link target (or source): the dependency is followed through instead of failing with "Conflicting constraint dependencies". Circular definitions get a named error.
+7. **Removing atoms from constraint equations.** A constraint equation losing an atom is dropped whole, with a warning and Log entry, instead of silently becoming an equation with a different meaning (A + B + C = 1 → A + B = 1).
+8. **Copy values.** Copied values are re-aligned to the atomic constraints and parameter links of the datasets they land in, with a warning if they cannot be.
+9. **Typing constrained values.** Constrained and linked values typed in Parameters apply once typing pauses (0.4 s), not at every keystroke.
+10. **Minor.** Wyckoff-search distance-rule errors give the right line number after blank lines; Copy to a dataset that no longer exists says so; unused restraint-editor code removed.
+11. **Tests.** Node regressions cover rename/delete of restrained atoms, ordered counted rules, oblique-cell and boundary neighbour searches against brute force, widened shells, link-driven equivalences and dropped equations.
+
 ## 2.31.2 — 25 October 2026
 
 1. **Complete constraints, restraints and links guide.** Add a dedicated Links section covering source/target selection, multipliers, offsets and display units, refinement flags, edits in either direction, limits, dependency conflicts, individual/global fits, removal, method setups and persistence. Add worked occupancy examples, the no-freedom case, and a table distinguishing atomic constraints, soft restraints, exact links, sharing and one-time copies.

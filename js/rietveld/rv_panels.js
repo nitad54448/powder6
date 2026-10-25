@@ -491,15 +491,21 @@ RV.panels = (function () {
       e.preventDefault();
       RV.cmd.sharing(n);
     });
+    // a constrained or linked value follows the typing, once it pauses (not at every keystroke: "0.25" is not 0, then 0.2)
+    var typing=null;
     host.addEventListener('input',function(e){
       var inp=e.target;if(!inp.classList.contains('pv') || inp.readOnly || S.busy)return;
+      clearTimeout(typing);typing=setTimeout(function(){typed(inp);},400);
+    });
+    function typed(inp){
+      if(!inp.isConnected || inp.readOnly || S.busy || document.activeElement!==inp)return;
       var n=inp.closest('.prow').getAttribute('data-name'),ds=editorDataset(),c=C.classify(n),ph=St.phaseByKey(c.phase);if(!ds)return;
       var ar=ph && S.calculation==='rietveld'?AtomicConstraints.roles(ph,ds.fit)[n]:null;
       if(!(ar && (ar.sum || ar.editable || ar.role==='independent')) && !S.parameterLinks.some(function(l){return l.source.datasetId===ds.id && l.source.name===n || l.target.datasetId===ds.id && l.target.name===n;}))return;
       if(!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?$/i.test(inp.value.trim()))return;
       var value=St.fromDisplay(n,ui.parseNum(inp.value));if(!Number.isFinite(value) || clampVal(n,value)!==value)return;
       commitInput(inp, true);
-    });
+    }
     host.addEventListener('change', function (e) {
       if(e.target.hasAttribute('data-instrument-profile')){RV.cmd.setInstrumentProfile(St.byId(+e.target.dataset.datasetId),e.target.value);return;}
       if(e.target.classList.contains('pv')){commitInput(e.target);return;}

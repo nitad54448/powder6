@@ -1668,13 +1668,20 @@ function* refineSteps(problem, opts) {
         }
         // the restraints in the normal equations: their residuals differentiated numerically against the variables
         // they depend on (cheap: no pattern is calculated), A += J'J, g -= J'rho; returns their chi^2
+        // the variables the restraints depend on: those of the restrained phases, and those that drive one of their
+        // parameters through an atomic constraint or a parameter link (e.g. p1.a linked to p2.a)
+        var restrVars = null;
+        function restrained(name) { return restr.prefixes.some(function (pf) { return name.indexOf(pf) === 0; }); }
+        if (restr) {
+            restrVars = vars.map(function (v) { return restrained(v.name); });
+            if (constraints) constraints.links.forEach(function (l) { if (restrained(l.name)) l.terms.forEach(function (t) { restrVars[t[0]] = true; }); });
+        }
         function restraintNormal(xv, vals, onlyIdx, A, g) {
             var r0 = restr.eval(vals), f0 = 0, k, cols = [];
             for (k = 0; k < r0.length; k++) f0 += r0[k] * r0[k];
             for (var q = 0; q < nv; q++) {
                 if (onlyIdx && onlyIdx.indexOf(q) < 0) continue;
-                var name = vars[q].name;
-                if (!restr.prefixes.some(function (pf) { return name.indexOf(pf) === 0; })) continue;
+                if (!restrVars[q]) continue;
                 var h = 1e-5 * (1 + Math.abs(xv[q])), xp = Float64Array.from(xv), xm = Float64Array.from(xv);
                 xp[q] += h; xm[q] -= h;
                 var rp = restr.eval(apply(xp)), rm = restr.eval(apply(xm)), col = new Float64Array(r0.length), any = false;

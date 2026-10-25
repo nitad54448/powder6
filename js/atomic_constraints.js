@@ -128,9 +128,18 @@ var AtomicConstraints = (function () {
     targetKeys.forEach(function(k){if(sourceKeys.has(k))throw new Error('Parameter link chains are ambiguous. Link each dependent directly to its independent source.');});
     var free=[], index={}, varLimits=[];
     vars.forEach(function(v,j){if(!removed[j]){index[j]=free.length;free.push(v);var first=v.d>=0?v.d:v.ds && v.ds.length?v.ds[0]:0;varLimits.push(limits(problem,v.name,values[first][v.name]).slice());}});
-    var links=[];
-    raw.forEach(function(r){var offset=r.offset,terms=[];
-      r.sources.forEach(function(t){var sd=t[2]==null?r.d:t[2],j=slots[sd][t[0]];if(j!=null && !removed[j])terms.push([index[j],t[1]]);else if(j!=null && removed[j] && !held[j])throw new Error('Conflicting constraint dependencies.');else offset+=t[1]*values[sd][t[0]];});
+    var links=[],rawOf={};raw.forEach(function(r){rawOf[r.d+':'+r.name]=r;});
+    /* a source in terms of the free variables: refined, a constant, or itself dependent (the independent atom of an
+       equivalence that is a link target, a linked term of an equation...): then its own definition, followed through */
+    function expand(sd,name,mult,acc,depth){
+      var j=slots[sd][name],r=rawOf[sd+':'+name];
+      if(j!=null && !removed[j]){var hit=acc.terms.find(function(t){return t[0]===index[j];});if(hit)hit[1]+=mult;else acc.terms.push([index[j],mult]);return;}
+      if(r){if(depth>32)throw new Error('Circular constraint dependencies around '+name+'.');acc.offset+=mult*r.offset;r.sources.forEach(function(t){expand(t[2]==null?r.d:t[2],t[0],mult*t[1],acc,depth+1);});return;}
+      acc.offset+=mult*values[sd][name];
+    }
+    raw.forEach(function(r){var acc={offset:r.offset,terms:[]};
+      r.sources.forEach(function(t){expand(t[2]==null?r.d:t[2],t[0],t[1],acc,1);});
+      var offset=acc.offset,terms=acc.terms.filter(function(t){return t[1]!==0;});
       // a dependent of fixed parameters is a constant: set it once
       if(!terms.length){values[r.d][r.name]=offset;return;}
       links.push({d:r.d,name:r.name,offset:offset,terms:terms,limits:limits(problem,r.name,values[r.d][r.name]).slice()});
@@ -168,11 +177,13 @@ var AtomicConstraints = (function () {
     return out;
   }
 
-  // the relationships without the atom label: equivalences re-referenced, groups too small dropped
-  function withoutAtom(list, lbl) {
+  /* the relationships without the atom label: equivalences re-referenced, groups too small dropped. A constraint
+     equation is dropped whole (its total no longer means the same without a term); its text goes to dropped. */
+  function withoutAtom(list, lbl, dropped) {
     var out=[];
     normalizeAll(list).forEach(function(c){
       var i=c.atoms.indexOf(lbl);if(i<0){out.push(c);return;}
+      if(c.kind==='sum'){if(dropped)dropped.push(text(c));return;}
       if(c.kind==='equiv' && i===0 && c.atoms.length>2){var m1=c.mult[1];c.atoms.shift();c.mult.shift();c.mult=c.mult.map(function(m,k){return k===0?1:m/m1;});out.push(c);return;}
       c.atoms.splice(i,1);if(c.mult)c.mult.splice(i,1);
       if(c.atoms.length>=(c.kind==='hold'?1:2))out.push(c);
@@ -195,7 +206,7 @@ var AtomicConstraints = (function () {
       }
       if(!bad || ++guard>200)break;
       var c0=list[bad.k], rest=list.filter(function(_,i){return i!==bad.k;}), kept=withoutAtom([c0],bad.label);
-      dropped.push(bad.label+'.'+c0.component+' removed from: '+bad.before+(kept.length?'':' (relationship dropped)'));
+      dropped.push(c0.kind==='sum'?bad.before+' dropped: without '+bad.label+'.'+c0.component+' its total no longer applies; re-enter it for the remaining atoms if wanted':bad.label+'.'+c0.component+' removed from: '+bad.before+(kept.length?'':' (relationship dropped)'));
       list=rest.slice(0,bad.k).concat(kept,rest.slice(bad.k));
     }
     return {constraints:list,dropped:dropped};
