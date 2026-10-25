@@ -620,6 +620,8 @@ body.dropping .drop-hint { display: flex; }
 .chip[aria-pressed="true"], .chip[aria-pressed="true"]:enabled:hover { background: var(--blue); border-color: var(--blue); color: var(--on-blue); font-weight: 600; }
 .chip[aria-pressed="true"] small { color: inherit; opacity: 0.8; }
 .phase-body { padding: var(--sp-3) var(--inset) var(--sp-5); }
+/* the editor inside the accordion of the current phase: the accordion (.dataset-card) already gives the side margin */
+.phase-accordion .phase-body { padding: 0 0 var(--sp-3); }
 .phase-src { margin: 10px 0 0; }
 .phase-src b { color: var(--ink); }
 .phase-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 0 var(--sp-5); }

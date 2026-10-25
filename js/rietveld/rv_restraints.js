@@ -232,7 +232,6 @@ RV.restraints = (function(){
     await ui.modal({title:'Restraints · '+ph.name,wide:true,body:introHTML()+'<div data-rs-host></div>',buttons:[{label:'Close',primary:true,value:null}],onOpen:function(b){mount(b.querySelector('[data-rs-host]'),ph);}});
   }
   function init(){
-    document.querySelectorAll('[data-restraints]').forEach(function(b){b.addEventListener('click',edit);});
     document.addEventListener('click',function(e){if(e.target.closest('[data-restraints-edit]'))edit();});
     document.addEventListener('click',onClick);document.addEventListener('change',onChange);document.addEventListener('input',onInput);
     RV.bus.on('busy',refreshAll);RV.bus.on('phases',refreshAll);

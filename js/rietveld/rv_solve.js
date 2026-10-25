@@ -30,7 +30,7 @@ RV.solve = (function () {
     return { formula: '', z: '', tab: 'sgt', sgtN: 0, sgtAuto:true,
              cf: { adaptive:false, grid: 'auto', threshold: CFD.thresholdSigma, iterations: CFD.maxIterations, trials: CFD.randomStarts, symLambda: CFD.symLambda,
                    densityLevel: 3, densityStride: 1, densityCell: true, densitySites: true, weakFraction: CFD.weakFraction, weakGrouping: CFD.weakGrouping, overlapTol: CFD.overlapTolTth, peakMerge: CFD.peakMerge },
-             wy: { maxSites: '', maxRepeat: '', rhoMin: WD.rhoMin, rhoMax: WD.rhoMax, maxZ: WD.maxZ, particles: WD.particles, particlesAuto:true, iterations: WD.iterations, restarts: WD.restarts, minContact: WD.minContact, shapeWeight: WD.shapeWeight, constraints: '' } };
+             wy: { maxSites: '', maxRepeat: '', rhoMin: WD.rhoMin, rhoMax: WD.rhoMax, maxZ: WD.maxZ, particles: WD.particles, particlesAuto:true, iterations: WD.iterations, restarts: WD.restarts, minContact: WD.minContact, shapeWeight: WD.shapeWeight, polyMoves: WD.polyMoves, constraints: '' } };
   }
   // the options of a stored or saved copy, kept only where they have the type of the defaults
   function cleanOpts(s) {
@@ -711,8 +711,8 @@ RV.solve = (function () {
              iterations: readNum(o.iterations, WL.iterations[0], WL.iterations[1], true) || WD.iterations, restarts: readNum(o.restarts, WL.restarts[0], WL.restarts[1], true) || WD.restarts,
              minContact: Number.isFinite(mc) ? Math.min(WL.minContact[1], Math.max(WL.minContact[0], mc)) : undefined,
              shapeWeight: Number.isFinite(readNum(o.shapeWeight, WL.shapeWeight[0], WL.shapeWeight[1])) ? readNum(o.shapeWeight, WL.shapeWeight[0], WL.shapeWeight[1]) : WD.shapeWeight,
-             // the share of polyhedron moves; no control in the form (the default of the search), set for comparisons
-             polyProb: Number.isFinite(o.polyProb) ? Math.min(1, Math.max(0, o.polyProb)) : undefined };
+             // Polyhedron moves, a percentage in the form, a share for the search
+             polyProb: (Number.isFinite(readNum(o.polyMoves, WL.polyMoves[0], WL.polyMoves[1])) ? readNum(o.polyMoves, WL.polyMoves[0], WL.polyMoves[1]) : WD.polyMoves) / 100 };
   }
   function runWy() {
     if (S.busy || SV.wyRun || SV.cfRun) return;
@@ -1035,6 +1035,8 @@ RV.solve = (function () {
         block(k + '-ints', '<span data-res-title="refl">Intensities</span>', '<div data-res-part="refl"></div>', false, null, 'sub');
     }
     var RHO_HELP = 'With Z on Auto, every Z with a density in this window is searched.';
+    var POLY_HELP = 'Percentage of trial moves that move a coordination shell as a unit: one centre of a counted rule (A B N dmin/dmax) with its nearest partners, shifted together, rotated about the centre, or snapped to one distance in the window and to the ideal shape of a shaped rule. ' +
+      '0 (default): single atoms only, the search as it was. 20–40 % helps isolated polyhedra on general positions (a simulated FeC6 octahedron was solved in every run instead of 2 of 5); it gains little when partners are shared between centres or sit on special positions (PbSO4 is solved either way). ' + WL.polyMoves[0] + '–' + WL.polyMoves[1] + ' %.';
     var CONSTRAINT_HELP = 'One per line: A B N dmin/dmax (N neighbours of B around each A), A B - dmin/ for a floor. End a counted line with a shape to restrain its angles too: tetrahedron, octahedron, square, triangle, linear, or tet, oct, sq, tri, lin, e.g. S O 4 1.40/1.60 tet. Up to ' + WL.maxRules + ' rules and ' + WL.maxCoordSlots + ' neighbours in all.';
     // the formula unit is one value, shown in both methods that use it, each saying what it does with it
     var FORMULA_USE = {
@@ -1117,6 +1119,7 @@ RV.solve = (function () {
             field('sv-wy-restarts', 'Restarts', o.wy.restarts, WL.restarts[0] + '–' + WL.restarts[1] + '.', 'class="num" data-wy="restarts" inputmode="numeric"') +
             field('sv-wy-minContact', 'Shortest contact (Å)', o.wy.minContact, 'A structure with two unlike atoms closer than this is rejected.', 'class="num" data-wy="minContact" inputmode="decimal"') +
             field('sv-wy-shapeWeight', 'Shape weight', o.wy.shapeWeight, 'How strongly the angles of shaped shells (tet, oct…) count, as a multiple of the bond penalty: 0 off, 1 default, up to ' + WL.shapeWeight[1] + '.', 'class="num" data-wy="shapeWeight" inputmode="decimal"') +
+            field('sv-wy-polyMoves', 'Polyhedron moves (%)', o.wy.polyMoves, POLY_HELP, 'class="num" data-wy="polyMoves" inputmode="numeric"') +
             '<label for="sv-wy-constraints"' + tip(CONSTRAINT_HELP) + '>Distance constraints</label><div><div class="text-action"><textarea id="sv-wy-constraints"' + tip(CONSTRAINT_HELP) + ' data-wy="constraints" rows="3" spellcheck="false" placeholder="S O 4 1.40/1.60 tet&#10;Pb O 8 2.40/3.10&#10;O O - 2.30/">' + esc(o.wy.constraints) + '</textarea>' +
               '<button type="button" id="sv-wy-helper" data-sv="wy-helper" title="Write constraints on the elements of the formula unit: shells, molecules, shortest contacts">Helper</button></div>' +
               '<div class="sv-cstat" id="sv-wy-cstat"></div></div>' +
@@ -1326,8 +1329,18 @@ RV.solve = (function () {
     var el = $('#sv-wy-cstat');
     if (!el) return;
     var v = validateConstraints(SV.opts.wy.constraints, SV.opts.formula);
+    syncWyFields(v);
     el.innerHTML = v.windows.map(function (w) { return '<div>• ' + esc(describeConstraint(w)) + '</div>'; }).join('') +
       v.errors.map(function (e) { return '<div class="sv-err">✕ ' + esc(e) + '</div>'; }).join('') + v.warnings.map(function (w) { return '<div class="sv-warn">⚠ ' + esc(w) + '</div>'; }).join('');
+  }
+  /* Fields that have no effect are disabled, with the reason as their tooltip: Shape weight without a shaped rule,
+     Polyhedron moves without a counted one, and the density window and Values of Z when Z is typed (no scan). */
+  function syncWyFields(v) {
+    var counted = v.windows.some(function (w) { return Number.isFinite(w.count) && w.count > 0; }), shaped = v.windows.some(function (w) { return !!w.geometry; });
+    var z = typedZ(), zWhy = z ? 'Z = ' + z + ' is given: no Z is scanned, so the density window and the number of Z values do not apply. Blank Z (Auto) to use them.' : '';
+    ui.able($('#sv-wy-shapeWeight'), shaped ? '' : 'No effect: no distance rule has a shape (tet, oct, sq, tri, lin).');
+    ui.able($('#sv-wy-polyMoves'), counted ? '' : 'No effect: no distance rule has a count (A B N dmin/dmax), so there is no shell to move.');
+    ['#sv-wy-rhoMin', '#sv-wy-rhoMax', '#sv-wy-maxZ'].forEach(function (s) { ui.able($(s), zWhy); });
   }
   function renderWyOut() {
     if(!inspectingSolution && solutionSelection.wy)return withSolution('wy',renderWyOut);

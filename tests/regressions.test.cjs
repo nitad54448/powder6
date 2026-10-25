@@ -627,7 +627,8 @@ test('bundled powder data and pdCIF fixtures remain readable', async () => {
   const a = app();
   const files = dir => fs.readdirSync(path.join(root, dir), { withFileTypes: true })
     .flatMap(e => e.isDirectory() ? files(dir + '/' + e.name) : [dir + '/' + e.name]);
-  for (const name of files('test_files').filter(f => !/\.pdb$/i.test(f))) {
+  // patterns only: molecules and saved projects kept beside them are not
+  for (const name of files('test_files').filter(f => !/\.(pdb|project|archive|powder6)$/i.test(f))) {
     const bytes = fs.readFileSync(path.join(root, name));
     a.context.inputName = name;
     a.context.inputBytes = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);

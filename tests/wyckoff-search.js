@@ -29,6 +29,11 @@
     set('#sv-wy-constraints',['Pb O - /4.5','Pb O - /4.6','Pb O - /4.7','Pb O - /4.8','O O - /4.0','O O - /4.1'].join('\n'));
     await frame();
     check(!/kernel holds/.test(q('#sv-wy-cstat').textContent),'Ten rules were refused: '+q('#sv-wy-cstat').textContent);
+    // fields without effect are disabled: a typed Z (no scan), no shape, no count
+    check(q('#sv-wy-rhoMin').disabled && q('#sv-wy-rhoMax').disabled && q('#sv-wy-maxZ').disabled && /Z = 2 is given/.test(q('#sv-wy-maxZ').title),'Density window / Values of Z are enabled with a typed Z');
+    check(q('#sv-wy-shapeWeight').disabled && q('#sv-wy-polyMoves').disabled && q('#sv-wy-polyMoves').value==='0' && /no distance rule has a count/.test(q('#sv-wy-polyMoves').title),'Shape weight / Polyhedron moves are enabled without a shape or a count, or the moves do not default to 0');
+    set('#sv-z-wy','');await frame();check(!q('#sv-wy-rhoMin').disabled && !q('#sv-wy-maxZ').disabled,'Density window not enabled again for Z = Auto');set('#sv-z-wy','2');await frame();
+    record('Fields without effect are disabled: density and Values of Z for a typed Z, Shape weight and Polyhedron moves without a shape or a count');
     const Orig=w.Worker,progress=[];
     w.Worker=function(url,opts){const real=new Orig(url,opts);if(String(url).includes('wyckoff_worker'))real.addEventListener('message',e=>{if(e.data && e.data.type==='wy-progress')progress.push(e.data);});return real;};
     const before=RV.ui.logEntries().length;
@@ -57,7 +62,9 @@
     check(!/not a shape|needs exactly/.test(q('#sv-wy-cstat').textContent),'The octahedron line was refused: '+q('#sv-wy-cstat').textContent);
     set('#sv-wy-constraints','Pb O 4 1.9/2.9 oc');await frame();
     check(/needs exactly 6 neighbours/.test(q('#sv-wy-cstat').textContent),'A wrong count for the shape was not reported: '+q('#sv-wy-cstat').textContent);
-    set('#sv-wy-constraints','Pb O 6 1.9/2.9 oct');set('#sv-wy-shapeWeight','2');await frame();
+    set('#sv-wy-constraints','Pb O 6 1.9/2.9 oct');await frame();
+    check(!q('#sv-wy-shapeWeight').disabled && !q('#sv-wy-polyMoves').disabled,'Shape weight / Polyhedron moves stay disabled with a shaped, counted rule');
+    set('#sv-wy-shapeWeight','2');set('#sv-wy-polyMoves','30');await frame();
     const before2=RV.ui.logEntries().length;
     q('#sv-wy-run').click();await wait(100);
     check(RV.solve.state.wyRun,'The shaped search did not start: '+q('#status-msg').textContent);
@@ -68,9 +75,9 @@
     check(/angle errors weighted 2 x/.test(log2),'The Shape weight did not reach the search');
     check(wy2 && !wy2.error && wy2.sols && wy2.sols.length && !/marker not found|WGSL|validation/i.test(log2),'The shaped search failed: '+(wy2 && wy2.error)+'\n'+log2.slice(-1200));
     record('a shaped coordination shell compiles and runs on the GPU',{assignment:wy2.sols[0].assignment});
-    // a counted rule turns the polyhedron moves on; the ten bare rules of the first run did not
-    check(/Polyhedron moves: 30 %/.test(log2) && !/Polyhedron moves/.test(log),'Polyhedron moves are not on for a counted shell only: '+(log2.match(/Polyhedron[^\n]*/) || ['none'])[0]);
-    record('a counted shell turns the polyhedron moves on');
+    // the form's percentage reaches the search, for a counted shell; the first run (0 %, bare rules) had none
+    check(/Polyhedron moves: 30 %/.test(log2) && !/Polyhedron moves/.test(log),'Polyhedron moves did not follow the form: '+(log2.match(/Polyhedron[^\n]*/) || ['none'])[0]);
+    record('Polyhedron moves follow the form, for a counted shell only');
 
     check(!errors.length,'Browser errors: '+errors.join('; '));record('no browser errors');
     window.browserTestResult={ok:true,results};

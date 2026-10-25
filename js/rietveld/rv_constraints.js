@@ -151,7 +151,6 @@ RV.constraints = (function(){
   }
   function init(){
     var help=document.querySelector('[data-constraints-help]');if(help)help.title='Equivalence: the first atom ticked is the independent parameter; the others follow it, B = m × A, refined or not. Only the refine flag of the independent parameter counts. Constraint equation: Σ mᵢ Pᵢ = c; multipliers start at 1 and can be edited in the list. The refine checkboxes act on the whole equation: enabling or fixing any term enables or fixes them all. The last term is computed from the others, so an equation with N terms has N - 1 independent values. Hold: the parameter is not refined, whatever its refine flag. A parameter belongs to one relationship only; coordinates fixed by site symmetry cannot be constrained. Multipliers are not zero. Applying a change aligns the starting values of the phase and of its Rietveld calculations and clears their previous fits. Le Bail and WPPF ignore constraints. Relationships whose atoms leave, or whose coordinates become fixed by a new site or space group, are trimmed (see the Log).';
-    document.querySelectorAll('[data-atomic-constraints]').forEach(function(b){b.addEventListener('click',edit);});
     document.addEventListener('click',onClick);document.addEventListener('change',onChange);
     RV.bus.on('busy',refreshAll);
   }

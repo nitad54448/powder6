@@ -76,8 +76,6 @@
         S.busy?'Calculation running':issue;
     }
     $('#calculation-summary').textContent=warning?'⚠ '+warning:'';$('#calculation-summary').title=issue;$('#calculation-summary').hidden=!warning;
-    document.querySelector('[data-workflow="scales"]').hidden = m !== 'rietveld';
-    document.querySelector('[data-workflow="orientation"]').hidden = m !== 'rietveld';
     $('#calculation-target').textContent='Set values and refinement flags in Datasets and FIT from any view.';
     if (RV.results && RV.layout.resultTab()==='solve') RV.results.render();
     updateSolveHeader();
@@ -112,14 +110,8 @@
         case 'assign': showTab('datasets'); break;
         case 'parameters': showSide('params'); break;
         case 'refinement-settings': showTab('settings'); $('#set_algorithm').focus(); break;
-        case 'orientation': RV.cmd.orientation(); break;
         case 'fit': RV.cmd.fit(); break;
         case 'patterns': showTab('pattern'); break;
-        case 'scales':
-          if (S.busy || !S.sel.size) return;
-          RV.history.take('refine phase scales only');
-          St.selected().forEach(function (d) { Object.keys(d.fit).forEach(function (n) { d.fit[n] = RVCore.classify(n).kind === 'scale' && St.isVariable(n); }); });
-          RV.bus.emit('params', {}); RV.cmd.fit(); break;
       }
     }); });
     $('#ds-resolution').addEventListener('click',function(){RV.cmd.resolution();});

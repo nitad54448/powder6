@@ -247,7 +247,6 @@
             <button type="button" data-dataset-action="read">Read patterns…</button>
             <button type="button" data-dataset-action="simulate">Simulate…</button>
             <button type="button" id="ds-phases" class="mini" title="Add or remove phases for each dataset">Phases…</button><button type="button" id="ds-resolution" class="mini">Profile</button><button type="button" id="ds-inst" class="mini" title="Wavelength, polarisation and fitted range of the selected datasets">Instrument…</button><button type="button" id="ds-bkg" class="mini" title="Background of the selected datasets: Chebyshev terms or a spline through anchors">Background…</button>
-            <button type="button" data-workflow="orientation">Preferred orientation…</button><button type="button" data-workflow="scales">Refine scales only</button>
           </div>
           <details class="acc dataset-accordion fit-selection" id="fit-selection" data-acc="dataset-selection">
             <summary><span class="acc-t">Datasets</span> <span id="fit-selection-count"></span></summary>
@@ -327,11 +326,6 @@
           <button type="button" data-act="new">New phase…</button>
           <button type="button" data-act="cif">Read CIF…</button>
           <button type="button" data-act="simulate">Simulate…</button>
-          <button type="button" data-atomic-constraints>Atomic constraints…</button>
-          <button type="button" data-restraints title="Soft distance and angle restraints between atoms, in the rules of the Wyckoff search; a guide writes them from a molecule file">Restraints…</button>
-          <button type="button" id="ph-tab-atom" data-act="atom">Add atom…</button>
-          <button type="button" id="ph-tab-cif-atoms" data-act="atoms-cif" title="Read the atom sites of a structure CIF into the current phase (add or replace); the phase keeps its cell and space group">Atoms from CIF…</button>
-          <button type="button" id="ph-tab-fragment" data-act="fragment" title="Put a molecule (PDB, MOL/SDF, XYZ, Z-matrix) into the current phase as atoms on general positions, with restraints for its bonds and angles">Fragment…</button>
         </div>
         <details id="phase-selection" class="fit-selection" hidden>
           <summary>Choose a phase</summary>
@@ -341,6 +335,7 @@
             <p class="hint">Select a phase to edit its shared definition here. Dataset-specific phase values and assignments are edited in Datasets.</p>
           </section>
         </details>
+        <div class="phase-accordions" id="phase-accordions"></div>
         <div class="phase-body" id="phase-body"></div>
       </div>
 

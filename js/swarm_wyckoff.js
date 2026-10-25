@@ -117,8 +117,9 @@ const SW_DEFAULTS = Object.freeze({
     // --- Polyhedron moves ---
     // The share of proposals that move a coordination shell as a unit (translate the centre with its partners,
     // rotate the partners, or snap them to one distance and the ideal shape): see polyPropose() in
-    // swarm_reflection.wgsl. Used only when a distance rule has a count; 0 turns the moves off.
-    polyProb: 0.3,
+    // swarm_reflection.wgsl. Used only when a distance rule has a count; 0 (the default) turns the moves off, which
+    // is the search of single sites only. The form sets it (Polyhedron moves, %).
+    polyProb: 0,
 
     // --- Metropolis update ---
     // Replaced particle swarm. PSO's social term pulls every particle of an

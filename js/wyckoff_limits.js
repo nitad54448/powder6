@@ -40,7 +40,10 @@ const WY_LIMITS = Object.freeze({
   restarts: [1, 10],
   // Shape weight: how strongly the angles of shaped shells count, as a multiple of the bond penalty.
   shapeWeight: [0, 10],
-  defaults: Object.freeze({ rhoMin: 2, rhoMax: 8, maxZ: 3, particles: 512, iterations: 2000, restarts: 4, minContact: 1.0, shapeWeight: 1 }),
+  // Polyhedron moves: the percentage of proposals that move a counted shell as a unit (swarm_reflection.wgsl,
+  // polyPropose). 0 is the search of single sites only, as before the moves existed.
+  polyMoves: [0, 100],
+  defaults: Object.freeze({ rhoMin: 2, rhoMax: 8, maxZ: 3, particles: 512, iterations: 2000, restarts: 4, minContact: 1.0, shapeWeight: 1, polyMoves: 0 }),
   // The screening stage: when the assignments need more than fullWaves waves, every one is first searched for
   // screenFraction of the iterations (at least screenMinIterations, one restart), and only the best fullWaves
   // waves' worth go on to the full search.

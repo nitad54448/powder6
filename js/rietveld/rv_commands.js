@@ -784,22 +784,7 @@ RV.cmd = (function () {
     RV.bus.emit('params',{});RV.bus.emit('data');ui.toast('Set '+C.PROFILE_LABELS[type]+' resolution for '+plural(list.length,'dataset')+'.','ok');
   }
 
-  async function orientation() {
-    var ph=St.currentPhase();if(!idle() || !ph)return;
-    var held=St.holdersOf(ph,datasetTargets()), source=held[0],pre=ph.key+'.po',values=source?source.p:ph.v;
-    RV.app.showTab('datasets');
-    var v=await ui.prompt('Preferred orientation · '+ph.name,[
-      {key:'h',label:'Axis h',type:'number',value:ph.poDir[0]}, {key:'k',label:'Axis k',type:'number',value:ph.poDir[1]}, {key:'l',label:'Axis l',type:'number',value:ph.poDir[2]},
-      {key:'r',label:'March–Dollase r',type:'number',value:values[pre]||1,hint:'1 means random orientation; r is dimensionless.'},
-      {key:'refine',label:'Refine r',type:'checkbox',value:ph.method==='rietveld' && !!(source?source.fit[pre]:ph.fit[pre])},
-      {key:'shared',label:'Share r in a global fit',type:'checkbox',value:St.isShared(pre)}
-    ],'Apply','The axis belongs to the phase. The strength r and its refinement flag apply only to the active dataset containing this phase. Preferred orientation is meaningful only for a Rietveld intensity model.',{
-      check:function(v){if([v.h,v.k,v.l].every(function(x){return x===0;}))return 'The axis must be nonzero.';if(!(v.r>=.1 && v.r<=5))return 'r must be between 0.1 and 5.';if(v.refine && ph.method!=='rietveld')return 'Choose the Rietveld calculation in Solve before refining preferred orientation.';return '';}
-    });
-    if(!v || !idle())return;snapshot('preferred orientation of '+ph.name);ph.poDir=[v.h,v.k,v.l];St.phaseChanged(ph);
-    St.setParam(pre,v.r,held,!source);St.setFit(pre,v.refine,held);if(!source)ph.fit[pre]=v.refine;St.setShared(pre,v.shared);
-    ui.toast('Preferred orientation of '+ph.name+': ('+ph.poDir.join(' ')+'), r = '+v.r+(v.refine?', refined.':', fixed.'),'ok');
-  }
+
 
   // ---------------------------------------------------------------- datasets
   async function instrument() {
@@ -1251,6 +1236,13 @@ RV.cmd = (function () {
       default: return -1;
     }
   }
+  // every flag of the selected datasets off but the phase scales, then a fit: a first step of a Rietveld refinement
+  function scalesOnly() {
+    if (!idle() || !S.sel.size) return;
+    snapshot('refine phase scales only');
+    St.selected().forEach(function (d) { Object.keys(d.fit).forEach(function (n) { d.fit[n] = RVCore.classify(n).kind === 'scale' && St.isVariable(n); }); });
+    RV.bus.emit('params', {}); fit();
+  }
   function tickSteps(kind) {
     if (!idle() || !haveSel()) return;
     var upto = kind === 'none' ? -1 : STEPS.indexOf(kind), list = sel(), n = 0;
@@ -1525,7 +1517,7 @@ RV.cmd = (function () {
     stop: function () { return running || (RV.solve && RV.solve.running()) ? '' : 'Only fits and structure solutions can be stopped.'; }
   };
   function why(id) { var f = WHY[id]; return f ? f() || '' : ''; }
-  var BUTTONS = [['#busy-cancel', 'stop'], ['#btn-fit', 'fit'], ['[data-workflow="fit"]', 'fit'], ['[data-workflow="scales"]', 'selection'], ['#clone-all', 'cloneAll'], ['#clone-sel', 'cloneSel'], ['[data-plot-action="png"]', 'selection'],
+  var BUTTONS = [['#busy-cancel', 'stop'], ['#btn-fit', 'fit'], ['[data-workflow="fit"]', 'fit'], ['#clone-all', 'cloneAll'], ['#clone-sel', 'cloneSel'], ['[data-plot-action="png"]', 'selection'],
                   ['#btn-report', 'report'], ['#fit-sharing', 'global'], ['#ds-phases', 'phaseMap'],
                   ['[data-dataset-action="delete"]', 'edit']];
   var syncRaf = 0;
@@ -1679,9 +1671,9 @@ RV.cmd = (function () {
       refine: [['Fit selected datasets (F9)', fit, 'fit'], ['Global fit of selected datasets', globalFit, 'global'], null,
                ['Tick scales and background', function () { tickSteps('scale'); }, 'edit'], ['… and zero and cells', function () { tickSteps('cell'); }, 'edit'],
                ['… and peak shapes', function () { tickSteps('profile'); }, 'edit'], ['… and atoms', function () { tickSteps('atoms'); }, 'edit'],
-               ['Untick everything', function () { tickSteps('none'); }, 'edit'], ['Estimate scales and background', estimate, 'withPhase'], null,
+               ['Untick everything', function () { tickSteps('none'); }, 'edit'], ['Fit scales only (untick the rest)', scalesOnly, 'selection'], ['Estimate scales and background', estimate, 'withPhase'], null,
                ['Sharing in the global fit…', function () { sharing(); }, 'global'], null,
-               ['Phases of the datasets…', phaseMap, 'phaseMap'], ['Add an atom to the current phase…', addAtom, 'havePhase'], ['Atoms from CIF into the current phase…', atomsFromCif, 'havePhase'], ['Fragment (molecule) into the current phase…', fragment, 'havePhase'], ['Delete the current phase…', deletePhase, 'havePhase']]
+               ['Phases of the datasets…', phaseMap, 'phaseMap'], ['Add an atom to the current phase…', addAtom, 'havePhase'], ['Atoms from CIF into the current phase…', atomsFromCif, 'havePhase'], ['Fragment (molecule) into the current phase…', fragment, 'havePhase']]
     };
     document.querySelectorAll('[data-menu]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -1694,7 +1686,7 @@ RV.cmd = (function () {
   }
 
   return { init: init, readFiles: readFiles, readStructure: readStructure, newPhase: newPhase, addAtom: addAtom, atomsFromCif: atomsFromCif, atomsFromCifText: atomsFromCifText, fragment: fragment, fragmentInto: fragmentInto, deletePhase: deletePhase, setMethod: setMethod,
-           readData: readData0, orientation: orientation, resolution: resolution, setInstrumentProfile:setInstrumentProfile, instrument: instrument, background: background, excludeRegions: excludeRegions, markAt: markAt, removeAnchor: removeAnchor, addZone: addZone, editZone: editZone, applyZone: applyZone, removeZone: removeZone, regionAt: regionAt, simulate: simulate,
+           readData: readData0, scalesOnly: scalesOnly, resolution: resolution, setInstrumentProfile:setInstrumentProfile, instrument: instrument, background: background, excludeRegions: excludeRegions, markAt: markAt, removeAnchor: removeAnchor, addZone: addZone, editZone: editZone, applyZone: applyZone, removeZone: removeZone, regionAt: regionAt, simulate: simulate,
            loadPreset: loadPreset, savePreset: savePreset, loadDefaultPresets: loadDefaultPresets, extract: extract,
            deleteDatasets: deleteDatasets, estimate: estimate, cloneTo: cloneTo, tickSteps: tickSteps, fitGroupState: fitGroupState, setFitGroup: setFitGroup,
            fit: fit, fitSelected: fitSelected, globalFit: globalFit, stop: stop, undo: undo, saveProject: saveProject, openProject: openProject,

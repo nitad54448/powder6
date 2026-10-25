@@ -30,11 +30,43 @@ RV.phasesTab = (function () {
   }
 
   // ---------------------------------------------------------------- building
+  /* One accordion per phase, titled in the colour of its plot. The editor below (#phase-body, one set of controls)
+     sits in the accordion of the current phase; opening another accordion selects that phase and the editor moves
+     there. The accordions are rebuilt only when the phases or the current one change, so a focused field is never
+     moved out from under the user; names, colours and summaries are refreshed in place. */
+  var accKeys = null, accOpen = true;
+  function accordions() {
+    var host = $('#phase-accordions'), body = $('#phase-body'), cur = St.currentPhase();
+    if (!host || !body) return;
+    var keys = S.phases.map(function (p) { return p.key; }).join(',') + '#' + (cur ? cur.key : '');
+    if (keys !== accKeys || (cur && !host.contains(body))) {
+      accKeys = keys;
+      if (host.contains(body)) host.after(body);
+      host.innerHTML = '';
+      S.phases.forEach(function (p) {
+        var d = document.createElement('details'), sm = document.createElement('summary');
+        d.className = 'acc dataset-accordion dataset-card phase-accordion'; d.dataset.phaseAccordion = p.key;
+        sm.innerHTML = '<span class="acc-t"></span><span class="acc-s"></span>';
+        d.appendChild(sm);
+        if (p === cur) {
+          var wrap = document.createElement('div'); wrap.className = 'acc-body'; wrap.appendChild(body); d.appendChild(wrap);
+          d.open = accOpen;
+          d.addEventListener('toggle', function () { accOpen = d.open; });
+        } else sm.addEventListener('click', function (e) { e.preventDefault(); if (busy()) return; accOpen = true; St.selectPhase(p.key); });
+        host.appendChild(d);
+      });
+    }
+    host.querySelectorAll('[data-phase-accordion]').forEach(function (d) {
+      var p = St.phaseByKey(d.dataset.phaseAccordion), i = S.phases.indexOf(p);
+      if (!p) return;
+      var t = d.querySelector('.acc-t'), s = d.querySelector('.acc-s');
+      t.textContent = p.name; t.style.color = RV.plots.phaseVar(i);
+      s.textContent = St.sgText(p.sg) + ' · ' + (p.atoms.length ? p.atoms.length + (p.atoms.length === 1 ? ' site' : ' sites') : 'no atoms');
+    });
+  }
   function renderBar() {
     var bar = $('#phase-select'), cur = St.currentPhase();
-    ['#ph-tab-atom', '#ph-tab-cif-atoms', '#ph-tab-fragment'].forEach(function (s) { ui.able($(s), cur ? '' : 'No phase yet.'); });
-    var cb=document.querySelector('[data-atomic-constraints]');if(cb){ui.able(cb,cur && cur.atoms.length?'':'Select a phase with atoms.');cb.textContent='Atomic constraints…'+(cur && cur.constraints && cur.constraints.length?' ('+cur.constraints.length+')':'');}
-    var rb=document.querySelector('[data-restraints]');if(rb){ui.able(rb,cur && cur.atoms.length>1?'':'Select a phase with at least two atoms.');var rn=cur && RV.restraints?RV.restraints.summary(cur):'';rb.textContent='Restraints…'+(rn?' ('+rn.replace(/ rules?.*/,'')+')':'');}
+    accordions();
     if (!bar) return;
     bar.innerHTML = S.phases.map(function (ph, i) {
       return '<option value="' + ph.key + '" style="color:' + RV.plots.phaseColor(i) + '"' + (cur === ph ? ' selected' : '') + '>' + esc(ph.name) + '</option>';
@@ -105,7 +137,7 @@ RV.phasesTab = (function () {
         (ph.atoms.map(atomRow).join('') || '<tr><td colspan="9" class="hint">No atoms: Le Bail and WPPF use the cell and space group. Add atoms or import a CIF for Rietveld.</td></tr>') +
         '</tbody></table></div><p class="buttons"><button type="button" data-act="atom">Add atom…</button><button type="button" data-act="atoms-cif" title="Read the atom sites of a structure CIF into this phase (add or replace); the phase keeps its cell and space group">Atoms from CIF…</button><button type="button" data-act="fragment" title="Put a molecule (PDB, MOL/SDF, XYZ, Z-matrix) into this phase as atoms on general positions, with restraints for its bonds and angles">Fragment…</button></p>' +
         '<p class="hint">x, y, z are fractional. A coordinate in grey is set by the site of the atom (shown on the right); typing a value there moves the atom off that site. Occ. is the fraction of the site occupied.</p></section>' +
-      (ph.atoms.length ? '<section class="pblock constraints-block"><h2>Atomic constraints <span class="sub" id="ph-ac-n"></span></h2>' +
+      (ph.atoms.length ? '<section class="pblock constraints-block"><h2>Constraints <span class="sub" id="ph-ac-n"></span></h2>' +
         '<p class="hint">GSAS-II relationships between the atomic parameters of ' + esc(ph.name) + ': hold, equivalence and constraint equation. Rietveld applies them exactly in every dataset' + (ph.method === 'rietveld' ? '' : '; ' + esc(ph.name) + ' is fitted by ' + esc(C.METHOD_LABELS[ph.method]) + ' now, so they are kept but unused') + '. Constrained parameters are marked in Parameters.</p>' +
         '<div id="ph-ac"></div></section>' : '') +
       (ph.atoms.length > 1 ? '<section class="pblock constraints-block"><h2>Restraints <span class="sub" id="ph-rs-n"></span></h2>' +
@@ -295,7 +327,6 @@ RV.phasesTab = (function () {
     if (a === 'new') RV.cmd.newPhase();
     else if (a === 'cif') RV.cmd.readStructure();
     else if (a === 'simulate') RV.cmd.simulate();
-    else if (a === 'orientation') RV.cmd.orientation();
     else if (a === 'atom') RV.cmd.addAtom();
     else if (a === 'atoms-cif') RV.cmd.atomsFromCif();
     else if (a === 'fragment') RV.cmd.fragment();
