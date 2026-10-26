@@ -2,7 +2,13 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.42.11 — 26 October 2026
+
+1. **The last references to removed code.** `profile.js`'s `intensityDerivativeColumn()` still documented a flat-list form "from `bucketContributionsByPeak`" (deleted in 2.42.9) and carried the flat-list branch that no caller used — the one caller, `rietveld_core.js`, passes the buckets it builds itself. The function takes `buckets` only now, and its doc says where they come from. `wyckoff_worker.js`'s note on automatic Z no longer cites `suggestZ()` by name; it describes the volume-per-atom estimate it replaced.
+2. **Verified.** 178 Node tests and the `wyckoff-search` browser page pass; no numerical behaviour changed.
+
 ## 2.42.10 — 26 October 2026
+
 
 1. **The code layout in the documentation lists every file.** It was missing 14 of them (`pt_gpu.js`, `cf_adaptive.js`, `distance_rules.js`, `wyckoff_limits.js`, `atom_restraints.js`, `molecule_rules.js`, `fourier_map.js`, `rv_fourier.js`, `rv_restraints.js`, `rv_fit_history.js`, `rv_project.js`, `rv_layout.js`, `rv_workspace.js`, `rv_wyhelper.js`); each has one line now, next to the files it works with.
 2. **Comments that described code which is gone.** `swarm_wyckoff.js` opened with "Harko.html calls runWyckoffSearch()" and required a `cc_fitness.js` that does not exist (and cited it as the CPU reference for a duplicated ramp formula); both are corrected. `verifyScatteringTable()`'s docstring said a failure "should stop the run", while `rv_app.js` reports it and continues — the docstring now says what happens, and why.

@@ -285,13 +285,12 @@ function wyObservationsFromHkl(job, symops) {
 // ===========================================================================
 //  AUTOMATIC Z: A SCAN, NOT A GUESS.
 //
-//  The old auto-Z called suggestZ(), took its single `likely` value, and ran
-//  with it. suggestZ works from a volume-per-atom rule of thumb (11-22 A^3)
-//  and then prefers a Z that divides the group order, which for a pyrochlore
-//  in Fd-3m returned Z = 6 -- and Z = 6 puts 12 Gd in a cell whose Wyckoff
-//  multiplicities are all multiples of 8. The search then died on an
-//  arithmetic impossibility that was never the user's to fix, while the
-//  correct answer, Z = 8, sat two entries away in the same list.
+//  The old auto-Z took a single volume-per-atom estimate (11-22 A^3 per atom,
+//  with a preference for a Z that divides the group order), and ran with it.
+//  For a pyrochlore in Fd-3m that returned Z = 6 -- and Z = 6 puts 12 Gd in a
+//  cell whose Wyckoff multiplicities are all multiples of 8. The search then
+//  died on an arithmetic impossibility that was never the user's to fix, while
+//  the correct answer, Z = 8, sat two entries away in the same list.
 //
 //  What replaces it:
 //

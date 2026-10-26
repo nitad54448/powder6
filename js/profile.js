@@ -1078,29 +1078,20 @@ function accumulatePattern(tthAxis, hklList, contributions, out = null) {
  * d(pattern)/d(I_j) over the window that reflection j touches: the sum of its
  * contributions' unit-height profiles. Exact, not a finite difference.
  *
+ * `buckets[j]` holds the contributions of reflection j, as rietveld_core.js
+ * builds it from buildPeakContributions(). There is no flat-list path: the
+ * only caller passes buckets, and scanning a flat list once per reflection is
+ * quadratic (114 ms against 29 ms per LM iteration at 4000 reflections).
+ *
  * Returns null when the reflection touches no data point.
  *
  * @param {Float64Array|number[]} tthAxis
- * @param {PeakContribution[]|Array<PeakContribution[]>} contributions Either
- *        the flat list, or the bucketed form from bucketContributionsByPeak.
- *        Pass the bucketed form; the flat path is kept only so that older
- *        call sites keep working.
+ * @param {Array<PeakContribution[]>} buckets
  * @param {number} peakIndex
  * @returns {{start:number, values:Float64Array}|null}
  */
-function intensityDerivativeColumn(tthAxis, contributions, peakIndex) {
-    // PERF FIX: accept the BUCKETED form from bucketContributionsByPeak
-    // (wppf_linear.js) as well as the flat list. The flat path scans the
-    // whole contribution array twice per reflection while the caller invokes
-    // it once per reflection, so the sweep was quadratic: 114 ms per LM
-    // iteration at 4000 reflections against 29 ms bucketed, and the gap grows
-    // with n because one side is O(n^2) and the other is not.
-    //
-    // A bucket array holds arrays; the flat list holds contribution objects.
-    // Distinguishing on that is unambiguous and needs no extra argument.
-    const list = Array.isArray(contributions[peakIndex])
-        ? contributions[peakIndex]
-        : contributions.filter(c => c.peakIndex === peakIndex);
+function intensityDerivativeColumn(tthAxis, buckets, peakIndex) {
+    const list = buckets[peakIndex];
     if (!list || list.length === 0) return null;
 
     let start = Infinity, stop = -Infinity;
