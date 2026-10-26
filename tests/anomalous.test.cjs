@@ -38,3 +38,17 @@ test('the scattering loader fetches the bundled anomalous file and reports a mis
     const missing=await loadScatteringTables('fixture');assert.equal(missing.anomalous,null);assert.match(missing.anomalousError,/anomalous.json: 404/);assert.ok(missing.xray.table);
   }finally{global.fetch=previous;}
 });
+test('an ion the f0 table lacks falls back to the neutral atom, and says so; an unknown element is still null',()=>{
+  const {makeFormFactor}=require('../js/scatterers.js');
+  const xray=JSON.parse(fs.readFileSync(path.join(__dirname,'../scatters/xray_wk1995_ions.json'),'utf8'));
+  const tables={xray,neutron:null},warn=console.warn,warnings=[];
+  console.warn=m=>warnings.push(String(m));
+  try{
+    const neutral=makeFormFactor(tables,{}),fe3=makeFormFactor(tables,{ions:{FE:'Fe3+'}}),absent=makeFormFactor(tables,{ions:{FE:'Fe9+'}});
+    assert.ok(Math.abs(fe3('FE',0)-neutral('FE',0))>1,'a tabulated ion has its own f(0)');
+    assert.equal(absent('FE',0),neutral('FE',0),'an absent ion uses the neutral atom, not a point atom');
+    assert.ok(warnings.some(m=>/Fe9\+/.test(m)),'the substitution is reported once');
+    assert.equal(warnings.filter(m=>/Fe9\+/.test(m)).length,1,'repeated calls do not repeat the message');
+    assert.equal(neutral('XX',0),null,'an unknown element stays null for the caller to report');
+  }finally{console.warn=warn;}
+});

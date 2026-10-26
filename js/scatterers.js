@@ -38,7 +38,7 @@ async function loadScatteringTables(baseDir = SHARKO_SCATTER_DIR) {
         return r.json();
     });
 
-    const want = index.preferred || 'xray_wk1995.json';
+    const want = index.preferred || 'xray_wk1995_ions.json';
     const xray = await fetch(`${baseDir}/${want}`).then(r => r.ok ? r.json() : null);
     if (!xray) throw new Error(`${baseDir}/${want} is missing.`);
 
@@ -131,6 +131,12 @@ function verifyScatteringTable(xray, tolerance = 0.25) {
  * Returns null for an element the table does not hold, which makes
  * buildScatteringTable fall back to the point-atom value and report it, rather
  * than substituting a neighbouring element and saying nothing.
+ *
+ * AN ION THE TABLE LACKS IS A SUBSTITUTION, NOT A MISSING ELEMENT. xray_wk1995_ions.json
+ * carries the common ions (O2-, Fe3+, ...) but not every charge state; when the
+ * requested one is absent the neutral atom's f0 is used, because it is a few
+ * electrons away rather than a point atom, and the substitution is logged once
+ * per species instead of passing silently.
  */
 function makeFormFactor(tables, options = {}) {
     const radiation = options.radiation || 'xray';
@@ -158,10 +164,19 @@ function makeFormFactor(tables, options = {}) {
         };
     }
 
+    const missingIons = new Set();
     return (element, s) => {
         const key = String(element).toUpperCase();
-        const label = ions[key] ? String(ions[key]).toUpperCase() : key;
-        const e = xrayByKey.get(label) || xrayByKey.get(key);
+        const wantsIon = !!ions[key];
+        const label = wantsIon ? String(ions[key]).toUpperCase() : key;
+        let e = xrayByKey.get(label);
+        if (!e && wantsIon) {
+            e = xrayByKey.get(key);
+            if (e && !missingIons.has(key)) {
+                missingIons.add(key);
+                console.warn('scatterers.js: no ionic f0 for ' + ions[key] + ' (' + key + '); using the neutral atom.');
+            }
+        }
         if (!e) return null;
         return evaluateGaussian(e, s / 2);      // s -> stol
     };

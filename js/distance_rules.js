@@ -54,7 +54,7 @@ var DistanceRules = (function () {
         if (!Number.isFinite(dmin)) { bad.push('line ' + (i + 1) + ': "' + nums[0] + '" is not a distance'); return; }
         if (nums.length > 1) { dmax = parseFloat(nums[1]); if (!Number.isFinite(dmax)) { bad.push('line ' + (i + 1) + ': "' + nums[1] + '" is not a distance'); return; } }
       } else {
-        var range;
+        var range, used;
         if (rest.length >= 2 && rest[0].indexOf('/') < 0) {
           var c = rest[0];
           if (c !== '-' && c !== '*') {
@@ -62,8 +62,11 @@ var DistanceRules = (function () {
             if (!m) { bad.push('line ' + (i + 1) + ': "' + c + '" is not a coordination number (use 4, 4+ or -)'); return; }
             count = parseInt(m[1], 10); mode = m[2] === '+' ? 'atleast' : 'exact';
           }
-          range = rest[1];
-        } else range = rest[0];
+          range = rest[1]; used = 2;
+        } else { range = rest[0]; used = 1; }
+        // Nothing after the range is read either: it used to be consumed and thrown away, so a rule that
+        // said one thing and enforced another was accepted without a word.
+        if (rest.length > used) { bad.push('line ' + (i + 1) + ': "' + rest.slice(used).join(' ') + '" after "' + rest.slice(0, used).join(' ') + '" is not read - a rule is "A B dmin dmax" (or "A B N dmin/dmax [shape]")'); return; }
         var sides = range.split('/');
         if (sides.length !== 2) { bad.push('line ' + (i + 1) + ': "' + range + '" should be dmin/dmax'); return; }
         if (sides[0].trim() !== '') { dmin = parseFloat(sides[0]); if (!Number.isFinite(dmin)) { bad.push('line ' + (i + 1) + ': "' + sides[0] + '" is not a distance'); return; } }

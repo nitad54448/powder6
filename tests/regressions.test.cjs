@@ -1500,6 +1500,13 @@ test('a distance rule never drops a token: extra numbers and a count with two di
   assert.deepEqual(plain(DR.parse('S O 4 1.4/1.6', WL.geometries).windows[0]), { a: 'S', b: 'O', count: 4, countMode: 'exact', dmin: 1.4, dmax: 1.6, geometry: null });
   assert.deepEqual(plain(DR.parse('S O 1.4 1.6', WL.geometries).windows[0]), { a: 'S', b: 'O', count: null, countMode: null, dmin: 1.4, dmax: 1.6, geometry: null });
   assert.deepEqual(plain(DR.parse('S O 4 1.40/1.60 tetra', WL.geometries).windows[0].geometry), 'tetrahedral');
+  // nothing after the range is read either: this used to be consumed and dropped in silence
+  for (const text of ['S O 4 1.40/1.60 2.0', 'S O 4 1.40/1.60 3']) {
+    const r = DR.parse(text, WL.geometries);
+    assert.equal(r.windows.length, 0, text + ' must not become a rule');
+    assert.match(r.bad[0], /"2\.0"|"3"/, text + ': ' + r.bad[0]);
+    assert.match(r.bad[0], /is not read/);
+  }
 });
 
 test('restraints measure distances, counts and angles through the symmetry images', () => {

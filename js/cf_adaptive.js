@@ -5,6 +5,10 @@
 (function(root){
   'use strict';
   function median(values){var a=values.filter(Number.isFinite).slice().sort(function(x,y){return x-y;});return a.length?(a[(a.length-1)>>1]+a[a.length>>1])/2:null;}
+  // Math.min.apply(null, a) passes one argument per element, which a large reflection list can turn into a
+  // RangeError; these stay O(n) with no argument limit. An empty array gives the same Infinity / -Infinity.
+  function minOf(a){var m=Infinity;for(var i=0;i<a.length;i++)if(a[i]<m)m=a[i];return m;}
+  function maxOf(a){var m=-Infinity;for(var i=0;i<a.length;i++)if(a[i]>m)m=a[i];return m;}
   function overlap(a,b,options){
     var ta=a.tth,tb=b.tth,tol=options.overlapTolTth;
     if(Number.isFinite(ta) && Number.isFinite(tb)){
@@ -22,13 +26,13 @@
     var n=rows.length,resolved=rows.filter(function(r){return !(r.group>=0);}),withSigma=resolved.filter(function(r){return r.sigma>0 && Number.isFinite(r.sigma);}),snr=withSigma.map(function(r){return r.area/r.sigma;}),groups=0;
     var grouping={overlapTolTth:Number.isFinite(options.overlapTol)?options.overlapTol:.05,overlapFwhmFraction:.5};
     rows.forEach(function(r,i){if(!i || !overlap(rows[i-1],r,grouping))groups++;});
-    var ds=rows.map(function(r){return r.d;}).filter(function(d){return d>0 && Number.isFinite(d);}),strong=withSigma.filter(function(r){return r.area>=3*r.sigma;}),qValues=ds.map(function(d){return 1/(d*d);}),qMin=Math.min.apply(null,qValues),qMax=Math.max.apply(null,qValues);
+    var ds=rows.map(function(r){return r.d;}).filter(function(d){return d>0 && Number.isFinite(d);}),strong=withSigma.filter(function(r){return r.area>=3*r.sigma;}),qValues=ds.map(function(d){return 1/(d*d);}),qMin=minOf(qValues),qMax=maxOf(qValues);
     var shells=[0,1,2].map(function(k){var list=rows.filter(function(r){if(!(r.d>0))return false;var q=1/(r.d*r.d),bin=qMax>qMin?Math.min(2,Math.floor(3*(q-qMin)/(qMax-qMin))):0;return bin===k;}),usable=list.filter(function(r){return !(r.group>=0) && r.sigma>0 && Number.isFinite(r.sigma);});return {name:['Low angle','Middle','High angle'][k],count:list.length,sigmaCount:usable.length,medianISigma:median(usable.map(function(r){return r.area/r.sigma;}))};});
     var coverage=resolved.length?withSigma.length/resolved.length:0,reliable=!!I && I.covarianceOK===true && withSigma.length>=4 && coverage>=.8;
     var result={count:n,resolvedCount:resolved.length,clusters:groups,overlapFraction:n?1-groups/n:0,sigmaCoverage:coverage,uncertaintiesReliable:reliable,medianISigma:median(snr),strongCount:strong.length,
-      dMin:ds.length?Math.min.apply(null,ds):null,strongDMin:null,widthCoverage:n?rows.filter(function(r){return r.fwhm>0;}).length/n:0,medianFwhm:median(rows.map(function(r){return r.fwhm;})),
+      dMin:ds.length?minOf(ds):null,strongDMin:null,widthCoverage:n?rows.filter(function(r){return r.fwhm>0;}).length/n:0,medianFwhm:median(rows.map(function(r){return r.fwhm;})),
       nonpositive:rows.filter(function(r){return r.area<=0 || r.bound;}).length,shells:shells,grouping:grouping};
-    var strongDs=strong.map(function(r){return r.d;}).filter(function(d){return d>0 && Number.isFinite(d);});result.strongDMin=strongDs.length?Math.min.apply(null,strongDs):null;
+    var strongDs=strong.map(function(r){return r.d;}).filter(function(d){return d>0 && Number.isFinite(d);});result.strongDMin=strongDs.length?minOf(strongDs):null;
     result.lowSignal=reliable && result.medianISigma<3;
     result.limitedResolution=result.dMin!=null && result.dMin>1.5;
     result.heavyOverlap=result.overlapFraction>.35;
