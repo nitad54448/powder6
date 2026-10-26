@@ -1170,7 +1170,7 @@ RV.solve = (function () {
         block('wy-solution', 'Solution', '<div id="sv-wy-sol"></div>', true, null, 'sub') +
         block('wy-sites', 'Sites', '<div id="sv-wy-sites"></div>', true, null, 'sub') +
         structBlock('wy') +
-        resultBlocks('wy', true), false, 'id="sv-wy-sum"', null, { text: BLOCK_HELP.wy, label: 'About the Wyckoff search' }) +
+        resultBlocks('wy', false), false, 'id="sv-wy-sum"', null, { text: BLOCK_HELP.wy, label: 'About the Wyckoff search' }) +
       (RV.fourier ? RV.fourier.html(block) : '') +
       '<datalist id="sv-el-list"></datalist>';
     if(RV.layout)RV.layout.splitStructure(host);
@@ -1319,7 +1319,7 @@ RV.solve = (function () {
     if (nEl) nEl.textContent = R.sites.length ? plural(R.sites.length, 'peak') + ' in the asymmetric unit' + (R.Z ? ', Z = ' + (+R.Z.toFixed(2)) + ' from the formula' : '') : '';
     if (sitesEl) sitesEl.innerHTML = (R.sites.length ? cfSitesTable(R) +
         '<p><label class="chk" title="Assign element types from the formula when copying atoms to the phase"><input type="checkbox" id="sv-cf-assign"'+(R.nameFromFormula?' checked':'')+'> Name them from the formula</label></p><p class="hint">Applied when copying atoms to the phase; uncheck to keep the edited element types. The selected sites are preserved.</p>' +
-        '<p class="buttons sv-actions"><button type="button" data-sv="cf-show">Show the structure</button>' +
+        '<p class="buttons sv-actions">' +
         '<button type="button" class="primary" data-sv="cf-export" title="The ticked sites become the atoms of the phase">Atoms to the phase…</button><button type="button" data-sv="cf-cif">Save CIF…</button></p>' +
         '<p class="hint">Charge flipping gives electron density, not chemistry: check the element of each peak, untick the spurious ones. Positions within ' + f(0.6 * R.o.peakMerge, 2) + ' Å of a special position are put on it.</p>'
         : '<p class="hint">' + (st ? 'No peak above the cutoff.' : 'No sites: the map could not be placed on the origin of the space group.') + '</p>');
@@ -1421,7 +1421,7 @@ RV.solve = (function () {
         return '<tr><td>' + (i + 1) + '</td><td>' + esc(capEl(s.element)) + '</td><td>' + esc(s.wyckoff || '') + '</td><td>' + f(s.x, 4) + '</td><td>' + f(s.y, 4) + '</td><td>' + f(s.z, 4) + '</td><td>' + s.multiplicity + '</td><td>' +
                (Number.isFinite(s.shortestContact) ? f(s.shortestContact, 3) + ' Å' + (s.contacts && s.contacts[0] ? ' (' + esc(capEl(s.contacts[0].element)) + ')' : '') : '—') + '</td></tr>';
       }).join('') + '</tbody></table></div>' +
-      '<p class="buttons sv-actions"><button type="button" data-sv="wy-show">Show the structure</button><button type="button" class="primary" data-sv="wy-export" title="These sites become the atoms of the phase">Atoms to the phase…</button><button type="button" data-sv="wy-cif">Save CIF…</button></p>';
+      '<p class="buttons sv-actions"><button type="button" class="primary" data-sv="wy-export" title="These sites become the atoms of the phase">Atoms to the phase…</button><button type="button" data-sv="wy-cif">Save CIF…</button></p>';
     if (sitesEl) sitesEl.innerHTML = h;
   }
   // the 3D structure of each solution, under its Sites; drawn only while its block is open

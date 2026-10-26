@@ -2,6 +2,32 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.47.1 - 26 October 2026
+
+1. **Third-party licensing.** Add an explicit scope notice to LICENCE: original Powder 6 material uses CC BY-NC-ND 4.0, while bundled third-party components retain their own terms. Identify @spglib/moyo-wasm 0.21.0, its MIT licence option, copyright and retained permission notice. Preserve the Creative Commons legal text and the upstream MIT file unchanged. Add the same scope and links to README and the documentation.
+
+## 2.47.0 - 26 October 2026
+
+1. **Compact results.** Rename Datasets' Sample geometry to Geometry; Sample continues to select size and strain. Remove duplicate result headings, the main Save CIF and Save reflections actions, and Le Bail/WPPF atom sections. Keep Save CIF in the Rietveld 3D structure and rename Save calculated patterns to Save Patterns. Retained atoms still accompany pdCIF exports.
+2. **Structure navigation.** Use four sticky tabs styled like Method. Remove the redundant Show structure actions from charge flipping and Wyckoff output; the structures are already displayed below their sites.
+3. **Readable exports.** Organise Save results into fit summaries, geometry, background, parameter states, phases and complete reflection tables. Distinguish refined, fixed, linked, constrained and unused parameters, keeping standard uncertainties separate. Store the actual fitted variable names with new results so later checkbox changes cannot rewrite their refinement status.
+4. **Zero convention.** State explicitly in text reports and pdCIF comments that zero is observed minus calculated (exp - calc), in degrees 2theta; positive zero moves calculated peaks to higher measured angles. The pdCIF calibration offset remains -zero (calc - exp), added to measured angles. Existing import/export signs are unchanged.
+5. **Checks.** Cover both zero signs on pdCIF round-trip, retained atoms, refinement status after flag changes and project reload, full reflection tables in all methods, compact export controls, sticky Structure tabs and saved-result inspection.
+
+Validation: 222 Node tests and 93 checks across six browser pages passed. Changed JavaScript passed syntax checks; the application and documentation changes passed whitespace checks.
+
+## 2.46.1 - 26 October 2026
+
+1. **Background documentation.** State explicitly that 0 Chebyshev terms disables the background, while 1 term gives a constant background (degree 0). Point-based polynomial fitting requires at least 1 term. Clarify the background section, Settings reference and README, and correct the remaining plot-control description to include Chebyshev point targets.
+
+## 2.46.0 - 26 October 2026
+
+1. **Chebyshev background points.** Keep Anchors visible for both backgrounds and show automatically estimated Chebyshev targets. Add, move or remove them on the plot or edit X/Y and Use in Datasets. Point count is independent of polynomial order; degree N requires at least N+1 selected points.
+2. **Fit and hold.** Fit to points uses orthogonal QR least squares, rejects underdetermined or poorly distributed points, and holds coefficients during Sample fitting. Editing points refits and holds them; tick Background to restore whole-pattern coefficient refinement. Points in excluded or out-of-range regions are ignored. Spline height refinement is unchanged.
+3. **Persistence and scope.** Keep points and selection flags per dataset and per fitting method, with projects, Undo, History and reports. Opening older projects estimates editable point targets without changing their saved background curves. Automatic targets require review; the selected background is a modelling assumption, and holding it makes refinement uncertainties conditional on it.
+4. **Validation.** Numerical regressions cover overdetermined signed polynomials, rank and point-count errors, exclusions, fixed backgrounds in all three methods, project archives, Undo and method banks. Browser interaction checks cover Chebyshev placement, editing, selection and two-coordinate dragging alongside the existing spline controls.
+
+
 ## 2.45.1 — 26 October 2026
 
 1. **Linked global refinement.** Include derivatives and parameter counts in every affected dataset, including cross-dataset targets with different names. Preserve the full fitted scope, sharing and limits when preparing global WPPF errors and precision; reuse the joint extraction across sources.

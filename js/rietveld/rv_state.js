@@ -33,12 +33,13 @@ RV.state = (function () {
                  Cr: [2.28976, 2.293663, 0.5], Mo: [0.7093, 0.71359, 0.5], Ag: [0.5594075, 0.563798, 0.5] };
   function defaultInst() {
     return { anode: 'Cu', lambda1: 1.540598, lambda2: 1.544426, ratio: 0.5, radiation: 'xray', pol: 'tube', monoTth: 26.6, polFrac: 0.95,
-             radiusMM:0, anomalous: '', anomalousEnabled:true, resolutionType:'tch_aniso', bkgType: 'cheb', bkgN: 6, bkgX: [], excl: [], exclOff: [] };
+             radiusMM:0, anomalous: '', anomalousEnabled:true, resolutionType:'tch_aniso', bkgType: 'cheb', bkgN: 6, bkgX: [], bkgPoints: [], excl: [], exclOff: [] };
   }
   // arrays of an instrument copied, so a restore point or a copy never shares them
   function instCopy(i) {
     var o = Object.assign({}, i);
     o.bkgX = Array.isArray(i.bkgX) ? i.bkgX.slice() : [];
+    o.bkgPoints = (Array.isArray(i.bkgPoints)?i.bkgPoints:[]).map(function(p){return {x:p.x,y:p.y,use:p.use!==false};});
     o.excl = Array.isArray(i.excl) ? i.excl.map(function (r) { return [r[0], r[1]]; }) : [];
     o.exclOff = Array.isArray(i.exclOff) ? i.exclOff.map(function (r) { return [r[0], r[1]]; }) : [];
     return o;
@@ -54,6 +55,9 @@ RV.state = (function () {
     o.bkgType = o.bkgType === 'spline' ? 'spline' : 'cheb';
     o.bkgX = (Array.isArray(o.bkgX) ? o.bkgX : []).map(Number).filter(Number.isFinite).sort(function (a, b) { return a - b; })
       .filter(function (x, k, a) { return k === 0 || x - a[k - 1] > 1e-6; });
+    o.bkgPoints = (Array.isArray(o.bkgPoints)?o.bkgPoints:[]).filter(function(p){return p && Number.isFinite(p.x) && Number.isFinite(p.y);})
+      .map(function(p){return {x:p.x,y:p.y,use:p.use!==false};}).sort(function(a,b){return a.x-b.x;})
+      .filter(function(p,k,a){return !k || p.x-a[k-1].x>1e-6;}).slice(0,200);
     o.excl = mergeRegions((Array.isArray(o.excl) ? o.excl : []).filter(function (r) { return Array.isArray(r) && r.length === 2 && Number.isFinite(+r[0]) && Number.isFinite(+r[1]); })
       .map(function (r) { return [Math.min(+r[0], +r[1]), Math.max(+r[0], +r[1])]; }));
     // zones kept but not applied (the Apply tick of an excluded region): the fit never sees them
@@ -123,7 +127,7 @@ RV.state = (function () {
     var st = defaults();
     if (src && typeof src === 'object') Object.keys(src).forEach(function (k) { if (validSetting(k, src[k])) st[k] = src[k]; });
     st.inst = cleanInst(st.inst);
-    st.inst.bkgX = []; st.inst.excl = []; st.inst.exclOff = [];
+    st.inst.bkgX = []; st.inst.bkgPoints = []; st.inst.excl = []; st.inst.exclOff = [];
     return st;
   }
 
@@ -530,6 +534,39 @@ RV.state = (function () {
     out.sort(function (p, q2) { return p - q2; });
     return out.filter(function (x, k) { return k === 0 || x - out[k - 1] > 1e-6; });
   }
+  // Point targets are observations for a separate polynomial fit, never extra
+  // parameters or restraints in the diffraction refinement.
+  function autoChebPoints(ds, n) {
+    var t=[],y=[];for(var k=0;k<ds.tth.length;k++)if(ds.tth[k]>=ds.inst.tthMin && ds.tth[k]<=ds.inst.tthMax && !excluded(ds.inst,ds.tth[k]) && pointWeight(ds,k)>0 && Number.isFinite(ds.y[k])){t.push(ds.tth[k]);y.push(ds.y[k]);}
+    if(t.length<2)return [];
+    var view={tth:t,y:y,step:ds.step,inst:Object.assign({},ds.inst,{tthMin:t[0],tthMax:t[t.length-1],bkgX:[]})};
+    var xs=autoAnchors(view,Math.min(200,Math.max(ds.inst.bkgN,n || S.settings.nAnchors)));view.inst.bkgX=xs;
+    return xs.map(function(x){return {x:x,y:anchorValue(view,x),use:true};});
+  }
+  function chebPointActive(ds,p) {
+    if(p.use===false || p.x<ds.tth[0] || p.x>ds.tth[ds.tth.length-1] || p.x<ds.inst.tthMin || p.x>ds.inst.tthMax || excluded(ds.inst,p.x))return false;
+    var k=Math.min(ds.tth.length-1,lowerBound(ds.tth,p.x));if(k && Math.abs(ds.tth[k-1]-p.x)<Math.abs(ds.tth[k]-p.x))k--;
+    return pointWeight(ds,k)>0;
+  }
+  function chebPointFit(ds, points) {
+    var range=backgroundRange(ds,ds.inst);if(!range)throw new Error('There are fewer than two observations in the fitted range.');
+    var used=(points || ds.inst.bkgPoints || []).filter(function(p){return chebPointActive(ds,p) && p.x>=range[0] && p.x<=range[1];});
+    if(S.parameterLinks.some(function(l){return l.source.datasetId===ds.id && /^bkg[0-9]+$/.test(l.source.name) || l.target.datasetId===ds.id && /^bkg[0-9]+$/.test(l.target.name);}))throw new Error('Background coefficients are linked. Remove their parameter links before fitting background points.');
+    var result=C.fitChebyshevPoints(used,ds.inst.bkgN,range[0],range[1]);
+    result.coeffs.forEach(function(v,k){var name='bkg'+k,L=limitsOf(name,ds.p[name]);if(v<L[0] || v>L[1])throw new Error('The background point fit places '+name+' outside its parameter limits. Adjust the points, order or limits.');});
+    result.range=range;return result;
+  }
+  function setChebPoints(ds, points, fit) {
+    if(!ds || ds.inst.bkgType!=='cheb')throw new Error('Choose a Chebyshev background first.');
+    if(points.length>200)throw new Error('At most 200 background points are supported.');
+    if(points.some(function(p){return !p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x<ds.tth[0] || p.x>ds.tth[ds.tth.length-1];}))throw new Error('Background points need finite coordinates inside the observed angular range.');
+    var sorted=points.slice().sort(function(a,b){return a.x-b.x;});
+    if(sorted.some(function(p,k){return k && p.x-sorted[k-1].x<=1e-6;}))throw new Error('Keep background points at distinct angles.');
+    var result=fit?chebPointFit(ds,sorted):null;
+    ds.inst.bkgPoints=sorted.map(function(p){return {x:p.x,y:p.y,use:p.use!==false};});
+    if(result){result.coeffs.forEach(function(v,k){ds.p['bkg'+k]=v;ds.fit['bkg'+k]=false;});ds.stats=null;ds.esd={};ds.ints=null;invalidate(ds);}
+    RV.bus.emit('data');RV.bus.emit('params',{});return result;
+  }
   function rangeY(ds) {
     var lo = ds.inst.tthMin, hi = ds.inst.tthMax, out = [];
     for (var i = 0; i < ds.tth.length; i++) if (ds.tth[i] >= lo && ds.tth[i] <= hi) out.push(ds.y[i]);
@@ -570,6 +607,7 @@ RV.state = (function () {
                phases: Array.isArray(raw.phases) ? raw.phases.filter(function (k) { return !!phaseByKey(k); }) : S.phases.map(function (ph) { return ph.key; }) };
     if (inst.bkgType === 'spline' && inst.bkgX.length < 2) inst.bkgX = autoAnchors(ds, S.settings.nAnchors);
     remap(ds);
+    if(inst.bkgType==='cheb' && !inst.bkgPoints.length && inst.bkgN)inst.bkgPoints=autoChebPoints(ds);
     return ds;
   }
   // new datasets go to the top of the list (as in Yappari) and the first of them is selected
@@ -637,6 +675,7 @@ RV.state = (function () {
     ds.inst = cleanInst(Object.assign({}, old, inst));
     if (!(ds.inst.tthMin < ds.inst.tthMax)) { ds.inst.tthMin = old.tthMin; ds.inst.tthMax = old.tthMax; }
     rebaseBackground(ds,old,ds.inst);
+    if(ds.inst.bkgType==='cheb' && !ds.inst.bkgPoints.length && ds.inst.bkgN)ds.inst.bkgPoints=autoChebPoints(ds);
     if (ds.inst.bkgType === 'spline' && ds.inst.bkgX.length < 2) ds.inst.bkgX = autoAnchors(ds, S.settings.nAnchors);
     var sameX = ds.inst.bkgX.length === oldX.length && ds.inst.bkgX.every(function (x, k) { return x === oldX[k]; });
     if (ds.inst.bkgN !== old.bkgN || ds.inst.bkgType !== old.bkgType || !sameX) {
@@ -661,8 +700,8 @@ RV.state = (function () {
     list.forEach(function(ds){updateInstrument(ds,inst);});
     if(own(inst,'bkgType'))normalizeBackgrounds(inst.bkgType==='spline'?'spline':'cheb');
     var keep = Object.assign({}, inst);
-    delete keep.tthMin; delete keep.tthMax; delete keep.bkgX; delete keep.excl; delete keep.exclOff;
-    setSetting('inst', Object.assign(cleanInst(S.settings.inst), keep, { bkgX: [], excl: [], exclOff: [] }));
+    delete keep.tthMin; delete keep.tthMax; delete keep.bkgX; delete keep.bkgPoints; delete keep.excl; delete keep.exclOff;
+    setSetting('inst', Object.assign(cleanInst(S.settings.inst), keep, { bkgX: [], bkgPoints: [], excl: [], exclOff: [] }));
     if (inst.bkgN != null) setSetting('bkgN', inst.bkgN);
     RV.bus.emit('data'); RV.bus.emit('params', {});
   }
@@ -670,6 +709,7 @@ RV.state = (function () {
   // Move one spline anchor without assigning its height/fit flag to a different
   // point when the sorted anchor indices change. Saved method banks stay intact.
   function moveBackgroundAnchor(ds, index, x, y) {
+    if(ds && ds.inst.bkgType==='cheb'){if(!Number.isInteger(index) || index<0 || index>=ds.inst.bkgPoints.length)return -1;var points=ds.inst.bkgPoints.map(function(p,k){return {x:k===index?x:p.x,y:k===index?y:p.y,use:p.use};});setChebPoints(ds,points,true);return ds.inst.bkgPoints.findIndex(function(p){return p.x===x;});}
     if (!ds || ds.inst.bkgType !== 'spline' || !Number.isInteger(index) || index < 0 || index >= ds.inst.bkgX.length ||
         !Number.isFinite(x) || !Number.isFinite(y) || x < ds.tth[0] || x > ds.tth[ds.tth.length - 1]) return -1;
     var anchors = ds.inst.bkgX.map(function (a, k) { return { x:k === index ? x : a, y:k === index ? y : ds.p['bga'+k], fit:!!ds.fit['bga'+k], moved:k === index }; });
@@ -1301,6 +1341,7 @@ RV.state = (function () {
       var st = res.stats[d], nVar = Number.isFinite(st.nPar) ? st.nPar-(st.nInt || 0) : job.vars.filter(function (vr) { return vr.d === d || (vr.d === -1 && (!vr.ds || vr.ds.indexOf(d) >= 0)); }).length, nPar = nVar + (st.nInt || 0);
       ds.ints = res.intensities ? res.intensities[d] : null;
       ds.stats = Object.assign(shortStats(st), { ok: true, modelVersion:res.modelVersion, calculation:S.calculation, msg: res.msg, iter: res.iter, nVar: nVar, nInt: st.nInt || 0, chi2red: st.chi2 / Math.max(1, st.n - nPar),
+                                                 refinementNames:job.vars.filter(function(vr){return vr.d===d || vr.d===-1 && (!vr.ds || vr.ds.indexOf(d)>=0);}).map(function(vr){return vr.name;}),
                                                  constraintWarnings:res.constraintWarnings || [], uncertaintyIssues: res.uncertaintyIssues ? res.uncertaintyIssues[d] : {}, fitWarnings:res.fitWarnings ? res.fitWarnings[d] : [], covarianceOK:res.covarianceOK, global: !!global, globalSummary: overall, globalChi2red: global ? res.chi2red : null, nSets: list.length,
                                                  anomalousData:cloneCalculation(job.datasets[d].anomalousData || null), algorithm: res.algorithm || 'lm', effectiveAlgorithm: res.effectiveAlgorithm || 'lm', pt: res.pt || null, maxIter: job.maxIter, tol: job.tol, ms: res.ms, weight: S.settings.weight });
       invalidate(ds);
@@ -1330,7 +1371,8 @@ RV.state = (function () {
     return out;
   }
   function calculationSignature(ds) {
-    return JSON.stringify({ dataKey:ds.dataKey, weight:S.settings.weight, inst:ds.inst, disabledPhases:S.disabledPhases, parameterLinks:S.parameterLinks,
+    var inst=instCopy(ds.inst);delete inst.bkgPoints;
+    return JSON.stringify({ dataKey:ds.dataKey, weight:S.settings.weight, inst:inst, disabledPhases:S.disabledPhases, parameterLinks:S.parameterLinks,
       linkValues:S.parameterLinks.map(function(l){var source=byId(l.source.datasetId);return source && source.p[l.source.name];}), phases: phasesIn(ds).map(function (p) {
       var signature=[p.key, p.sg.hall, p.sg.symbol, p.profileType, p.separatedProfile === true, p.broadening, p.poDir, p.atoms, p.method];
       if(p.method==='rietveld' && p.constraints && p.constraints.length)signature.push(p.constraints);if(p.method==='rietveld' && typeof AtomRestraints!=='undefined' && AtomRestraints.active(p.restraints))signature.push(p.restraints);return signature;
@@ -1376,7 +1418,7 @@ RV.state = (function () {
       if (b) {
         // Acquisition wavelength and range remain dataset properties. A saved
         // calculation restores its background model, not an old acquisition.
-        if (b.inst) ['bkgType', 'bkgN', 'bkgX'].forEach(function (n) { d.inst[n] = cloneCalculation(b.inst[n]); });
+        if (b.inst) ['bkgType', 'bkgN', 'bkgX', 'bkgPoints'].forEach(function (n) { d.inst[n] = n==='bkgPoints'?cloneCalculation(b.inst[n] || autoChebPoints(d)):cloneCalculation(b.inst[n]); });
         d.p = Object.assign({}, b.p); d.fit = Object.assign({}, b.fit); d.mem = {};
         rebaseBackground(d,b.inst,d.inst);
         d.apart = Object.assign({}, b.apart);
@@ -1551,7 +1593,7 @@ RV.state = (function () {
     phaseByKey: phaseByKey, cellOf: cellOf, siteOf: siteOf, coordRole: coordRole, syncSites: syncSites, syncTemplate: syncTemplate,
     isSizeParam: isSizeParam, toDisplay: toDisplay, fromDisplay: fromDisplay, instrumentParamsFor: instrumentParamsFor, dsNames: dsNames, phaseNames: phaseNames, profileNames: profileNames, namesFor: namesFor, isVariable: isVariable, remap: remap, remapAll: remapAll,
     shareable: shareable, isShared: isShared, setShared: setShared, isApart: isApart, setApart: setApart, shareOf: shareOf, limitsOf: limitsOf, setLimit: setLimit, clearLimit: clearLimit,
-    makeDataset: makeDataset, addDatasets: addDatasets, insertDatasets: insertDatasets, byId: byId, removeDatasets: removeDatasets, rename: rename, move: move, setInstrument: setInstrument, moveBackgroundAnchor:moveBackgroundAnchor, atomicValues:atomicValues,
+    makeDataset: makeDataset, addDatasets: addDatasets, insertDatasets: insertDatasets, byId: byId, removeDatasets: removeDatasets, rename: rename, move: move, setInstrument: setInstrument, moveBackgroundAnchor:moveBackgroundAnchor, autoChebPoints:autoChebPoints, chebPointFit:chebPointFit, chebPointActive:chebPointActive, setChebPoints:setChebPoints, atomicValues:atomicValues,
     selectIds: selectIds, toggle: toggle, setFocus: setFocus, range: range, selectAll: selectAll, selected: selected, first: first,
     currentPhase: currentPhase, selectPhase: selectPhase, makePhase: makePhase, addAtomTo: addAtomTo, addPhase: addPhase, removePhase: removePhase,
     hasPhase: hasPhase, phasesIn: phasesIn, participatingPhases:participatingPhases, holdersOf: holdersOf, setPhaseIn: setPhaseIn,

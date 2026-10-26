@@ -879,6 +879,24 @@ RV.cmd = (function () {
     String(text || '').split(/[\s,;]+/).filter(Boolean).forEach(function (t) { var v = ui.parseNum(t); if (Number.isFinite(v)) out.push(v); else bad.push(t); });
     return { values: out, bad: bad };
   }
+  function commitChebPoints(ds, points, label) {
+    if(!idle() || !ds)return false;
+    try {
+      if(points.length>200 || points.some(function(p,k){return !Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x<ds.tth[0] || p.x>ds.tth[ds.tth.length-1] || points.some(function(q,j){return j<k && Math.abs(p.x-q.x)<=1e-6;});}))throw new Error('Use at most 200 background points, at distinct angles inside the observed range.');
+      var result=St.chebPointFit(ds,points);
+      snapshot(label || 'Chebyshev background points of '+ds.name);St.setChebPoints(ds,points,true);
+      St.setSetting('showAnchors',true);St.setSetting('showBkg',true);
+      ui.toast('Chebyshev degree '+result.degree+' fitted to '+result.nPoints+' background points. Coefficients held for Sample fitting; tick Background to refine them against the pattern again.','ok');return true;
+    }catch(e){ui.toast(e.message,'warn');return false;}
+  }
+  function moveChebPoint(ds,index,x,y){var points=ds.inst.bkgPoints.map(function(p,k){return {x:k===index?x:p.x,y:k===index?y:p.y,use:p.use};});return commitChebPoints(ds,points,'moving Chebyshev point of '+ds.name);}
+  function fitChebPoints(ds) { return ds && commitChebPoints(ds,ds.inst.bkgPoints); }
+  function placeChebPoints(ds) { return ds && commitChebPoints(ds,St.autoChebPoints(ds),'automatic Chebyshev points of '+ds.name); }
+  function editChebPoint(ds,index,key,value) {
+    if(!ds || !ds.inst.bkgPoints[index] || ['x','y','use'].indexOf(key)<0)return false;
+    var points=ds.inst.bkgPoints.map(function(p,k){var q=Object.assign({},p);if(k===index)q[key]=value;return q;});
+    return commitChebPoints(ds,points);
+  }
   async function background() {
     if (!idle()) return;
     var list = datasetTargets(), d = list[0];if(!d)return;
@@ -1009,7 +1027,7 @@ RV.cmd = (function () {
   function markAt(x, y, px, py) {
     var ds = St.first();
     if (!ds) { ui.toast('Select the dataset whose background anchors to edit.', 'warn'); return; }
-    if(ds.inst.bkgType!=='spline')return;
+
     if (S.busy) { ui.toast('A fit is running. Wait for it to finish or press Stop.', 'warn'); return; }
     if (S.settings.noBackground) { ui.toast('Turn off No background to edit background anchors.', 'info'); return; }
     var i = ds.inst;
@@ -1017,6 +1035,11 @@ RV.cmd = (function () {
     St.setSetting('showBkg', true);
     St.setSetting('showAnchors', true);
     var hit = RV.plots.anchorAt(px, py, ds), near = hit ? hit.index : -1;
+    if(i.bkgType==='cheb'){
+      var points=i.bkgPoints.map(function(p){return Object.assign({},p);});
+      if(near>=0)points.splice(near,1);else points.push({x:x,y:y,use:true});
+      commitChebPoints(ds,points);return;
+    }
     if (near >= 0) {
       if (i.bkgX.length <= 2) { ui.toast('A spline background keeps at least two anchors; Background… turns it back into polynomials.', 'warn'); return; }
       snapshot('background anchor of ' + ds.name);
@@ -1033,6 +1056,7 @@ RV.cmd = (function () {
   }
   // the x button of an anchor row in Datasets: the same removal as Ctrl+click on the anchor
   function removeAnchor(ds, index) {
+    if(ds && ds.inst.bkgType==='cheb'){var points=ds.inst.bkgPoints.filter(function(p,k){return k!==index;});commitChebPoints(ds,points);return;}
     if (!ds || ds.inst.bkgType !== 'spline' || !(index >= 0 && index < ds.inst.bkgX.length)) return;
     if (S.busy) { ui.toast('A fit is running. Wait for it to finish or press Stop.', 'warn'); return; }
     if (ds.inst.bkgX.length <= 2) { ui.toast('A spline background keeps at least two anchors; Background… turns it back into polynomials.', 'warn'); return; }
@@ -1712,7 +1736,7 @@ RV.cmd = (function () {
              ['Read project…', openProjectFile, 'read'], ['Save project', saveProject, 'saveProject'], null,
              ['Save results of selected…', function () { RV.results.save('save'); }, 'selection'],
              ['Save reflections and intensities of selected…', function () { RV.results.save('refl'); }, 'selection'],
-             ['Save calculated patterns of selected…', function () { RV.results.save('calc'); }, 'selection'], null,
+             ['Save patterns of selected…', function () { RV.results.save('calc'); }, 'selection'], null,
              ['Export to GSAS-II…', function () { RV.gsas2.exportSelected(); }, 'selection']],
       data: [['Undo the last command', undo, 'undo'], null,
              ['Instrument of selected…', instrument, 'edit'], ['Background of selected…', background, 'edit'], ['Excluded regions of selected…', excludeRegions, 'edit'], null,
@@ -1737,7 +1761,7 @@ RV.cmd = (function () {
   }
 
   return { init: init, readFiles: readFiles, readStructure: readStructure, newPhase: newPhase, addAtom: addAtom, atomsFromCif: atomsFromCif, atomsFromCifText: atomsFromCifText, fragment: fragment, fragmentInto: fragmentInto, deletePhase: deletePhase, setMethod: setMethod,
-           readData: readData0, scalesOnly: scalesOnly, resolution: resolution, setInstrumentProfile:setInstrumentProfile, instrument: instrument, background: background, excludeRegions: excludeRegions, markAt: markAt, removeAnchor: removeAnchor, addZone: addZone, editZone: editZone, applyZone: applyZone, removeZone: removeZone, regionAt: regionAt, simulate: simulate,
+           readData: readData0, scalesOnly: scalesOnly, resolution: resolution, setInstrumentProfile:setInstrumentProfile, instrument: instrument, background: background, fitChebPoints:fitChebPoints, placeChebPoints:placeChebPoints, editChebPoint:editChebPoint, moveChebPoint:moveChebPoint, excludeRegions: excludeRegions, markAt: markAt, removeAnchor: removeAnchor, addZone: addZone, editZone: editZone, applyZone: applyZone, removeZone: removeZone, regionAt: regionAt, simulate: simulate,
            loadPreset: loadPreset, savePreset: savePreset, loadDefaultPresets: loadDefaultPresets, defaultPresetsReady: defaultPresetsReady, extract: extract,
            deleteDatasets: deleteDatasets, estimate: estimate, cloneTo: cloneTo, tickSteps: tickSteps, fitGroupState: fitGroupState, setFitGroup: setFitGroup,
            fit: fit, fitSelected: fitSelected, globalFit: globalFit, stop: stop, undo: undo, saveProject: saveProject, openProject: openProject,

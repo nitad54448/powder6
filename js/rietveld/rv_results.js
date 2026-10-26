@@ -136,7 +136,7 @@ RV.results = (function () {
               (rv ? '<td>' + ui.fmt(r.F2, 5) + '</td><td>' + ui.fmt(r.Icalc, 5) + '</td><td>' + ui.fmt(r.Iobs, 5) + '</td>'
                   : '<td>' + ui.fmt(r.I, 5) + '</td><td>' + ui.fmt(r.sigma, 3) + '</td><td>' + ui.fmt(r.F2obs, 5) + '</td><td class="why">' +
                     (r.group >= 0 ? 'overlap' : '') + (r.bound ? 'at 0' : '') + '</td>') + '</tr>';
-          }).join('') + '</tbody></table></div>' + (refl.length > MAX_ROWS ? '<p class="hint">The first ' + MAX_ROWS + ' are shown; Save reflections writes them all.</p>' : '') : '<p class="hint">' + esc(ds.calcErr || 'No reflection in the fitted range.') + '</p>') +
+          }).join('') + '</tbody></table></div>' + (refl.length > MAX_ROWS ? '<p class="hint">The first ' + MAX_ROWS + ' are shown; Save results includes them all.</p>' : '') : '<p class="hint">' + esc(ds.calcErr || 'No reflection in the fitted range.') + '</p>') +
         (rv ? '<p class="hint">I obs is the observed intensity shared out among the reflections in proportion to the calculated ones (Rietveld), the basis of R<sub>Bragg</sub>.</p>'
             : '<p class="hint">I is the integrated Kα1 intensity of the reflection (the convention of the Rietveld model: I = S·m·Lp·P·|F|²). ' +
               (ph.method === 'wppf' ? 'σ(I) ' + (marginal ? 'from the last fit, with the refined cell, profile and background integrated out. Errors of bound or exactly coincident intensities are conditional. ' : fresh ? 'conditional: joint covariance was unavailable, or the intensity is bounded or exactly coincident. ' : 'conditional on the current values (fit for the full uncertainties; legacy tables without HKL identities cannot safely supply saved errors). ') + '“at 0”: held at zero by the non-negativity. '
@@ -156,8 +156,8 @@ RV.results = (function () {
     var method=C.METHOD_LABELS[S.calculation], fitted=list.filter(function(d){return d.stats && d.stats.ok!==false;}).length;
     parts = { summary: '', atoms: '', refl: '', titles: { summary: method + ' · ' + (fitted ? fitted+' of '+list.length+' selected datasets fitted' : 'current values, not fitted'), atoms: 'Atoms', refl: S.calculation === 'rietveld' ? 'Reflections' : 'Intensities' } };
     if (!list.length) { parts.summary = '<p class="hint">' + (S.datasets.length ? 'Select one or more datasets to see their results.' : 'No data yet.') + '</p>'; parts.atoms = parts.refl = '<p class="hint">Select a dataset.</p>'; fill(); return; }
-    var h = '<div class="res-head"><h2>' + esc(method) + ' results</h2><span class="sub">' + plural(list.length, 'selected dataset') + '</span><span class="tool-gap"></span>' +
-      (S.calculation==='wppf' ? '<button type="button" data-res="hkl" title="Export extracted WPPF F² and σ as SHELX HKLF 4">Save HKL…</button>' : '') + '<button type="button" data-res="cif">Save CIF…</button><button type="button" data-res="pdcif">Save pdCIF…</button><button type="button" data-res="save">Save results…</button><button type="button" data-res="refl">Save reflections…</button><button type="button" data-res="calc">Save calculated patterns…</button></div>';
+    var h = '<div class="res-head" aria-label="Export results">' +
+      (S.calculation==='wppf' ? '<button type="button" data-res="hkl" title="Export extracted WPPF F² and σ as SHELX HKLF 4">Save HKL…</button>' : '') + '<button type="button" data-res="pdcif">Save pdCIF…</button><button type="button" data-res="save">Save results…</button><button type="button" data-res="calc">Save Patterns…</button></div>';
     h += '<section class="block"><h2>Agreement</h2>' + globalHTML(list) + '<div class="table-wrap"><table class="grid compact"><thead><tr><th>Dataset</th><th>Points</th><th>Refined</th>' +
       '<th>R<sub>p</sub> %</th><th>R<sub>wp</sub> %</th><th>R<sub>exp</sub> %</th><th title="Reduced chi-squared for this dataset">χ²<sub>red</sub></th><th>Fit</th></tr></thead><tbody>' +
       list.map(function (d) {
@@ -209,9 +209,10 @@ RV.results = (function () {
           return '<h4 class="res-sub"><i class="sw-inline" style="background:' + RV.plots.phaseVar(S.phases.indexOf(g.p)) + '"></i>' + esc(g.p.name) + ' · in ' + g.names.map(esc).join(', ') + '</h4>' + g.html;
         }).join('');
         parts.titles.refl = (S.calculation === 'rietveld' ? 'Reflections' : 'Intensities') + ' · ' + plural(pairs.length, 'phase table');
-        parts.refl = shown.map(function (q, k) { return head(q, ', ' + plural(tabs[k].n, 'reflection') + ', ' + C.METHOD_LABELS[q.p.method]) + tabs[k].html; }).join('') + (pairs.length > MAXP ? '<p class="hint">The first ' + MAXP + ' of ' + pairs.length + ' are shown; Save reflections writes them all.</p>' : '');
+        parts.refl = shown.map(function (q, k) { return head(q, ', ' + plural(tabs[k].n, 'reflection') + ', ' + C.METHOD_LABELS[q.p.method]) + tabs[k].html; }).join('') + (pairs.length > MAXP ? '<p class="hint">The first ' + MAXP + ' of ' + pairs.length + ' are shown; Save results includes them all.</p>' : '');
       }
     }
+    if(S.calculation!=='rietveld')parts.atoms='';
     fill();
   }
   function layout() { var m=RV.layout && !(RV.fitHistory && RV.fitHistory.viewing())?RV.layout.resultMethod():S.calculation;return document.querySelector('.calc-layout[data-layout="' + m + '"]'); }
@@ -245,66 +246,88 @@ RV.results = (function () {
 
   // ---------------------------------------------------------------- text files
   function line(a) { return a.join('\t'); }
+  var ZERO_CONVENTION = 'zero = 2theta_obs - 2theta_calc_without_zero (exp - calc), in degrees 2theta. Positive zero shifts calculated peaks to higher measured angles.';
+  function parameterStatus(ds,name,fitted) {
+    var c=C.classify(name),ph=c.phase && St.phaseByKey(c.phase),target=S.parameterLinks.find(function(l){return l.target.datasetId===ds.id && l.target.name===name;});
+    if(ph && !St.hasPhase(ds,ph))return 'Unused: phase absent';
+    if(ph && !C.methodAllows(ph.method,c.kind))return 'Unused by '+C.METHOD_LABELS[ph.method];
+    if(c.kind==='bkg' && (ds.inst.bkgType!=='cheb' || c.index>=ds.inst.bkgN) || c.kind==='bga' && (ds.inst.bkgType!=='spline' || c.index>=ds.inst.bkgX.length))return 'Unused: other background model';
+    if(ph && c.kind==='profile' && St.profileNames(ph).indexOf(c.comp)<0)return 'Unused: other profile model';
+    if(c.kind==='instrument' && !St.instrumentParamsFor(ds).some(function(p){return name==='inst.'+p[0];}))return 'Unused: other instrument profile';
+    if(target){var source=St.byId(target.source.datasetId);return 'Linked to '+(source?source.name:'dataset '+target.source.datasetId)+': '+target.source.name+'; factor '+target.factor+', offset '+St.toDisplay(name,target.offset);}
+    if(ph && c.kind==='atom'){
+      var role=typeof AtomicConstraints!=='undefined'?AtomicConstraints.roles(ph,ds.fit)[name]:null;
+      if(role && role.role==='dependent')return 'Dependent: '+role.text;
+      if(role && role.role==='held')return 'Fixed by atomic constraint';
+      if(!St.isVariable(name)){var atom=ph.atoms.find(function(at){return at.label===c.atom;});return atom && St.coordRole(atom.site,'xyz'.indexOf(c.comp))==='linked'?'Dependent: site symmetry':'Fixed by symmetry';}
+    }
+    var varied=fitted && ds.stats && Array.isArray(ds.stats.refinementNames)?ds.stats.refinementNames.indexOf(name)>=0:ds.fit[name] && St.isVariable(name);
+    return varied?(fitted?'Refined':'Selected for refinement; not fitted'):'Fixed';
+  }
+  function parameterUnit(name) {
+    var c=C.classify(name);if(St.isSizeParam(name))return 'nm';
+    if(c.kind==='zero' || c.kind==='cell' && !/^[abc]$/.test(c.comp))return 'degrees';
+    if(c.kind==='cell')return 'A';if(c.kind==='atom' && c.comp==='B')return 'A^2';
+    if(c.kind==='profile' && /^strain/.test(c.comp) && !/Mix$/.test(c.comp))return 'ppm';
+    if(c.kind==='bkg' || c.kind==='bga')return 'counts';
+    if(c.kind==='profile' && /^rot[ABC]$/.test(c.comp))return 'degrees';
+    if(c.kind==='profile' && /^S[0-9]{3}$/.test(c.comp))return 'ppm^2 A^-4';
+    if((c.kind==='instrument' || c.kind==='profile') && /^(U|V|W|GU|GV|GW|GP)(_[LR])?$/.test(c.comp))return 'cdeg^2';
+    if((c.kind==='instrument' || c.kind==='profile') && /^(X|Y|Z|LX)(_[LR])?$/.test(c.comp))return 'cdeg';return '';
+  }
   function reportText(list, skipGlobal) {
-    var L = ['# ' + C.METHOD_LABELS[S.calculation] + ' calculation, ' + RV.version, '# ' + ui.stamp(), '# Phases: ' + S.phases.map(function (p) { return p.name + ' (' + St.sgText(p.sg) + ')'; }).join(', '), ''];
-    if (!skipGlobal) { var overall = globalReportText(list); if (overall) L.push(overall); var cons = constraintsText(list); if (cons) L.push(cons); }
-    list.forEach(function (d) {
-      var s = statsOf(d), i = d.inst, W = weights(d), atoms = atomicModel(d);
-      L.push('## Dataset ' + d.name, 'method\t'+C.METHOD_LABELS[S.calculation], 'uncertainties\tValues with available standard uncertainties are written value ± esd. Symmetry-equivalent cell lengths share their esd; fixed parameters have none.');
-      L.push('instrument profile (dataset)\t'+C.PROFILE_LABELS[i.resolutionType || 'tch_aniso']);
-      L.push('instrument resolution (dataset)\t' + St.instrumentParamsFor(d).map(function(p){return p[0]+' = '+reportVal(d,'inst.'+p[0],6);}).join('\t'));
-      L.push('width units\tU,V,W: Gaussian variance (cdeg²); X,Y,Z: Lorentzian width (cdeg); size: nm; strain: ppm');
-      L.push('lambda1\t' + i.lambda1 + (i.ratio > 0 && i.lambda2 > 0 ? '\nlambda2\t' + i.lambda2 + '\nratio\t' + i.ratio : ''));
-      L.push('radiation\t' + i.radiation + '\npolarisation K\t' + St.polK(i));
+    var method=C.METHOD_LABELS[S.calculation],L=['# '+method+' refinement report','Powder 6 '+RV.version,'Created: '+ui.stamp(),''];
+    function field(name,value){L.push(name+': '+value);}
+    function table(rows){rows.forEach(function(row){L.push(Array.isArray(row)?line(row):row);});}
+    L.push('## How to read this report',ZERO_CONVENTION,
+      'Value and standard uncertainty are listed separately. Fixed parameters have no estimated uncertainty. Linked and symmetry-dependent parameters are identified explicitly.',
+      'Reflection tables contain every calculated reflection overlapping the fitted range. Excluded observations have no weight in the fit.','');
+    if(!skipGlobal){var overall=globalReportText(list);if(overall)L.push(overall);var cons=constraintsText(list);if(cons)L.push(cons);}
+    list.forEach(function(d){
+      var st=statsOf(d),i=d.inst,W=weights(d),fitted=!!(st && st.fitted);
+      L.push('## Dataset '+d.name,'','### Fit summary');
+      field('Method',method);field('Result',fitted?st.msg:st && st.fitError?'Fit failed: '+st.fitError+'; reporting current values':'Current values; no completed fit');
+      field('Range',i.tthMin+' to '+i.tthMax+' degrees 2theta');field('Points used',st?st.n:'unavailable');
+      field('Weighting',d.stats && d.stats.weight || S.settings.weight);
+      if(st){field('Rp / Rwp / Rexp',pct(st.Rp)+'% / '+pct(st.Rwp)+'% / '+pct(st.Rexp)+'%');field('Reduced chi-squared',ui.fmt(fitted?st.chi2red:st.gof,6));}
+      if(fitted){field('Algorithm',st.effectiveAlgorithm || 'lm');field('Refinement',st.global?'Global; dataset statistics shown here':'Individual');field('Iterations',Number.isFinite(st.iter)?st.iter:'not recorded');field('Refined parameters',st.nVar);field('Free reflection intensities',st.nInt || 0);field('Iteration limit',st.maxIter == null?'not recorded':st.maxIter);field('Convergence tolerance',st.tol == null?'not recorded':st.tol);}
+      if(st && st.pt){field('PT backend',st.pt.backend || 'cpu');field('PT replicas / sweeps / seed',st.pt.chains+' / '+st.pt.sweeps+' / '+st.pt.seed);if(st.pt.fallbackReason)field('CPU fallback reason',st.pt.fallbackReason);}
+      var warnings=[].concat(st && st.constraintWarnings || [],st && st.fitWarnings || []);
+      if(warnings.length){L.push('','### Fit diagnostics');warnings.forEach(function(w){L.push('- '+w);});}
+      L.push('','### Instrument and geometry');field('Instrument profile',C.PROFILE_LABELS[i.resolutionType || 'tch_aniso']);field('Radiation',i.radiation==='neutron'?'Neutrons':'X-rays');
+      field('Wavelength 1',i.lambda1+' A');if(i.lambda2>0 && i.ratio>0){field('Wavelength 2',i.lambda2+' A');field('Intensity ratio, line 2 / line 1',i.ratio);}
+      field('Polarisation K',St.polK(i));field('Zero shift',reportVal(d,'zero')+' degrees; exp - calc');
+      field('Displacement convention','Delta(2theta) = -(disp/1000) cos(theta), in radians');field('Transparency convention','Delta(2theta) = transp sin(2theta), in radians');
+      field('Calibration offset',-(d.p.zero || 0)+' degrees; calc - exp = -zero. Calibrated angle = measured angle + calibration offset.');
       var an=d.stats && d.stats.anomalousData || St.anomalousFor(d);
-      L.push('anomalous scattering\t'+(an.enabled?'enabled':'disabled')+'\tsource: '+an.source+'\tlambda1: '+an.wavelength+' A');
-      if(an.interpolation && an.enabled)L.push('anomalous interpolation\t'+an.interpolation+'\tenergy (eV): '+an.energyEV);
-      if(an.error)L.push('anomalous scattering unavailable\t'+an.error);
-      if(Object.keys(an.map || {}).length){L.push('anomalous element\tf_prime (electrons)\tf_double_prime (electrons)');Object.keys(an.map).sort().forEach(function(el){L.push(el+'\t'+an.map[el][0]+'\t'+an.map[el][1]);});}
-      L.push('fitted range\t' + i.tthMin + '\t' + i.tthMax + '\npoints\t' + (s ? s.n : 0));
-      if (s) {
-        L.push('Rp %\t' + pct(s.Rp) + '\nRwp %\t' + pct(s.Rwp) + '\nRexp %\t' + pct(s.Rexp) + '\nchi2\t' + ui.fmt(s.fitted ? s.chi2red : s.gof, 6));
-        if (s.fitted) L.push('algorithm\t' + (s.effectiveAlgorithm || 'lm') + (s.pt ? '\nPT backend\t' + (s.pt.backend || 'cpu') + '\nPT replicas\t' + s.pt.chains + '\nPT sweeps\t' + s.pt.sweeps + '\nPT seed\t' + s.pt.seed + (s.pt.fallbackReason ? '\nPT CPU fallback\t' + s.pt.fallbackReason : '') : ''));
-        (s.constraintWarnings || []).forEach(function(w){L.push('constraint warning\t'+w);});
-        (s.fitWarnings || []).forEach(function(w){L.push('fit warning\t'+w);});
-        Object.keys(s.uncertaintyIssues || {}).forEach(function(n){L.push('uncertainty warning\t'+n+': '+s.uncertaintyIssues[n]);});
-        L.push('fit\t' + (s.fitted ? (s.global ? 'global, ' : '') + s.iter + ' iterations, ' + s.msg : s.fitError ? 'last fit failed: '+s.fitError+'; current values' : 'not fitted (current values)'));
-      }
-      L.push('zero\t' + reportVal(d, 'zero') + '\ndisplacement\t' + reportVal(d, 'disp') + '\ntransparency\t' + reportVal(d, 'transp'));
-      if (i.bkgType === 'spline') L.push('background (spline)\t' + i.bkgX.map(function (x, k) { return x + ': ' + reportVal(d, 'bga' + k); }).join('\t'));
-      else L.push('background (Chebyshev)\t' + St.dsNames(d).filter(function (n) { return /^bkg/.test(n); }).map(function (n) { return reportVal(d, n); }).join('\t'));
-      if (i.excl.length) L.push('excluded\t' + i.excl.map(function (r) { return r[0] + '-' + r[1]; }).join('\t'));
-      L.push('phases\t' + (St.phasesIn(d).map(function (p) { return p.name; }).join('\t') || 'none'));
-      S.phases.forEach(function (ph, pi) {
-        if (!St.hasPhase(d, ph)) return;
-        var r = s && s.phases && s.phases[pi], cell = cellText(ph, d, true);
-        L.push('', '### Phase ' + ph.name + ', ' + St.sgText(ph.sg) + ', ' + ph.sg.system + ', method ' + C.METHOD_LABELS[ph.method]);
-        if (ph.method === 'rietveld') L.push('scale\t' + reportVal(d, ph.key + '.scale') + '\nmass (wt%)\t' + (Number.isFinite(W[pi].w) ? (100 * W[pi].w).toFixed(3) : '—'));
-        if (ph.method !== 'rietveld') L.push('structural R factors\tnot applicable: free reflection intensities');
-        L.push('R_Bragg %\t' + (r && ph.method === 'rietveld' ? pct(r.RBragg) : '—') + '\nR_F %\t' + (r && ph.method === 'rietveld' ? pct(r.RF) : '—'));
-        L.push('cell\t' + CELL.map(function (c, k) { return c + ' = ' + cell[k]; }).join('\t') + '\nvolume\t' + (Number.isFinite(W[pi].ct.V) ? W[pi].ct.V.toFixed(4) : '—') +
-               '\ncontent\t' + W[pi].ct.formula + '\ndensity\t' + (W[pi].ct.density > 0 ? W[pi].ct.density.toFixed(4) : '—'));
-        if(ph.method==='rietveld' && S.calculation==='rietveld' && ph.constraints && ph.constraints.length)L.push('atomic constraints\t'+ph.constraints.length+' GSAS-II relationships (listed once, under Atomic constraints)');
-        if (ph.method === 'rietveld') L.push('preferred orientation\t(' + ph.poDir.join(' ') + ')\tr = ' + reportVal(d, ph.key + '.po', 5));
-        if(C.usesSeparatedProfile(ph)){var b=C.broadeningConfig(ph.broadening);L.push('sample model\tsize: '+b.size+'; axis '+b.sizeAxis.join(' ')+'\tstrain: '+b.strain+'; axis '+b.strainAxis.join(' '));}
-        L.push((C.usesSeparatedProfile(ph)?'sample broadening\t':'legacy effective profile\t') + St.profileNames(ph).map(function (n) { return n + ' = ' + reportVal(d, ph.key + '.' + n, 5); }).join('\t'));
-        if (ph.method !== 'rietveld') { var nr = reflOf(d, pi).filter(function (q) { return q.inRange; }).length; L.push('intensities\t' + nr + ' reflections in the fitted range (Save reflections writes them, with their uncertainties)'); }
-        if (ph.method === 'rietveld' || ph.atoms.length) L.push(line(['atom', 'type', 'site', 'x', 'y', 'z', 'occ', 'B']) + (ph.method === 'rietveld' ? '' : '\t(Rietveld atomic model; unused by '+C.METHOD_LABELS[ph.method]+')'));
-        ph.atoms.forEach(function (at) {
-          var pre = ph.key + '.' + at.label + '.';
-          L.push(line([at.label, at.type, at.site.wyck + ' ' + at.site.expr.replace(/ /g, '')].concat(['x', 'y', 'z', 'occ', 'B'].map(function (c) { return reportVal(atoms, pre + c, c === 'occ' || c === 'B' ? 4 : 6); }))));
-        });
-        var rows=reflectionRows(d,pi);
-        L.push('', '### Reflections of '+ph.name+' in '+d.name+' · '+C.METHOD_LABELS[ph.method],
-          'Reflections in the fitted range: '+(rows.length-1)+'. Wavelength λ1 = '+i.lambda1+' Å. d in Å; 2theta in degrees; m is multiplicity.');
-        L.push(ph.method==='rietveld' ? 'F2 = |Fcalc|²; Icalc and profile-partitioned Iobs are integrated reflection intensities.' :
-          'I is integrated intensity; sigma is its standard uncertainty; I/(m*Lp) is on the |F|² scale. Flag overlap: coincident profiles, only the sum is determined; zero: WPPF intensity held at zero; blank: neither flag.');
-        if(rows.length>1)rows.forEach(function(row){L.push(row);});
-        else L.push('No reflection in the fitted range, or calculated reflections are unavailable.');
+      L.push('','### Anomalous scattering');field('Status',an.enabled?'Enabled':'Disabled');field('Source',an.source);field('Reference wavelength',an.wavelength+' A');
+      if(an.interpolation && an.enabled){field('Interpolation',an.interpolation);field('Energy',an.energyEV+' eV');}if(an.error)field('Unavailable',an.error);
+      if(Object.keys(an.map || {}).length)table([['Element','f prime (electrons)','f double prime (electrons)']].concat(Object.keys(an.map).sort().map(function(el){return [el,an.map[el][0],an.map[el][1]];})));
+      L.push('','### Background and exclusions');field('Background',i.bkgType==='spline'?'Monotone cubic spline through '+i.bkgX.length+' anchors':'Chebyshev, '+i.bkgN+' terms'+(i.bkgN?' (degree '+(i.bkgN-1)+')':' (disabled)'));
+      if(i.bkgType==='spline')table([['Anchor 2theta (degrees)','Intensity','Status']].concat(i.bkgX.map(function(x,k){return [x,reportVal(d,'bga'+k),parameterStatus(d,'bga'+k,fitted)];})));
+      if(i.bkgType==='cheb' && i.bkgPoints && i.bkgPoints.length){L.push('Point targets used by the separate background fit:');table([['2theta (degrees)','Target intensity','Use']].concat(i.bkgPoints.map(function(p){return [p.x,p.y,p.use?'yes':'no'];})));}
+      field('Excluded intervals',i.excl.length?i.excl.map(function(r){return r[0]+' to '+r[1];}).join('; ')+' degrees 2theta':'None');
+      L.push('','### Parameters','Refined means varied in this calculation; Fixed means held constant. Retained values unused by the selected model are marked Unused.','Parameter	Value	Standard uncertainty	Status	Unit');
+      Object.keys(d.p).filter(function(n){return S.calculation==='rietveld' || C.classify(n).kind!=='atom';}).forEach(function(n){
+        var e=d.esd && d.esd[n],issue=d.stats && d.stats.uncertaintyIssues && d.stats.uncertaintyIssues[n];
+        table([[n,Number.isFinite(d.p[n])?ui.fmt(St.toDisplay(n,d.p[n]),10):'unavailable',issue?'Unavailable: '+issue:Number.isFinite(e) && e>0?ui.fmt(St.toDisplay(n,e),6):'not estimated',parameterStatus(d,n,fitted),parameterUnit(n)]]);
       });
-      L.push('');
-    });
-    return L.join('\n') + '\n';
+      S.phases.forEach(function(ph,pi){
+        if(!St.hasPhase(d,ph))return;
+        var r=st && st.phases && st.phases[pi],cell=cellText(ph,d,true);
+        L.push('','### Phase '+ph.name+' ('+ph.key+')');field('Space group',St.sgText(ph.sg));field('Crystal system',ph.sg.system);field('Intensity model',C.METHOD_LABELS[ph.method]);field('Peak profile',C.usesSeparatedProfile(ph)?'Instrument resolution plus sample broadening':C.PROFILE_LABELS[ph.profileType] || ph.profileType);
+        field('Cell',CELL.map(function(c,k){return c+' = '+cell[k];}).join('; '));field('Cell volume',Number.isFinite(W[pi].ct.V)?W[pi].ct.V.toFixed(4)+' A^3':'unavailable');field('Formula',W[pi].ct.formula || 'not supplied');field('Density',W[pi].ct.density>0?W[pi].ct.density.toFixed(4)+' g/cm^3':'unavailable');
+        if(ph.method==='rietveld'){field('Scale',reportVal(d,ph.key+'.scale'));field('Mass fraction',Number.isFinite(W[pi].w)?(100*W[pi].w).toFixed(3)+' wt%':'unavailable');field('R Bragg / R F',r?pct(r.RBragg)+'% / '+pct(r.RF)+'%':'unavailable');field('Preferred orientation','('+ph.poDir.join(' ')+'), r = '+reportVal(d,ph.key+'.po',5));}
+        else L.push('Scale, mass fraction and structural R factors are not determined by this free-intensity method. Available retained atoms are included in the pdCIF export.');
+        if(C.usesSeparatedProfile(ph)){var b=C.broadeningConfig(ph.broadening);field('Sample broadening','size: '+b.size+'; axis '+b.sizeAxis.join(' ')+'. Strain: '+b.strain+'; axis '+b.strainAxis.join(' '));}
+        field('Width units','U,V,W: cdeg^2; X,Y,Z: cdeg; size: nm; strain: ppm. All profile values and refinement states are listed in Parameters.');
+        if(S.calculation==='rietveld' && ph.atoms.length){L.push('','Atomic sites (fractional coordinates; B in A^2):');table([['Atom','Scatterer','Site','x','y','z','Occupancy','B']].concat(ph.atoms.map(function(at){var pre=ph.key+'.'+at.label+'.';return [at.label,at.type,at.site.wyck+' '+at.site.expr.replace(/ /g,'')].concat(['x','y','z','occ','B'].map(function(c){return reportVal(d,pre+c,c==='occ'||c==='B'?4:6);}));})));}
+        var rows=reflectionRows(d,pi);L.push('','### Reflections of '+ph.name+' in '+d.name+' - '+C.METHOD_LABELS[ph.method],
+          'Reflections overlapping the fitted range: '+(rows.length-1)+'. Wavelength 1: '+i.lambda1+' A. d is in A; 2theta is in degrees; m is multiplicity.');
+        L.push(ph.method==='rietveld'?'F2 = |Fcalc|^2. Icalc and profile-partitioned Iobs are integrated reflection intensities.':'I is integrated intensity; sigma is its standard uncertainty; I/(m*Lp) is on the |F|^2 scale. Flag overlap means only the sum of coincident reflections is determined; zero means an intensity held at its non-negative bound.');
+        if(rows.length>1)table(rows);else L.push('No calculated reflections overlap the fitted range.');
+      });L.push('');
+    });return L.join('\n')+'\n';
   }
   /* The GSAS-II atomic constraints of the Rietveld phases held by the datasets, once per phase ('' when none).
      Constraints belong to the phase, not to a dataset, so the reports print them a single time. */
@@ -411,6 +434,8 @@ RV.results = (function () {
         L.push('','data_pattern_'+(di+1),'_pd_block_id '+cifQuote('pattern_'+(di+1)),'_pd_spec_special_details '+cifQuote('Dataset '+d.name+'; method '+C.METHOD_LABELS[S.calculation]+'; original intensities, background not subtracted'),
           '_diffrn_radiation_probe '+(d.inst.radiation==='neutron'?'neutron':'x-ray'),
           '_pd_calib_2theta_offset '+cifNumber(-(d.p.zero || 0)));
+        L.push('# '+ZERO_CONVENTION,'# _pd_calib_2theta_offset = -zero (calc - exp).','# 2theta_calibrated = 2theta_measured + _pd_calib_2theta_offset.');
+        Object.keys(d.p).forEach(function(n){L.push('# Parameter '+n+' = '+cifNumber(St.toDisplay(n,d.p[n]))+'; '+parameterStatus(d,n,!!(stats && stats.fitted))+(parameterUnit(n)?'; '+parameterUnit(n):''));});
         if(d.inst.radiation!=='neutron' && d.inst.lambda2>0 && d.inst.ratio>0){
           L.push('loop_','_diffrn_radiation_wavelength_id','_diffrn_radiation_wavelength','_diffrn_radiation_wavelength_wt',
             '1 '+cifNumber(d.inst.lambda1)+' 1','2 '+cifNumber(d.inst.lambda2)+' '+cifNumber(d.inst.ratio));
@@ -424,7 +449,7 @@ RV.results = (function () {
   }
   function contentVolume(cell) {return cell ? cellVolume(cell) : NaN;}
   /* One phase as a structure CIF, from the values of one dataset: its cell, space group and atomic model, with
-     the standard uncertainties of the last Rietveld fit. Results → Save CIF writes every selected phase; this
+     the standard uncertainties of the last Rietveld fit. pdCIF export writes the selected phases; this
      writes the one whose parameter group the button belongs to, so a user can keep his own structure when the
      fit holds several phases. */
   function savePhaseCif(ph, ds) {

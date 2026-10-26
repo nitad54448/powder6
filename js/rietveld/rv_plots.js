@@ -29,6 +29,9 @@ RV.plots = (function () {
     return out;
   }
   function legendIndices(n) { var a=[]; for(var i=0;i<Math.min(n,8);i++)a.push(n<=8 ? i : Math.round(i*(n-1)/7)); return a; }
+  function anchorPoints(ds) {
+    return ds.inst.bkgType==='cheb'?(ds.inst.bkgPoints || []):ds.inst.bkgX.map(function(x,k){return {x:x,y:ds.p['bga'+k],use:!!ds.fit['bga'+k]};});
+  }
   function backgroundAt(ds,t) {
     var c=RV.state.calcFor(ds); if(!c || !c.tth.length || t<c.tth[0] || t>c.tth[c.tth.length-1])return NaN;
     var i=lowerBound(c.tth,t); if(i===0)return c.bkg[0]; if(i>=c.tth.length)return c.bkg[c.bkg.length-1];
@@ -62,6 +65,7 @@ RV.plots = (function () {
   }
   function tipAnchor(s, i) {
     var x = s.x[i];
+    if(s.ds.inst.bkgType==='cheb')return '<b>'+esc(s.ds.name)+'</b>, Chebyshev background point '+(s.idxs[i]+1)+'<br>2θ = '+x.toFixed(4)+'°, target '+fmtI(s.y[i])+'<br>'+(s.ds.inst.bkgPoints[s.idxs[i]].use?'Selected for the polynomial point fit':'Not selected for the polynomial point fit')+'<br>Right-drag to move; Ctrl+click to remove.';
     return '<b>' + esc(s.ds.name) + '</b>, background anchor ' + (s.idxs[i] + 1) + '<br>2θ = ' + x.toFixed(4) + '°, background ' + fmtI(s.y[i]) +
            '<br>' + (s.ds.fit['bga'+s.idxs[i]] ? 'Refinable' : 'Fixed during refinement') + '<br><span class="muted">Right-drag to move; Ctrl+click to remove</span>';
   }
@@ -97,8 +101,11 @@ RV.plots = (function () {
       var col = color(ds), c = RV.state.calcFor(ds), lo = ds.inst.tthMin, hi = ds.inst.tthMax, inI = [], outI = [];
       var preview = anchorDrag && anchorDrag.dsId === ds.id, background = c && c.bkg;
       if (preview && c) {
-        var anchors = ds.inst.bkgX.map(function(x,k){return {x:k===anchorDrag.index?anchorDrag.x:x,y:k===anchorDrag.index?anchorDrag.y:ds.p['bga'+k]};}).sort(function(a,b){return a.x-b.x;});
-        if (anchors.every(function(a,k){return !k || a.x>anchors[k-1].x;})) background = RVCore.splineValues(c.tth,anchors.map(function(a){return a.x;}),anchors.map(function(a){return a.y;}));
+        var anchors = anchorPoints(ds).map(function(p,k){return {x:k===anchorDrag.index?anchorDrag.x:p.x,y:k===anchorDrag.index?anchorDrag.y:p.y,use:p.use};}).sort(function(a,b){return a.x-b.x;});
+        if (anchors.every(function(a,k){return !k || a.x-anchors[k-1].x>1e-6;})) {
+          if(ds.inst.bkgType==='spline')background=RVCore.splineValues(c.tth,anchors.map(function(a){return a.x;}),anchors.map(function(a){return a.y;}));
+          else try{var fitted=RV.state.chebPointFit(ds,anchors);background=RVCore.chebyshevValues(c.tth,fitted.coeffs,fitted.range[0],fitted.range[1]);}catch(e){/* an invalid preview keeps the existing curve */}
+        }
       }
       for (var k = 0; k < ds.tth.length; k++) (ds.tth[k] >= lo && ds.tth[k] <= hi ? inI : outI).push(k);
       main.push({ name: ds.name, group: 'ds' + ds.id, x: pick(ds.tth, inI), y: Float64Array.from(inI,function(k){return subtract ? c ? ds.y[k]-backgroundAt(ds,ds.tth[k]) : NaN : ds.y[k];}), color: col, mode: 'markers', size: 2.6,
@@ -108,17 +115,17 @@ RV.plots = (function () {
       if (!c) return;
       main.push({ name: 'Calculated', group: 'calc', x: c.tth, y: subtract ? Float64Array.from(c.ycalc,function(y,k){return y-c.bkg[k];}) : preview ? Float64Array.from(c.ycalc,function(y,k){return y-c.bkg[k]+background[k];}) : c.ycalc, color: one ? T.calc : col, mode: 'lines', width: 1.5, legend: n === 0 });
       if (st.showBkg && !subtract) main.push({ name: 'Background', group: 'bkg', x: c.tth, y: background, color: one ? T.bkg : col, mode: 'lines', width: 1.1, dash: [6, 4], legend: n === 0 });
-      if (st.showAnchors && !subtract && ds.inst.bkgType === 'spline' && ds.inst.bkgX.length) {
+      if (st.showAnchors && !subtract && anchorPoints(ds).length) {
         [true,false].forEach(function(fit){
           var ax=[],ay=[],ai=[];
-          ds.inst.bkgX.forEach(function(x,k){var v=ds.p['bga'+k];if(!!ds.fit['bga'+k]!==fit || !Number.isFinite(v))return;if(preview && k===anchorDrag.index){x=anchorDrag.x;v=anchorDrag.y;}ax.push(x);ay.push(v);ai.push(k);});
-          main.push({name:fit?'Refinable anchors':'Fixed anchors',group:'bkg',x:Float64Array.from(ax),y:Float64Array.from(ay),idxs:ai,color:fit?T.anchorRefinable:T.anchorFixed,mode:'markers',size:6.5,
+          anchorPoints(ds).forEach(function(p,k){var x=p.x,v=p.y;if((ds.inst.bkgType==='cheb'?RV.state.chebPointActive(ds,p):p.use)!==fit || !Number.isFinite(v))return;if(preview && k===anchorDrag.index){x=anchorDrag.x;v=anchorDrag.y;}ax.push(x);ay.push(v);ai.push(k);});
+          main.push({name:ds.inst.bkgType==='cheb'?(fit?'Selected background points':'Unused background points'):(fit?'Refinable anchors':'Fixed anchors'),group:'bkg',x:Float64Array.from(ax),y:Float64Array.from(ay),idxs:ai,color:fit?T.anchorRefinable:T.anchorFixed,mode:'markers',size:6.5,
                      hollow:!fit,lineWidth:1.5,hover:true,noAuto:true,ds:ds,kind:'anchor'});
         });
       }
       var active=preview?anchorDrag:anchorFocus;
-      if(active && active.dsId===ds.id && active.index<ds.inst.bkgX.length){
-        var ax=preview?active.x:ds.inst.bkgX[active.index],ay=preview?active.y:ds.p['bga'+active.index];
+      if(active && active.dsId===ds.id && active.index<anchorPoints(ds).length){
+        var point=anchorPoints(ds)[active.index],ax=preview?active.x:point.x,ay=preview?active.y:point.y;
         main.push({name:'Active background anchor',group:'anchor-edit',x:[ax],y:[0],color:T.anchorActive,mode:'vline',noAuto:true,width:1.5});
         if(!subtract)main.push({name:'Active background anchor',group:'anchor-edit',x:[ax],y:[ay],color:T.anchorActive,mode:'markers',noAuto:true,size:9,hollow:true,lineWidth:2});
       }
@@ -157,11 +164,11 @@ RV.plots = (function () {
     dirty = false;
     var list = plotted(), s = build(list), note = $('#plot-note');
     var anchors=$('#show-anchors'),anchorLabel=anchors.closest('label');
-    var anchorWhy=!list.some(function(ds){return ds.inst.bkgType==='spline' && ds.inst.bkgX.length;})?'Anchors are used only by spline backgrounds in the plotted datasets.':
+    var anchorWhy=!list.some(function(ds){return anchorPoints(ds).length;})?'No background points are available in the plotted datasets.':
       backgroundSubtracted(list)?'Anchors are hidden while background subtraction is enabled.':
       S.settings.plotMode==='overview' && list.length>1?'Choose Overlay or Inspect one dataset to display spline anchors.':'';
-    anchorLabel.hidden=!list.some(function(ds){return ds.inst.bkgType==='spline';});
-    RV.ui.able(anchors,anchorWhy);anchorLabel.classList.toggle('disabled',!!anchorWhy);anchorLabel.title=anchorWhy || 'Show spline background anchors independently of the background curve.';
+    anchorLabel.hidden=false;
+    RV.ui.able(anchors,anchorWhy);anchorLabel.classList.toggle('disabled',!!anchorWhy);anchorLabel.title=anchorWhy || 'Show Chebyshev point targets or spline anchors independently of the background curve.';
     var empty = S.datasets.length ? 'Select one or more datasets' : 'No data yet. Use File, drop files on this window, or type demo in the command line below.';
     P.pat.o.empty = empty;
     P.pat.o.legendMax = 10 + S.phases.length;
@@ -222,7 +229,7 @@ RV.plots = (function () {
   }
   function focusAnchor(info) {
     var ds=info && info.dsId!=null?RV.state.byId(info.dsId):RV.state.first(),match=info && /^bga(\d+)$/.exec(info.name || '');
-    anchorFocus=ds && match?{dsId:ds.id,index:+match[1]}:null;
+    anchorFocus=ds && info && info.kind==='chebPoint'?{dsId:ds.id,index:info.index}:ds && match?{dsId:ds.id,index:+match[1]}:null;
     refresh(false);
   }
   function startAnchor(px,py) {
@@ -237,8 +244,9 @@ RV.plots = (function () {
   function endAnchor(hit,x,y,moved) {
     var ds=RV.state.byId(hit.dsId),preview=anchorDrag;anchorDrag=null;
     if(moved && ds && preview)preview={x:Math.max(ds.tth[0],Math.min(ds.tth[ds.tth.length-1],x)),y:y};
-    if(moved && ds && !S.busy && preview && (preview.x!==ds.inst.bkgX[hit.index] || preview.y!==ds.p['bga'+hit.index])){
-      if(ds.inst.bkgX.some(function(a,k){return k!==hit.index && Math.abs(a-preview.x)<=1e-6;}))RV.ui.toast('Keep background anchors at distinct angles.','info');
+    if(moved && ds && !S.busy && preview && (preview.x!==anchorPoints(ds)[hit.index].x || preview.y!==anchorPoints(ds)[hit.index].y)){
+      if(anchorPoints(ds).some(function(p,k){return k!==hit.index && Math.abs(p.x-preview.x)<=1e-6;}))RV.ui.toast('Keep background anchors at distinct angles.','info');
+      else if(ds.inst.bkgType==='cheb'){RV.cmd.moveChebPoint(ds,hit.index,preview.x,preview.y);}
       else{RV.history.take('moving background anchor of '+ds.name);RV.state.moveBackgroundAnchor(ds,hit.index,preview.x,preview.y);}
     }
     refresh(false);

@@ -130,6 +130,7 @@ RV.fitHistory = (function () {
     out.push({title:'Parameters ('+refinedNames.length+' refined of '+params.length+')',open:true,head:['Parameter','Value','e.s.d.','Refined'],rows:params.map(function(n){return [paramLabel(n,names),num(p[n]),Number.isFinite(esd[n])?num(esd[n]):'—',refined.has(n)?'✓':''];})});
     var inst=d.inst || {},ikv=scalars(inst);
     if(Array.isArray(inst.bkgX))ikv.push(['Background anchors (2θ)',inst.bkgX.map(num).join(', ') || 'none']);
+    if(Array.isArray(inst.bkgPoints) && inst.bkgPoints.length)out.push({title:'Chebyshev background point targets',head:['2theta (deg)','Intensity','Use'],rows:inst.bkgPoints.map(function(p){return [num(p.x),num(p.y),p.use?'yes':'no'];})});
     if(Array.isArray(inst.excl))ikv.push(['Excluded regions (2θ)',inst.excl.map(function(x){return num(x[0])+'–'+num(x[1]);}).join(', ') || 'none']);
     out.push({title:'Instrument and background',kv:ikv});
     var an=st.anomalousData;

@@ -1,3 +1,30 @@
+Powder 6 licensing notice
+
+The Creative Commons Attribution-NonCommercial-NoDerivatives 4.0
+International licence below applies to original Powder 6 material.
+Bundled third-party components retain their own licences; the Creative
+Commons terms below do not apply to those components.
+
+Moyo WebAssembly
+----------------
+Powder 6 bundles @spglib/moyo-wasm version 0.21.0 in lib/moyo/.
+Upstream: https://github.com/spglib/moyo
+Copyright (c) 2023 Kohei Shinohara
+
+Upstream offers MIT OR Apache-2.0. The bundled copy is distributed under
+the MIT option. Its full MIT permission notice and warranty disclaimer
+are included in lib/moyo/LICENSE-MIT; attribution and package details
+are in lib/moyo/NOTICE.md and lib/moyo/package.json.
+
+Retain the copyright and permission notice when redistributing copies
+or substantial portions of the Moyo software. The MIT licence grants
+rights for those files independently of Powder 6's Creative Commons
+licence. Preserve the licence notices of other bundled components too.
+
+=======================================================================
+Creative Commons licence text for original Powder 6 material
+=======================================================================
+
 Attribution-NonCommercial-NoDerivatives 4.0 International
 
 =======================================================================

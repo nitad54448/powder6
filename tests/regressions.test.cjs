@@ -24,7 +24,7 @@ function app(withTables = true) {
     RV: { version: '2.6', bus: { emit() {}, on() {} }, ui: {
       readBuffer: f => f.arrayBuffer(), toast: (message, kind) => messages.push({ message, kind }),
       log() {}, logLoad() {}, progress() {}, confirm: async () => true,
-      fmt: String, esc: String, stamp: () => '2026-10-21', fileStamp: () => '20261021'
+      fmt: String, withEsd: (v,e) => v+' +/- '+e, esc: String, stamp: () => '2026-10-21', fileStamp: () => '20261021'
     } }
   });
   context.window = context;
@@ -270,8 +270,8 @@ test('fit diagnostics and truthful uncertainty labels survive reports, history a
   job.vars=['zero','inst.X','p1.size','p2.size'].map(name=>({d:0,name}));
   const result=a.core.refine(job,{evaluateOnly:true});a.state.applyResult([a.ds],result,job,false);
   const expected=plain(result.fitWarnings[0]),report=a.context.RV.results.reportText([a.ds]);
-  assert.match(report,/fit warning\tCannot distinguish/);
-  assert.match(report,/X = .*\(uncertainty unavailable\)/);
+  assert.match(report,/### Fit diagnostics\n[\s\S]*- Cannot distinguish/);
+  assert.match(report,/\ninst\.X\t[^\t]+\tUnavailable: [^\t]+\tRefined\t/);
   assert.doesNotMatch(report,/\(unconstrained\)/);
   const record=a.context.RV.fitHistory.complete(a.context.RV.fitHistory.begin([a.ds],false),[a.ds]);
   a.state.commitProject(a.state.prepareProject(JSON.parse(a.state.projectJSON([]))));
@@ -606,6 +606,10 @@ test('pdCIF export/reimport preserves radiation, wavelengths, zero, weights and 
     inst: { radiation: 'neutron', lambda1: 1.8, lambda2: 0, ratio: 0, bkgN: 1 }, p: { zero: -0.07 } });
   a.S.datasets.push(second);
   const text = a.context.RV.results.cifText([first, second], true);
+  assert.match(text, /# zero = 2theta_obs - 2theta_calc_without_zero \(exp - calc\)/);
+  assert.match(text, /# _pd_calib_2theta_offset = -zero \(calc - exp\)/);
+  assert.match(text, /_pd_calib_2theta_offset -0\.12/);assert.match(text, /_pd_calib_2theta_offset 0\.07/);
+  assert.match(text, /# Parameter zero = 0\.12; Fixed; degrees/);
   a.context.input = text;
   const profiles = a.run('parsePdCifFiles(input)');
   assert.equal(profiles[0].wavelength2, 1.544426); assert.equal(profiles[0].ratio21, 0.47);
@@ -936,12 +940,14 @@ test('missing WebGPU uses CPU PT, while LM and extraction never request a GPU', 
   assert.equal(called, 0);
 });
 
-test('Ctrl-click cannot change a Chebyshev background, parameters or display preferences',()=>{
-  const a=model();a.context.RV.plots={anchorAt:()=>null};a.state.setSetting('showAnchors',false);a.state.setSetting('showBkg',false);
-  const before=plain({inst:a.ds.inst,p:a.ds.p,fit:a.ds.fit,settings:a.S.settings});
-  a.context.RV.cmd.markAt(25,42.75,100,120);
-  a.state.setSetting('noBackground',true);const messages=a.messages.length;a.context.RV.cmd.markAt(25,42.75,100,120);assert.equal(a.messages.length,messages);a.state.setSetting('noBackground',false);
-  assert.deepEqual(plain({inst:a.ds.inst,p:a.ds.p,fit:a.ds.fit,settings:a.S.settings}),before);
+test('Ctrl-click fits a Chebyshev target without changing its degree or background type',()=>{
+  const a=model();a.context.RV.plots={anchorAt:()=>null};a.state.setSetting('showAnchors',false);
+  const count=a.ds.inst.bkgPoints.length,n=a.ds.inst.bkgN,before=a.context.RV.history.count();
+  a.context.RV.cmd.markAt(23,81.25,0,0);
+  assert.equal(a.ds.inst.bkgType,'cheb');assert.equal(a.ds.inst.bkgN,n);assert.equal(a.ds.inst.bkgPoints.length,count+1);
+  assert.deepEqual(plain(a.ds.inst.bkgPoints.find(p=>p.x===23)),{x:23,y:81.25,use:true});
+  assert.equal(a.ds.fit.bkg0,false);assert.equal(a.S.settings.showAnchors,true);assert.equal(a.context.RV.history.count(),before+1);
+  a.context.RV.history.undo();assert.equal(a.S.datasets.find(d=>d.id===a.ds.id).inst.bkgPoints.length,count);
 });
 
 test('one project background type applies to unselected and newly imported datasets without copying their values',()=>{
@@ -1077,7 +1083,7 @@ test('Le Bail and WPPF exports retain their cell and use the Rietveld atomic mod
     a.state.setCalculation(method);
     a.ds.p[B] = 8.5; a.ds.p[occ] = .9; a.ds.p['p1.a'] = 5.25;
     a.ds.esd[B] = .3; // A free-intensity fit must not give the displayed atom a spurious uncertainty.
-    const cif = a.context.RV.results.cifText([a.ds], false, 'p1');
+    const cif = a.context.RV.results.cifText([a.ds], true, 'p1');
     assert.match(cif, /_cell_length_a 5\.25/);
     assert.match(cif, /'Si1' 'Si' 0 0 0 0\.6 1\.75\n/);
     assert.match(cif, /Rietveld atomic model; unused by/);
@@ -1087,9 +1093,8 @@ test('Le Bail and WPPF exports retain their cell and use the Rietveld atomic mod
     assert.equal(Number(atom[5]), .6);
     assert.ok(Math.abs(Number(atom[6]) * 8 * Math.PI ** 2 - 1.75) < .00005);
     const report = a.context.RV.results.reportText([a.ds]);
-    const row = report.split('\n').find(line => line.startsWith('Si1\t')).split('\t');
-    assert.equal(row.at(-1), '1.75'); assert.equal(row.at(-2), '0.6');
-    assert.match(report, /content\tSi0\.6/);
+    assert.doesNotMatch(report, /Atomic sites|\nSi1\t|\np1\.Si1\./);
+    assert.match(report, /Formula: Si0\.6/);
     assert.equal(a.ds.p[B], 8.5, 'Export changed a saved method value');
   }
 });
@@ -1988,10 +1993,10 @@ test('used anomalous corrections survive History and projects and appear in repo
   const a=model(),H=a.context.RV.fitHistory,ticket=H.begin([a.ds],false),job=a.state.jobFor(a.ds),result=a.core.refine(job);
   assert.ok(result.ok,result.msg);a.state.applyResult([a.ds],result,job,false);
   const used=plain(a.ds.stats.anomalousData),record=H.complete(ticket,[a.ds],false);
-  const report=a.context.RV.results.reportText([a.ds]);assert.match(report,/anomalous scattering\tenabled\tsource: Chantler/);assert.ok(report.includes('SI\t'+used.map.SI[0]+'\t'+used.map.SI[1]));
+  const report=a.context.RV.results.reportText([a.ds]);assert.match(report,/### Anomalous scattering\nStatus: Enabled\nSource: Chantler/);assert.ok(report.includes('SI\t'+used.map.SI[0]+'\t'+used.map.SI[1]));
   assert.ok(H.runReport(record).includes('Anomalous scattering') && H.runReport(record).includes('SI\t'+Number(used.map.SI[0].toPrecision(6))+'\t'+Number(used.map.SI[1].toPrecision(6))));
   a.state.setInstrument([a.ds],{anomalousEnabled:false});
-  assert.match(a.context.RV.results.reportText([a.ds]),/anomalous scattering\tdisabled/);
+  assert.match(a.context.RV.results.reportText([a.ds]),/### Anomalous scattering\nStatus: Disabled/);
   const changed=JSON.parse(JSON.stringify(tables.anomalous));changed.Si.table.forEach(row=>row[1]+=2);
   a.state.setTables({...tables,anomalous:changed});
   H.withResult(record,()=>{assert.deepEqual(plain(a.state.problemFor(a.state.selected()).datasets[0].anomalous),used.map);assert.ok(a.context.RV.results.reportText(a.state.selected()).includes('SI\t'+used.map.SI[0]));});
@@ -2000,7 +2005,7 @@ test('used anomalous corrections survive History and projects and appear in repo
   assert.equal(a.S.datasets[0].inst.anomalousEnabled,false);
   const saved=H.find(record.id);assert.deepEqual(plain(saved.datasets[0].stats.anomalousData),used);
   const legacy=plain(saved);legacy.datasets.forEach(d=>{delete d.stats.anomalousData;delete d.inst.anomalousEnabled;});
-  H.withResult(legacy,()=>{const old=a.state.problemFor(a.state.selected()).datasets[0];assert.deepEqual(plain(old.anomalous),{});assert.equal(old.anomalousData.enabled,false);assert.match(a.context.RV.results.reportText(a.state.selected()),/anomalous scattering\tdisabled\tsource: Saved legacy input/);});
+  H.withResult(legacy,()=>{const old=a.state.problemFor(a.state.selected()).datasets[0];assert.deepEqual(plain(old.anomalous),{});assert.equal(old.anomalousData.enabled,false);assert.match(a.context.RV.results.reportText(a.state.selected()),/### Anomalous scattering\nStatus: Disabled\nSource: Saved legacy input/);});
 });
 
 test('simulation uses the selected anomalous factors in every starting method and preserves the working setup',()=>{
@@ -2170,6 +2175,8 @@ test('site-symmetry dependent coordinates carry their correlated ESD into CIF ex
   const job=a.state.problemFor([ds]);job.vars=[{name:'p1.Si1.x',d:0}];const r=a.core.refine(job,{evaluateOnly:true});assert.equal(r.ok,true,r.msg);
   assert.ok(r.esd[0]['p1.Si1.x']>0);assert.equal(r.esd[0]['p1.Si1.y'],r.esd[0]['p1.Si1.x']);assert.equal(r.esd[0]['p1.Si1.z'],r.esd[0]['p1.Si1.x']);
   a.state.applyResult([ds],r,job,false);assert.match(a.context.RV.results.cifText([ds],false),/0\.2000[0-9]*\(\d+\).*0\.2000[0-9]*\(\d+\).*0\.2000[0-9]*\(\d+\)/);
+  const report=a.context.RV.results.reportText([ds]);assert.match(report,/\np1\.Si1\.x\t[^\n]+\tRefined\t/);
+  for(const c of ['y','z'])assert.ok(report.split('\n').find(l=>l.startsWith('p1.Si1.'+c+'\t')).includes('\tDependent: site symmetry\t'));
 });
 
 test('isotropic profiles reuse preparations and avoid Cartesian reciprocal vectors',()=>{
@@ -2177,4 +2184,93 @@ test('isotropic profiles reuse preparations and avoid Cartesian reciprocal vecto
   a.run('var prepCount=0,vectorCount=0,oldPrep=prepareVoigt,oldVector=gsasReciprocalVector;prepareVoigt=function(){prepCount++;return oldPrep.apply(this,arguments);};gsasReciprocalVector=function(){vectorCount++;return oldVector.apply(this,arguments);};');
   const ev=m.evalDataset(0,job.values[0]),count=ev.phases.reduce((sum,p)=>sum+p.geo.hkl.filter(r=>Number.isFinite(r.tth)).length,0);
   assert.equal(a.run('vectorCount'),0);assert.equal(a.run('prepCount'),count);
+});
+
+
+test('Chebyshev target fitting recovers an overdetermined polynomial with signed coefficients',()=>{
+  const a=app(),coeffs=[280,35,-12,7,-2,1.5],xs=Array.from({length:43},(_,i)=>10+150*(i/42)**1.2);
+  const ys=a.core.chebyshevValues(xs,coeffs,10,160),points=xs.map((x,i)=>({x,y:ys[i]}));
+  const fit=a.core.fitChebyshevPoints(points,6,10,160);
+  fit.coeffs.forEach((v,k)=>assert.ok(Math.abs(v-coeffs[k])<1e-10));assert.ok(fit.rms<1e-10);
+  const noisy=[{x:0,y:2},{x:1,y:3},{x:2,y:7},{x:3,y:8},{x:4,y:13}];
+  const line=a.core.fitChebyshevPoints(noisy,2,0,4);
+  // Independent ordinary least-squares reference: intercept 1.2, slope 2.7.
+  assert.ok(Math.abs(line.coeffs[0]-6.6)<1e-12);assert.ok(Math.abs(line.coeffs[1]-5.4)<1e-12);
+  assert.throws(()=>a.core.fitChebyshevPoints(points.slice(0,5),6,10,160),/at least 6/);
+  assert.throws(()=>a.core.fitChebyshevPoints(Array(8).fill({x:40,y:100}),6,10,160),/do not determine/);
+});
+
+test('Chebyshev background points skip exclusions and retain point count independently of terms',()=>{
+  const a=model(),ds=a.ds;ds.weights=new Float64Array(ds.tth.length).fill(1);ds.weights[0]=0;
+  a.state.setInstrument([ds],{bkgN:3,excl:[[70,100],[30,35]]});
+  assert.equal(a.state.chebPointActive(ds,{x:0,y:100,use:true}),false);
+  const points=a.state.autoChebPoints(ds,18);
+  assert.ok(points.length>=3);assert.ok(points.every(p=>p.x>10 && p.x<70 && !(p.x>=30 && p.x<=35)));
+  const targets=[{x:12,y:100,use:true},{x:25,y:126,use:true},{x:45,y:166,use:true},{x:60,y:196,use:true},{x:80,y:1e9,use:true},{x:32,y:-1e9,use:true},{x:50,y:1e9,use:false}];
+  const r=a.state.setChebPoints(ds,targets,true);assert.equal(r.nPoints,4);assert.equal(ds.inst.bkgN,3);assert.equal(ds.inst.bkgPoints.length,7);
+  const b=a.core.evaluate(a.state.problemFor([ds]),0).bkg;
+  a.state.problemFor([ds]).datasets[0].tth.forEach((x,i)=>assert.ok(Math.abs(b[i]-(76+2*x))<1e-10,'target curve'));
+  assert.ok(['bkg0','bkg1','bkg2'].every(n=>!ds.fit[n]));
+  const before=JSON.stringify({points:ds.inst.bkgPoints,p:ds.p});
+  assert.throws(()=>a.state.setChebPoints(ds,targets.slice(0,2),true),/at least 3/);assert.equal(JSON.stringify({points:ds.inst.bkgPoints,p:ds.p}),before);
+  assert.throws(()=>a.state.setChebPoints(ds,[...targets,{x:12,y:999}],true),/distinct/);
+});
+
+test('point-fitted Chebyshev backgrounds stay fixed during profile fits in all methods',()=>{
+  for(const method of ['rietveld','wppf','lebail']){
+    const a=model();a.state.setCalculation(method);a.state.setInstrument([a.ds],{bkgN:3});
+    const points=[10,20,35,50,65,80].map(x=>({x,y:20+.2*x,use:true}));a.state.setChebPoints(a.ds,points,true);
+    a.state.setFit('p1.size',true,[a.ds]);const job=a.state.jobFor(a.ds);job.maxIter=3;
+    assert.ok(job.vars.every(v=>!/^bkg/.test(v.name)));const before=a.core.evaluate(job,0).bkg,r=a.core.refine(job);assert.equal(r.ok,true,r.msg);
+    job.values=r.values;const after=a.core.evaluate(job,0).bkg;assert.deepEqual(Array.from(after),Array.from(before),method);
+  }
+});
+
+test('Chebyshev point targets survive archives, undo and separate method banks',async()=>{
+  const a=model(),points=[{x:10,y:42,use:true},{x:40,y:44,use:false},{x:80,y:46,use:true}];
+  a.state.setChebPoints(a.ds,points,true);a.context.RV.history.take('point edit');a.context.RV.cmd.moveChebPoint(a.ds,0,12,43);
+  a.context.RV.history.undo();let ds=a.S.datasets[0];assert.deepEqual(plain(ds.inst.bkgPoints),points);
+  a.state.setCalculation('wppf');a.state.setChebPoints(ds,[{x:10,y:81,use:true},{x:80,y:89,use:true}],true);
+  a.state.setCalculation('rietveld');ds=a.S.datasets[0];assert.deepEqual(plain(ds.inst.bkgPoints),points);
+  const zipped=await a.context.RV.project.pack(),b=app();b.context.zipped=Array.from(zipped);const doc=await b.context.RV.project.unpack(b.run('new Uint8Array(zipped)'));
+  b.state.commitProject(b.state.prepareProject(doc));assert.deepEqual(plain(b.S.datasets[0].inst.bkgPoints),points);
+  b.S.datasets[0].inst.bkgPoints[0].y=999;assert.equal(doc.datasets[0].inst.bkgPoints[0].y,42,'archive point arrays must not alias state');
+});
+
+
+test('background point fits respect coefficient bounds and links without partial edits',()=>{
+  const a=model(),ds=a.ds,points=[{x:10,y:100,use:true},{x:80,y:100,use:true}],before=JSON.stringify({p:ds.p,fit:ds.fit,points:ds.inst.bkgPoints});
+  a.state.setLimit('bkg0',0,50);assert.throws(()=>a.state.setChebPoints(ds,points,true),/outside its parameter limits/);
+  assert.equal(JSON.stringify({p:ds.p,fit:ds.fit,points:ds.inst.bkgPoints}),before);
+  a.state.clearLimit('bkg0');a.S.parameterLinks=[{source:{datasetId:ds.id,name:'bkg0'},target:{datasetId:ds.id,name:'zero'},factor:1,offset:0}];
+  assert.throws(()=>a.state.setChebPoints(ds,points,true),/coefficients are linked/);
+  assert.equal(JSON.stringify({p:ds.p,fit:ds.fit,points:ds.inst.bkgPoints}),before);
+});
+
+test('result reports retain full reflections and record the actual fitted variables independently of later flags',()=>{
+  for(const method of ['rietveld','lebail','wppf']){
+    const a=model();a.state.setCalculation(method);const job=a.state.jobFor(a.ds),result=a.core.refine(job);assert.equal(result.ok,true,result.msg);
+    a.state.applyResult([a.ds],result,job,false);
+    const names=plain(a.ds.stats.refinementNames);assert.ok(names.includes('bkg0'));assert.ok(!names.includes('zero'));
+    a.ds.fit.bkg0=false;a.ds.fit.zero=true;
+    const report=a.context.RV.results.reportText([a.ds]),cif=a.context.RV.results.cifText([a.ds],true);
+    assert.match(report,/^# .* refinement report\n/);assert.match(report,/\nbkg0\t[^\n]+\tRefined\tcounts\n/);assert.match(report,/\nzero\t[^\n]+\tFixed\tdegrees\n/);
+    assert.match(cif,/# Parameter bkg0 = [^\n]+; Refined; counts/);assert.match(cif,/# Parameter zero = [^\n]+; Fixed; degrees/);
+    assert.match(report,/zero = 2theta_obs - 2theta_calc_without_zero \(exp - calc\)/);
+    const rows=a.context.RV.results.reflText([a.ds]).split('\n').filter(l=>/^-?\d+\t/.test(l));assert.ok(rows.length>20);
+    for(const row of rows)assert.ok(report.split('\n').includes(row),method+': missing reflection '+row);
+    if(method==='rietveld')assert.match(report,/Atomic sites \(fractional coordinates/);else assert.doesNotMatch(report,/Atomic sites|\np1\.Si1\./);
+    a.state.commitProject(a.state.prepareProject(JSON.parse(a.state.projectJSON([]))));assert.deepEqual(plain(a.S.datasets[0].stats.refinementNames),names);
+  }
+});
+
+test('result exports distinguish linked, held and unused parameters',()=>{
+  const a=model();a.S.phases[0].constraints=[{kind:'hold',component:'B',atoms:['Si1']}];
+  a.S.parameterLinks=[{source:{datasetId:a.ds.id,name:'zero'},target:{datasetId:a.ds.id,name:'disp'},factor:2,offset:.1}];
+  const report=a.context.RV.results.reportText([a.ds]),cif=a.context.RV.results.cifText([a.ds],true);
+  assert.match(report,/\ndisp\t[^\n]+\tLinked to mixture: zero; factor 2, offset 0\.1\t/);
+  assert.match(report,/\np1\.Si1\.B\t[^\n]+\tFixed by atomic constraint\tA\^2/);
+  assert.match(report,/\np1\.Si1\.x\t[^\n]+\tFixed by symmetry\t/);
+  assert.match(cif,/# Parameter disp = [^\n]+; Linked to mixture: zero; factor 2, offset 0\.1/);
+  a.state.setCalculation('wppf');assert.match(a.context.RV.results.cifText([a.ds],true),/# Parameter p1\.scale = [^\n]+; Unused by WPPF/);
 });

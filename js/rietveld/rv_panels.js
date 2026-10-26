@@ -189,7 +189,7 @@ RV.panels = (function () {
     });
     if (resolution.length) out.push({ key: 'resolution', title: 'Instrument resolution', sub: ds.name + ' · all phases', rows: resolution });
     out.push({ key: 'acquisition', title: 'Acquisition', sub: ds.name + ' · zero point', rows: [rows[0]] });
-    out.push({ key: 'sample', title: 'Sample geometry', sub: ds.name + ' · displacement, transparency', rows: rows.slice(1) });
+    out.push({ key: 'sample', title: 'Geometry', sub: ds.name + ' · displacement, transparency', rows: rows.slice(1) });
     rows = [];
     if (ds.inst.bkgType === 'spline') ds.inst.bkgX.forEach(function (x, k) { rows.push({ name: 'bga' + k, label: 'bkg ' + (+x.toFixed(2)) + '°', unit: '', tip: 'Background at the anchor 2θ = ' + x + '° (spline through ' + ds.inst.bkgX.length + ' anchors)' }); });
     else for (var k = 0; k < ds.inst.bkgN; k++) rows.push({ name: 'bkg' + k, label: 'bkg ' + k, unit: '', tip: 'Background, coefficient of the Chebyshev polynomial T' + k + ' over the fitted range' });
@@ -237,6 +237,16 @@ RV.panels = (function () {
     return St.isSizeParam(name) && Number.isFinite(value) ? String(Math.round(St.toDisplay(name,value))) : fmtVal(value);
   }
   var shownGroups = null;
+  function chebPointsEditor(ds,dis) {
+    var points=ds.inst.bkgPoints || [],used=points.filter(function(p){return St.chebPointActive(ds,p);}).length;
+    return '<div class="cheb-points"><p class="buttons"><button type="button" data-cheb-fit'+dis+'>Fit to points</button><button type="button" data-cheb-auto'+dis+'>Place automatically</button></p>'+
+      '<p class="hint">'+used+' selected points in the fitted range; '+ds.inst.bkgN+' needed for '+ds.inst.bkgN+' terms (degree '+Math.max(0,ds.inst.bkgN-1)+'). Use selects point targets. Fitting or editing points holds the coefficients during Sample fitting; tick Background above to refine against the pattern again.</p>'+
+      '<div class="cheb-point-head"><span>Point</span><span>2θ (°)</span><span>Intensity</span><span>Use</span><span></span></div>'+points.map(function(p,k){return '<div class="cheb-point-row" data-cheb-point="'+k+'"><span>Point '+(k+1)+'</span>'+
+        '<input data-cheb-coordinate="x" aria-label="Background point '+(k+1)+' angle" value="'+esc(fmtVal(p.x))+'"'+dis+'>'+
+        '<input data-cheb-coordinate="y" aria-label="Background point '+(k+1)+' intensity" value="'+esc(fmtVal(p.y))+'"'+dis+'>'+
+        '<input type="checkbox" data-cheb-use aria-label="Use background point '+(k+1)+'"'+(p.use?' checked':'')+dis+'>'+
+        '<button type="button" class="mini" data-cheb-remove aria-label="Remove background point '+(k+1)+'"'+dis+'>×</button></div>';}).join('')+'</div>';
+  }
   function renderParams() {
     var copy=$('#dataset-copy .clone-bar'),source=editorDataset();copy.hidden=S.datasets.length<2 || !source;$('#dataset-copy').hidden=copy.hidden;$('#dataset-copy .sub').textContent=source?'Copy from '+source.name:'Copy';var target=$('#clone-target'),held=target.value;target.innerHTML='<option value="all">All other datasets</option>'+S.datasets.filter(function(d){return d!==source;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');if(Array.from(target.options).some(function(o){return o.value===held;}))target.value=held;
     var host = $('#param-list'), ds = editorDataset(), head = $('#param-ds');
@@ -275,7 +285,7 @@ RV.panels = (function () {
             (anchors ? '<button type="button" class="pr" data-anchor-remove="' + k + '" title="Remove anchor ' + (k + 1) + '" aria-label="Remove anchor ' + (k + 1) + '"' + dis + '>×</button>' : '') +
             (p.dep ? '<span class="pl" hidden></span><span class="pf-none"></span>' : '<button type="button" class="pl" aria-label="Shared or local ' + esc(p.name) + '"></button><input class="pf" type="checkbox" title="Fit ' + esc(p.name) + '" aria-label="Fit ' + esc(p.name) + '"' + dis + '>') +
             '</div>';
-        }).join('') + '</div>';
+        }).join('') + (g.key==='ds' && ds.inst.bkgType==='cheb'?chebPointsEditor(ds,dis):'') + '</div>';
     }).join('');
     // Keep existing atom parameter groups together; their fields and refinement controls stay intact.
     S.phases.forEach(function(ph){
@@ -396,6 +406,7 @@ RV.panels = (function () {
       else if (ds.stats && fit && atLimit(n, v)) { se.textContent = 'limit'; se.title = 'At its limit (' + limitText(n, v) + ', Settings): no uncertainty'; se.className = 'ps lim'; }
       else { se.textContent = ''; se.title = ''; se.className = 'ps'; }
     });
+    host.querySelectorAll('.cheb-points input, .cheb-points button').forEach(function(el){el.disabled=!!S.busy;});
     host.querySelectorAll('.pgroup').forEach(function (gr) {
       var rows = gr.nextElementSibling.querySelectorAll('.prow:not(.dep)'), on = 0, tot = rows.length;
       rows.forEach(function (r) { if (ds.fit[r.getAttribute('data-name')]) on++; });
@@ -483,6 +494,19 @@ RV.panels = (function () {
   }
   function bindParams() {
     var host = $('#param-list');
+    host.addEventListener('click',function(e){var ds=editorDataset();if(!ds || S.busy)return;
+      if(e.target.closest('[data-cheb-fit]'))RV.cmd.fitChebPoints(ds);
+      if(e.target.closest('[data-cheb-auto]'))RV.cmd.placeChebPoints(ds);
+      var remove=e.target.closest('[data-cheb-remove]');if(remove)RV.cmd.removeAnchor(ds,+remove.closest('[data-cheb-point]').dataset.chebPoint);
+    });
+    host.addEventListener('change',function(e){var row=e.target.closest('[data-cheb-point]'),ds=editorDataset();if(!row || !ds)return;
+      var key=e.target.getAttribute('data-cheb-coordinate'),isUse=e.target.hasAttribute('data-cheb-use');if(!key && !isUse)return;
+      if(S.busy){renderParams();return;}
+      if(!RV.cmd.editChebPoint(ds,+row.dataset.chebPoint,isUse?'use':key,isUse?e.target.checked:ui.parseNum(e.target.value)))renderParams();
+    });
+    host.addEventListener('focusin',function(e){var row=e.target.closest('[data-cheb-point]');if(row && editorDataset())RV.bus.emit('paramFocus',{dsId:editorDataset().id,kind:'chebPoint',index:+row.dataset.chebPoint});});
+    host.addEventListener('keydown',function(e){if(!e.target.hasAttribute('data-cheb-coordinate'))return;if(e.key==='Enter'){e.preventDefault();e.target.dispatchEvent(new Event('change',{bubbles:true}));}else if(e.key==='Escape'){e.preventDefault();renderParams();}});
+
     host.addEventListener('focusin', function (e) { if (e.target.classList.contains('pv')) { editing = e.target.closest('.prow').getAttribute('data-name'); RV.bus.emit('paramFocus',{name:editing,dsId:editorDataset().id}); } });
     host.addEventListener('focusout', function (e) { if (e.target.classList.contains('pv')) { commitInput(e.target); editing = null; renderValues(); RV.bus.emit('paramFocus',null); } });
     host.addEventListener('keydown', function (e) {
@@ -715,7 +739,7 @@ RV.panels = (function () {
       { key: 'weight', label: 'Weight of each point', type: 'select', options: [['poisson', 'File weights or 1/σ² (counts if no σ supplied)'], ['unit', '1 (no weighting)']] }] },
     { legend: 'Background', fields: [
       { key: 'bkgN', label: 'Chebyshev terms of new datasets', type: 'int', hint: 'Polynomials over the fitted range, 0 to 24; per dataset in Background (Datasets panel).' },
-      { key: 'nAnchors', label: 'Spline anchors placed', type: 'int', hint: 'How many anchors Place automatically puts, 2 to 200.' }] },
+      { key: 'nAnchors', label: 'Automatic background points', type: 'int', hint: 'How many points Place automatically puts for Chebyshev or spline backgrounds, 2 to 200.' }] },
     { legend: 'Plots', fields: [
       { key: 'maxPlots', label: 'Datasets drawn at most', type: 'int', hint: 'Larger selections are thinned out evenly for drawing; fits use all of them. Legend names are evenly sampled, up to 8 including first and last.' }] }
   ];

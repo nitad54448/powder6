@@ -965,6 +965,11 @@ table.grid.ac-list input.ac-m { width: 64px; min-width: 0; max-width: 64px; padd
 .dataset-parameters .param-list.global .prow.anchor-row, .dataset-parameters .param-list.global .anchor-head {
   grid-template-columns: minmax(44px,.8fr) minmax(0,1fr) minmax(0,1fr) minmax(0,.6fr) var(--ctl-h-sm) var(--ctl-h-sm) 18px;
 }
+.cheb-points { margin-top: var(--sp-2); }
+.cheb-point-row, .cheb-point-head { display: grid; grid-template-columns: minmax(44px,.7fr) minmax(0,1fr) minmax(0,1fr) var(--ctl-h-sm) var(--ctl-h-sm); gap: var(--sp-1); align-items: center; padding-block: var(--sp-1); }
+.cheb-point-head { font-size: var(--fs-xs); color: var(--ink-3); }
+.cheb-point-row input { width: 100%; min-width: 0; }
+.cheb-point-row input[type=checkbox] { width: auto; justify-self: center; }
 .dataset-tabs { display: flex; gap: var(--sp-1); overflow-x: auto; padding: 0 0 var(--sp-2); border-bottom: 1px solid var(--rule); margin-bottom: var(--sp-3); }
 .dataset-tabs button {
   display: flex;
@@ -1066,8 +1071,7 @@ select:has( > option.sg-std:checked) option:not(.sg-std) { font-weight: 400; }
 .history-picker { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
 .history-picker select { flex: 1; min-width: 0; }
 .structure-results-pane.on { display: block; overflow: auto; }
-.structure-result-tabs { background: var(--chrome); display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-3) var(--inset); border-bottom: 1px solid var(--rule); }
-.structure-result-tabs [aria-selected="true"] { background: var(--blue-tint); border-color: var(--blue); }
+.structure-result-tabs { position: sticky; top: 0; z-index: 3; background: var(--chrome); display: flex; flex-wrap: nowrap; gap: var(--sp-1); padding: 0 var(--inset); border-bottom: 1px solid var(--rule); }
 .structure-result-body { padding: var(--sp-4) var(--inset); }
 
 /* ---------- narrow windows ---------- */

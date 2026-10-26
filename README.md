@@ -1,6 +1,6 @@
 # Powder 6
 
-Version **2.45.1**, 26 October 2026. See [corrections](CHANGELOG.md).
+Version **2.47.1**, 26 October 2026. See [corrections](CHANGELOG.md).
 
 Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by **Rietveld**, **Le Bail** or **WPPF**, fitted individually or in one global fit, with **structure solution** from the extracted intensities. Everything runs locally; nothing is uploaded.
 
@@ -92,7 +92,11 @@ Profile fitting corrections in 2.45.1 include cross-dataset link derivatives, in
 
 Choose **Background…** to set one background type for the whole project: Chebyshev or spline. The choice applies to selected and unselected datasets, new patterns and every fitting method; reordering datasets does not change it. Term counts, coefficients, anchor positions, heights and refinement flags remain independent.
 
-With spline backgrounds, Ctrl+click on the pattern places a background anchor at the cursor's angle and height; right-drag an anchor to move it. Ctrl+Shift+drag still marks exclusions. Filled magenta anchors are refinable, hollow grey anchors are fixed, and editing an anchor shows a yellow vertical guide. Edit exact X/Y coordinates and the Y refinement flag together in the dataset tab's **Background** group. Plots has separate **Anchors**, **Backgnd**, **Phases**, **Refl** and **Subtract** controls. Autoscale appears after zooming or panning and hides after resetting either plot. Ctrl+click has no effect in Chebyshev mode, and Anchors is hidden. With splines, Anchors is greyed out in a multi-dataset Overview or during background subtraction; its checked preference is preserved. Chebyshev backgrounds use coefficients rather than anchor points; changing the fitted range re-expresses those coefficients to preserve the curve at retained angles. Each dataset has independent **Sample** and **Resolution** refinement checkboxes. Each method retains its own background values and fitted results under the common background type; Le Bail and WPPF results display the retained Rietveld atomic model as unused.
+**Chebyshev terms:** 0 disables the background (zero contribution, no coefficients to refine), for data whose background has already been subtracted. 1 gives a constant background of degree 0. Fitting to background points requires at least 1 term.
+
+The **Anchors** control is always visible. Chebyshev backgrounds automatically show estimated background points; their number is independent of the polynomial order. A degree N polynomial needs at least N+1 selected points (six terms means degree five). In the dataset's **Background** group, edit point X/Y coordinates and **Use** checkboxes, then choose **Fit to points**. Fitting or editing points fits the polynomial and holds its coefficients during Sample refinement. **Place automatically** estimates and fits a new set of points. Ctrl+click adds a point or removes the point under the cursor; right-drag moves it. These actions keep the Chebyshev term count. To refine coefficients against the whole pattern again, tick **Background**. Point targets are used for a separate background fit, not as simultaneous restraints; review automatic estimates and the resulting polynomial before using them. Existing projects keep their calculated background until points are explicitly fitted or edited.
+
+Spline anchors keep their independent height refinement flags. Filled magenta spline anchors are refinable, hollow grey anchors are fixed; Chebyshev markers distinguish selected and unused point targets. Ctrl+Shift+drag marks exclusions. Anchors is greyed out in a multi-dataset Overview or during background subtraction; its checked preference is preserved. Changing the fitted range re-expresses Chebyshev coefficients to preserve the curve. Each dataset has independent **Sample** and **Resolution** controls, and each method retains its own background values, points and fitted results.
 
 **Anomalous scattering** defaults on for X-rays and is disabled for neutrons. Powder 6 linearly interpolates the bundled Chantler f′ and f″ arrays in photon energy at the dataset's λ1. Untick the checkbox to compare against ordinary f0-only Rietveld calculations. The table, copied from Hephaestus's `data/scattering.json`, covers H–U; values outside its energy range are not extrapolated. The correction is elemental, including for ionic form-factor labels. Text/PDF reports and History retain the source, wavelength, energy and exact factors used by a fit. Legacy explicitly supplied factors remain readable; applying Instrument replaces them with the automatic choice.
 
@@ -148,6 +152,10 @@ Set and Keep are independent: use both to restore a run and retain it for later.
 Project format 4 uses a compressed archive saved as `.project`; `.archive`, `.powder6` (versions before 2.8), format 3 and any zip holding `project.json` are opened. Observation columns and the WPPF precision block are binary 64-bit values, each stored once in its own entry, with JSON model and history metadata; a structure solution refers to its extraction instead of carrying a second copy of it. Full saves include retained history; compact saves include current results and kept records. CF sites and candidates are retained; density grids are optional. The completed save reports its compressed size.
 
 Reading a project (File → Read project) replaces the previous session’s datasets, instrument parameters (including both wavelengths and their ratio), model, saved method states, numerical options, profile defaults and structure-search settings, and clears every restore point: the project is read as it was saved and cannot be undone. The active method’s intensities, remembered parameter values and a hand-loaded absorption table come back with it. Old extraction and display caches are cleared. Fields absent from older projects use clean defaults rather than values from the previous session.
+
+## Licensing
+
+Original Powder 6 material uses CC BY-NC-ND 4.0; see [LICENCE](LICENCE). Bundled third-party components retain their own terms. Moyo is distributed under its included [MIT licence](lib/moyo/LICENSE-MIT), with attribution in [NOTICE.md](lib/moyo/NOTICE.md).
 
 ## Bundled Moyo code
 

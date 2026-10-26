@@ -563,6 +563,37 @@ function splineSlopes(xs, ys) {
  * The spline through (xs, ys) at every point of a sorted axis, flat outside
  * the anchors. Fewer than two anchors: a constant (or zero).
  */
+/** Fit Chebyshev coefficients to background observations using orthogonal QR.
+ * n is the coefficient count (degree n-1); points are targets, not extra variables. */
+function fitChebyshevPoints(points, n, lo, hi) {
+    if(!Number.isInteger(n) || n<1 || n>24 || !(hi>lo))throw new Error('Choose 1 to 24 Chebyshev terms and a non-empty fitted range.');
+    if(points.length<n)throw new Error('A degree '+(n-1)+' polynomial needs at least '+n+' selected background points in the fitted, non-excluded range.');
+    var R=new Float64Array(n*n),z=new Float64Array(n),residual=0;
+    points.forEach(function(p){
+        if(!Number.isFinite(p.x) || !Number.isFinite(p.y))throw new Error('Background point coordinates must be finite.');
+        var row=new Float64Array(n),x=2*(p.x-lo)/(hi-lo)-1,y=p.y;row[0]=1;if(n>1)row[1]=x;
+        for(var k=2;k<n;k++)row[k]=2*x*row[k-1]-row[k-2];
+        for(var j=0;j<n;j++){
+            var h=Math.hypot(R[j*n+j],row[j]);if(!h)continue;
+            var c=R[j*n+j]/h,t=row[j]/h;
+            for(k=j;k<n;k++){var a=R[j*n+k],b=row[k];R[j*n+k]=c*a+t*b;row[k]=-t*a+c*b;}
+            var old=z[j];z[j]=c*old+t*y;y=-t*old+c*y;
+        }
+        residual+=y*y;
+    });
+    var scale=0;for(var j=0;j<n;j++)scale=Math.max(scale,Math.abs(R[j*n+j]));
+    var coeffs=new Array(n);
+    for(j=n-1;j>=0;j--){
+        if(!(Math.abs(R[j*n+j])>1e-10*scale))throw new Error('Background points do not determine this polynomial reliably. Spread the points over the range or reduce the term count.');
+        var v=z[j];for(var k=j+1;k<n;k++)v-=R[j*n+k]*coeffs[k];coeffs[j]=v/R[j*n+j];
+        if(!Number.isFinite(coeffs[j]))throw new Error('The background point fit is not finite.');
+    }
+    return {coeffs:coeffs,nPoints:points.length,degree:n-1,rms:Math.sqrt(residual/points.length)};
+}
+function chebyshevValues(tth, coeffs, lo, hi) {
+    return Float64Array.from(tth,function(t){var x=hi>lo?2*(t-lo)/(hi-lo)-1:0,a=0,b=0;for(var k=coeffs.length-1;k>=1;k--){var next=2*x*a-b+coeffs[k];b=a;a=next;}return (coeffs[0] || 0)+x*a-b;});
+}
+
 function splineValues(tth, xs, ys) {
     var n = tth.length, out = new Float64Array(n), na = xs ? xs.length : 0;
     if (!na) return out;
@@ -2455,7 +2486,7 @@ root.RVCore = {
     cellParams: cellParams, cellOf: cellOf, generateReflections: generateReflections, reflectionDmin:reflectionDmin, siteSymmetry: siteSymmetry,
     sitePosition: sitePosition, formFactor: formFactor, parseAnomalous: parseAnomalous, profileParamsFor: profileParamsFor, INSTRUMENT_PROFILE: INSTRUMENT_PROFILE, INSTRUMENT_PROFILE_TYPES:INSTRUMENT_PROFILE_TYPES, ALL_INSTRUMENT_PROFILE: ALL_INSTRUMENT_PROFILE, instrumentProfileParams: instrumentProfileParams, usesSeparatedProfile: usesSeparatedProfile, SAMPLE_PROFILE: SAMPLE_PROFILE, broadeningConfig: broadeningConfig, sampleProfileNames: sampleProfileNames, PROFILE_PARAMS: PROFILE_PARAMS, PROFILE_LABELS: PROFILE_LABELS,
     classify: classify, defaultLimits: defaultLimits, methodAllows: methodAllows, Model: Model, refine: refine, refineAsync:refineAsync, evaluate: evaluate,
-    datasetStats: datasetStats, solveSPD: solveSPD, invSPD: invSPD, normalDependence:normalDependence, profileVarianceGuards:profileVarianceGuards, guardVarianceMinimum:guardVarianceMinimum, varianceViolation:varianceViolation, fracText: fracText, splineValues: splineValues, MAX_PRECISION_REFLECTIONS:MAX_PRECISION_REFLECTIONS,
+    datasetStats: datasetStats, solveSPD: solveSPD, invSPD: invSPD, normalDependence:normalDependence, profileVarianceGuards:profileVarianceGuards, guardVarianceMinimum:guardVarianceMinimum, varianceViolation:varianceViolation, fracText: fracText, fitChebyshevPoints:fitChebyshevPoints, chebyshevValues:chebyshevValues, splineValues: splineValues, MAX_PRECISION_REFLECTIONS:MAX_PRECISION_REFLECTIONS,
     reflectionKey:reflectionKey, reindexIntensities:reindexIntensities, selectedInverse: selectedInverse
 };
 })(typeof self !== 'undefined' ? self : (typeof window !== 'undefined' ? window : globalThis));
