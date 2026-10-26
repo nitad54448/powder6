@@ -126,6 +126,11 @@ function getMinProfileFwhmDeg() { return MIN_PROFILE_FWHM_DEG; }
  * frozen there for the rest of the fit. It could not recover even after the
  * cell and zero-point had been corrected.
  *
+ * This is a fallback now, not an invitation: rietveld_core's variance guard
+ * (gaussianVarianceGuards) refuses a refinement step that would make the
+ * combined Gaussian variance negative over the fitted range, so the floor is
+ * reached only by values outside a fit, or by a fit that started there.
+ *
  * @param {number} x     Value to floor.
  * @param {number} floor Strictly positive floor.
  * @returns {number}

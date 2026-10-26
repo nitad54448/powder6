@@ -481,7 +481,10 @@ function defaultLimits(name, value) {
         case 'po': return [0.1, 5];
         case 'zero': return [-2, 2];
         // a Lorentzian width (and the Gaussian size term) below zero is floored by profile.js, where it has no
-        // effect at all: the fit would wander off there and lose the parameter
+        // effect at all: the fit would wander off there and lose the parameter. The Gaussian COEFFICIENTS stay
+        // unbounded for the same reason, but they are not free: refineSteps() refuses any step that makes the
+        // combined variance negative over the fitted range (gaussianVarianceGuards), which is the boundary that
+        // actually matters and cannot be expressed as a box on one coefficient.
         case 'instrument': return /^eta/.test(c.comp) ? [0, 1] : /^(X(?:_[LR])?|Y|Z|SL)$/.test(c.comp) ? [0, Infinity] : [-Infinity, Infinity];
         case 'profile':
             if (/^size(?:Axial|B|C)?$/.test(c.comp)) return [0.001, 10];
@@ -1330,10 +1333,87 @@ function gaussianVarianceMinimum(u, v, w, lo, hi) {
 }
 
 /**
+ * Every Gaussian polynomial the model evaluates, with the fitted range of the
+ * dataset it is used in: the dataset's instrument coefficients for a separated
+ * (GSAS) profile, and a phase's own coefficients for a phase with its own
+ * profile. ONE BUILDER, TWO USERS -- instrumentProfileWarnings() reports these
+ * and refineSteps() refuses to step out of the region where they are
+ * non-negative -- so the two cannot come to disagree about which coefficients
+ * are checked.
+ *
+ * `gp` marks the simple pseudo-Voigt, whose GP/cos^2(theta) = GP + GP tan^2(theta)
+ * is folded into U and W when the variance is evaluated.
+ *
+ * @param {Model} model
+ * @param {number} [only] One dataset index, or omitted for all of them.
+ * @returns {{d:number, prefix:string, names:string[], defaults:Array, gp:number, lo:number, hi:number,
+ *            separated:boolean, label:string, shown:string}[]}
+ */
+function gaussianVarianceGuards(model, only) {
+    var guards = [];
+    model.datasets.forEach(function (D, d) {
+        if (!D.n || (only !== undefined && only !== d)) return;
+        var lo = Math.tan(Math.max(1e-6, Math.min(179.999999, D.def.tth[0])) * Math.PI / 360),
+            hi = Math.tan(Math.max(1e-6, Math.min(179.999999, D.def.tth[D.n - 1])) * Math.PI / 360), seen = {};
+        model.phases.forEach(function (P, pi) {
+            if (!D.has[pi]) return;
+            var separated = usesSeparatedProfile(P.def),
+                type = separated ? (D.def.resolutionType || P.def.profileType) : P.def.profileType;
+            // One instrument polynomial per dataset, however many separated phases share it.
+            if (separated && seen[type]) return;
+            if (separated) seen[type] = true;
+            var prefix = separated ? 'inst.' : P.prefix,
+                defaults = separated ? instrumentProfileParams(type) : (PROFILE_PARAMS[type] || PROFILE_PARAMS.simple_pvoigt),
+                gp = type === 'simple_pvoigt' ? 1 : 0,
+                sets = type === 'split_pvoigt' ? [['U_L', 'V_L', 'W_L'], ['U_R', 'V_R', 'W_R']]
+                     : type === 'tch_aniso' ? [['U', 'V', 'W']] : [['GU', 'GV', 'GW']];
+            sets.forEach(function (names) {
+                guards.push({ d: d, prefix: prefix, names: names, defaults: defaults, gp: gp, lo: lo, hi: hi,
+                              separated: separated, label: separated ? 'Instrument' : 'Phase ' + P.def.key,
+                              shown: separated ? names.join(', ') : names.map(function (n) { return prefix + n; }).join(', ') });
+            });
+        });
+    });
+    return guards;
+}
+
+/** The minimum of one guard's Gaussian variance, in cdeg^2, read from one dataset's values. */
+function guardVarianceMinimum(vals, guard) {
+    var coefficient = function (name) {
+        var x = vals[guard.prefix + name];
+        if (Number.isFinite(x)) return x;
+        var d = (guard.defaults || []).find(function (p) { return p[0] === name; });
+        return d ? d[1] : 0;
+    };
+    var gp = guard.gp ? coefficient('GP') : 0;
+    return gaussianVarianceMinimum(coefficient(guard.names[0]) + gp, coefficient(guard.names[1]),
+                                   coefficient(guard.names[2]) + gp, guard.lo, guard.hi);
+}
+
+/**
+ * How far the sharpest Gaussian variance falls below zero over its fitted
+ * range, in cdeg^2: 0 when every polynomial is non-negative. `vals` holds one
+ * value map per dataset. This is the quantity the refinement steps may not
+ * increase from zero: a negative variance is not a profile, it is the width
+ * floor pretending the peaks there have no Gaussian component at all.
+ */
+function varianceViolation(vals, guards) {
+    var worst = 0;
+    for (var k = 0; k < guards.length; k++) {
+        var m = guardVarianceMinimum(vals[guards[k].d], guards[k]).value;
+        if (m < 0 && -m > worst) worst = -m;
+    }
+    return worst;
+}
+
+/**
  * Validate every Gaussian polynomial the model uses over the fitted angular
  * range, including an interior minimum. Negative V is allowed; it is the
- * combined variance that must be non-negative. This is a diagnostic only:
- * never silently reset fitted values or refinement choices.
+ * combined variance that must be non-negative. This is what remains of the
+ * check that once only reported: since 2.42.15 the refinement steps cannot
+ * leave the valid region either (see the guard in refineSteps), so these
+ * warnings appear when the fit started outside it or when the coefficients sit
+ * exactly on the boundary.
  *
  * TWO OWNERS, ONE CHECK. A separated (GSAS) phase reads the DATASET's
  * coefficients ('inst.U' ...); a phase with its own profile reads its own
@@ -1341,46 +1421,18 @@ function gaussianVarianceMinimum(u, v, w, lo, hi) {
  * leave its own polynomial with a variance of -300 cdeg^2 at the high-angle end
  * and nothing said so: the width floor turns that into a zero Gaussian
  * component, the pattern hardly changes there, and the coefficients look
- * refined while having no effect. GP of the simple pseudo-Voigt enters as
- * GP/cos^2(theta) = GP + GP tan^2(theta) -- an identity -- so it is folded into
- * U and W rather than treated apart.
+ * refined while having no effect.
  */
 function instrumentProfileWarnings(model, di, v) {
-    var D = model.datasets[di];
-    if (!D.n) return [];
-    var lo = Math.tan(Math.max(1e-6, Math.min(179.999999, D.def.tth[0])) * Math.PI / 360),
-        hi = Math.tan(Math.max(1e-6, Math.min(179.999999, D.def.tth[D.n - 1])) * Math.PI / 360),
-        out = [], seen = {};
-    var coefficient = function (prefix, defaults, name) {
-        if (Number.isFinite(v[prefix + name])) return v[prefix + name];
-        var d = (defaults || []).find(function (p) { return p[0] === name; });
-        return d ? d[1] : 0;
-    };
-    model.phases.forEach(function (P, pi) {
-        if (!D.has[pi]) return;
-        var separated = usesSeparatedProfile(P.def),
-            type = separated ? (D.def.resolutionType || P.def.profileType) : P.def.profileType;
-        // One instrument polynomial per dataset, however many separated phases share it.
-        if (separated && seen[type]) return;
-        if (separated) seen[type] = true;
-        var prefix = separated ? 'inst.' : P.prefix,
-            defaults = separated ? instrumentProfileParams(type) : (PROFILE_PARAMS[type] || PROFILE_PARAMS.simple_pvoigt),
-            gp = type === 'simple_pvoigt' ? coefficient(prefix, defaults, 'GP') : 0,
-            sets = type === 'split_pvoigt' ? [['U_L', 'V_L', 'W_L'], ['U_R', 'V_R', 'W_R']]
-                 : type === 'tch_aniso' ? [['U', 'V', 'W']] : [['GU', 'GV', 'GW']];
-        sets.forEach(function (names) {
-            var worst = gaussianVarianceMinimum(coefficient(prefix, defaults, names[0]) + gp,
-                                                coefficient(prefix, defaults, names[1]),
-                                                coefficient(prefix, defaults, names[2]) + gp, lo, hi);
-            if (!(worst.value < -1e-9)) return;
-            out.push((separated ? 'Instrument' : 'Phase ' + P.def.key) + ' Gaussian variance (' +
-                (separated ? names.join(', ') : names.map(function (n) { return prefix + n; }).join(', ')) +
-                ') is negative: minimum ' + worst.value.toPrecision(5) + ' cdeg^2 at 2theta ' +
-                (2 * Math.atan(worst.t) * 180 / Math.PI).toFixed(2) + ' deg. Sample broadening or the width floor can hide this invalid ' +
-                (separated ? 'instrument' : 'phase') + ' profile and make its coefficients poorly determined. ' +
-                (separated ? 'Check the resolution calibration; negative V alone is allowed.'
-                           : 'Fit a Gaussian polynomial that is non-negative over this range; negative V alone is allowed.'));
-        });
+    var out = [];
+    gaussianVarianceGuards(model, di).forEach(function (guard) {
+        var worst = guardVarianceMinimum(v, guard);
+        if (!(worst.value < -1e-9)) return;
+        out.push(guard.label + ' Gaussian variance (' + guard.shown + ') is negative: minimum ' + worst.value.toPrecision(5) +
+            ' cdeg^2 at 2theta ' + (2 * Math.atan(worst.t) * 180 / Math.PI).toFixed(2) + ' deg. Sample broadening or the width floor can hide this invalid ' +
+            (guard.separated ? 'instrument' : 'phase') + ' profile and make its coefficients poorly determined. ' +
+            (guard.separated ? 'Check the resolution calibration; negative V alone is allowed.'
+                             : 'Fit a Gaussian polynomial that is non-negative over this range; negative V alone is allowed.'));
     });
     return out;
 }
@@ -1676,6 +1728,9 @@ function* refineSteps(problem, opts) {
             problem=Object.assign({},problem,{vars:constraints.vars,values:constraints.values});
         }
         var model = new Model(problem), nd = model.datasets.length, vars = problem.vars || [], nv = vars.length, only = !!opts.evaluateOnly;
+        // The Gaussian variances this problem evaluates, and the region in which they exist. The LM and PT
+        // steps below may not leave it from a point inside it (the guard in lm()).
+        var varianceGuards = gaussianVarianceGuards(model), varianceHeld = false;
         var algorithm = problem.algorithm || 'lm', ptInfo = null, progressTotal = 0;
         if (!only && algorithm !== 'lm' && algorithm !== 'pt') throw new Error('unknown refinement algorithm: ' + algorithm);
         var values = problem.values.map(function (v) { return Object.assign({}, v); });
@@ -1795,8 +1850,12 @@ function* refineSteps(problem, opts) {
         var itTotal = 0, nStages = 1, lmUsed = 0, msg = only ? 'evaluated at the current values' : 'iteration limit reached', a, b, j;
         // lmUsed: the iterations (steps tried) of the last lm() call, so the stages of a Le Bail fit share one budget
         function lm(stage, maxIter) {
-            var cycle = stage === 'lebail', f = cost(apply(x), null), held = null, it, out = 'iteration limit reached';
+            var cycle = stage === 'lebail', startVals = apply(x), f = cost(startVals, null), held = null, it, out = 'iteration limit reached';
             if (!(f < Infinity)) throw new Error('the model gives non-finite values at the start values');
+            // 0 while every Gaussian variance is non-negative over its fitted range. A fit that starts
+            // outside that region is left free to move -- the diagnostics report it, and a wall would
+            // trap it there -- but from inside, no step may leave it.
+            var curViolation = varianceGuards.length ? varianceViolation(startVals, varianceGuards) : 0, blocked = false;
             if (algorithm === 'pt' && opts.onIter) opts.onIter({it:itTotal, chi2:f, maxIter:progressTotal, stage:stage});
             var mu = 1e-3, nu = 2, conv = 0, NE2 = null, tol = problem.tol > 0 ? problem.tol : 1e-5;
             for (it = 0; it < maxIter; it++) {
@@ -1866,24 +1925,48 @@ function* refineSteps(problem, opts) {
                     constraints.links.forEach(function(l){var v=old[l.d][l.name],delta=proposed[l.d][l.name]-v;if(delta>0)alpha=Math.min(alpha,(l.limits[1]-v)/delta);else if(delta<0)alpha=Math.min(alpha,(l.limits[0]-v)/delta);});
                     if(alpha<1)for(a=0;a<nv;a++){xn[a]=x[a]+Math.max(0,alpha)*step[a];step[a]=xn[a]-x[a];}
                 }
+                // WHERE THE PROFILE STOPS EXISTING. The Gaussian variance is U tan^2(theta) + V tan(theta) + W
+                // (with GP folded in as GP + GP tan^2). A negative value is not a narrow peak: it is the width
+                // floor pretending there is no Gaussian component there at all, and the fit has no gradient in
+                // that direction to tell it apart. A step that would cross the boundary from a point inside it
+                // is cut back to the boundary instead of being rejected, so the refinement can still run along it.
+                var xnVals = apply(xn), violation = varianceGuards.length ? varianceViolation(xnVals, varianceGuards) : 0;
+                blocked = false;
+                if (curViolation === 0 && violation > 0) {
+                    var loA = 0, hiA = 1, midA, cand, okA, bi;
+                    for (bi = 0; bi < 24; bi++) {
+                        midA = 0.5 * (loA + hiA); cand = Float64Array.from(x);
+                        for (a = 0; a < nv; a++) cand[a] = x[a] + midA * step[a];
+                        okA = false;
+                        try { okA = varianceViolation(apply(cand), varianceGuards) === 0; } catch (e) { okA = false; }
+                        if (okA) loA = midA; else hiA = midA;
+                    }
+                    for (a = 0; a < nv; a++) { xn[a] = x[a] + loA * step[a]; step[a] = xn[a] - x[a]; }
+                    xnVals = apply(xn); violation = varianceGuards.length ? varianceViolation(xnVals, varianceGuards) : 0;
+                    blocked = true; varianceHeld = true;
+                }
                 var pred = 0, sAs = 0;
                 for (a = 0; a < nv; a++) { if (!step[a]) continue; pred += 2 * g[a] * step[a]; var tt = 0; for (b = 0; b < nv; b++) tt += A[a * nv + b] * step[b]; sAs += step[a] * tt; }
                 pred -= sAs;
-                var fn = cost(apply(xn), cycle ? held : null);
+                var fn = cost(xnVals, cycle ? held : null);
                 if (fn < f) {
                     var rho = pred > 0 ? (f - fn) / pred : 0.5, rel = (f - fn) / f, small = true;
                     {
                         var s2 = Math.max(f,1e-30) / Math.max(1, nPts - nv);
                         for (a = 0; a < nF; a++) { qq = F[a]; if (Math.abs(step[qq]) * Math.sqrt(A[qq * nv + qq] / s2) > 0.1) { small = false; break; } }
                     }
-                    x = xn; f = fn; NE2 = null;
+                    x = xn; f = fn; NE2 = null; curViolation = violation;
                     mu *= Math.max(1 / 3, 1 - Math.pow(2 * rho - 1, 3)); nu = 2;
                     itTotal++;
                     if (opts.onIter) opts.onIter({ it: itTotal, chi2: f, maxIter: progressTotal || maxIter * nStages, stage: stage });
                     if ((rel < tol && small) || (cycle && small)) { if (++conv >= LM_CONVERGED_REPEATS) { out = 'converged: χ² change below the tolerance'; it++; break; } } else conv = 0;
                 } else {
                     mu *= nu; nu *= 2;
-                    if (mu > 1e20) { out = grad < 1e-3 ? 'converged: projected gradient below tolerance' : 'stalled: no improving LM step; inspect correlated parameters and limits'; break; }
+                    if (mu > 1e20) {
+                        out = blocked ? 'stopped at the variance limit: no step keeps the Gaussian variance non-negative over the fitted range'
+                            : (grad < 1e-3 ? 'converged: projected gradient below tolerance' : 'stalled: no improving LM step; inspect correlated parameters and limits');
+                        break;
+                    }
                 }
             }
             lmUsed = it;
@@ -1940,10 +2023,11 @@ function* refineSteps(problem, opts) {
                 return value;
             }
             var initialCost = setup.initialCost;
+            var startViolation = varianceGuards.length ? varianceViolation(apply(x), varianceGuards) : 0;
             var bestCost = initialCost, best = Float64Array.from(x), replicas = [], temperatures = [];
             for (var r = 0; r < chains; r++) {
                 temperatures[r] = Math.pow(maxTemp, r / (chains - 1));
-                replicas[r] = { x: Float64Array.from(x), cost: initialCost };
+                replicas[r] = { x: Float64Array.from(x), cost: initialCost, feasible: startViolation === 0 };
             }
             ptInfo = { backend:'cpu', chains: chains, sweeps: 0, requestedSweeps: sweeps, maxTemp: maxTemp, seed: seed,
                        proposals: 0, accepted: 0, swapAttempts: 0, swaps: 0, initialChi2: initialCost, bestChi2: initialCost };
@@ -1959,12 +2043,16 @@ function* refineSteps(problem, opts) {
                         var coordinate = Math.floor(random() * nv), proposal = Float64Array.from(replica.x);
                         proposal[coordinate] = reflect(proposal[coordinate] + gaussian() * scales[coordinate] * Math.sqrt(temperatures[r]), info[coordinate].lo, info[coordinate].hi);
                         if (!Number.isFinite(proposal[coordinate])) continue;
-                        var candidateCost;
-                        try { candidateCost = cost(apply(proposal), null); } catch (invalidTrial) { candidateCost = Infinity; }
+                        var candidateCost, candidateVals = null;
+                        try { candidateVals = apply(proposal); candidateCost = cost(candidateVals, null); } catch (invalidTrial) { candidateCost = Infinity; }
                         ptInfo.proposals++;
+                        // The LM's rule, applied to a proposal: a replica inside the region where the profile
+                        // exists may not step out of it; one that is outside is left free to come back.
+                        var candidateViolation = candidateVals && varianceGuards.length ? varianceViolation(candidateVals, varianceGuards) : 0;
+                        if (candidateViolation > 0 && replica.feasible) candidateCost = Infinity;
                         if (Number.isFinite(candidateCost) &&
                             (candidateCost <= replica.cost || Math.log(random()) < (replica.cost - candidateCost) / (2 * temperatures[r]))) {
-                            replica.x = proposal; replica.cost = candidateCost; ptInfo.accepted++;
+                            replica.x = proposal; replica.cost = candidateCost; replica.feasible = !(candidateViolation > 0); ptInfo.accepted++;
                             if (candidateCost < bestCost) { bestCost = candidateCost; best = Float64Array.from(proposal); }
                         }
                     }
@@ -2020,10 +2108,13 @@ function* refineSteps(problem, opts) {
                 if (accelerated && accelerated.x) {
                     var candidate = accelerated.x;
                     if (candidate.length !== nv || !Array.from(candidate).every(function(v,j){return Number.isFinite(v) && v>=info[j].lo && v<=info[j].hi;})) throw new Error('Invalid WebGPU PT result');
-                    // Re-score on the CPU before the double-precision LM finish.
-                    var checked = cost(apply(candidate), null);
+                    // Re-score on the CPU before the double-precision LM finish. The GPU does not know the
+                    // Gaussian-variance region, so a point outside it is not taken: the LM finish then starts
+                    // from the point that was inside.
+                    var candidateVals = apply(candidate), checked = cost(candidateVals, null);
                     if (!Number.isFinite(checked)) throw new Error('Non-finite WebGPU PT result');
-                    if (checked <= setup.initialCost) x = Float64Array.from(candidate);
+                    var candidateViolation = varianceGuards.length ? varianceViolation(candidateVals, varianceGuards) : 0;
+                    if (checked <= setup.initialCost && candidateViolation === 0) x = Float64Array.from(candidate);
                     ptInfo = accelerated.pt; ptInfo.bestChi2 = Math.min(checked, setup.initialCost);
                     itTotal += ptInfo.sweeps; progressTotal = setup.sweeps + maxIt * nStages;
                     continueFit = !accelerated.stopped;
@@ -2069,6 +2160,25 @@ function* refineSteps(problem, opts) {
         }
         var outVals = apply(x), esd = model.datasets.map(function () { return {}; }), uncertaintyIssues = model.datasets.map(function(){return {};});
         var fitWarnings=model.datasets.map(function(_,d){return instrumentProfileWarnings(model,d,outVals[d]);}), dependentIssues={};
+        // The fit stopped at the edge of the region rather than at the data: name the polynomial and where,
+        // but only when it really ends there -- the guard also cuts a step that merely passes through.
+        if (varianceHeld) model.datasets.forEach(function (D, d) {
+            var worst = null;
+            gaussianVarianceGuards(model, d).forEach(function (g) {
+                var m = guardVarianceMinimum(outVals[d], g);
+                if (!worst || m.value < worst.m.value) worst = { g: g, m: m };
+            });
+            if (!worst) return;
+            var mf = D.def.minFwhm > 0 ? D.def.minFwhm : (typeof getMinProfileFwhmDeg === 'function' ? getMinProfileFwhmDeg() : MIN_PROFILE_FWHM_DEG);
+            var gaussianFwhm = Math.sqrt(8 * Math.LN2 * Math.max(0, worst.m.value)) / 100;
+            // "at the limit" means the component sits on the floor profile.js applies to it (a quarter of
+            // the minimum resolvable FWHM); a minimum merely small next to that is an ordinary narrow peak.
+            if (!(gaussianFwhm <= 0.25 * mf)) return;
+            fitWarnings[d].push('The refinement was held at the variance limit: the Gaussian variance of ' + worst.g.shown +
+                ' reaches ' + worst.m.value.toPrecision(3) + ' cdeg^2 at 2theta ' + (2 * Math.atan(worst.m.t) * 180 / Math.PI).toFixed(2) +
+                ' deg, at the floor of the smallest resolvable Gaussian width, and no further step keeps it non-negative ' +
+                'over the fitted range. Check the resolution calibration, or refine sample size and strain instead of these coefficients.');
+        });
         function variableLabel(jj){return vars[jj].name+(nd>1?(info[jj].ds.length>1?' (shared)':' (dataset '+(info[jj].ds[0]+1)+')'):'');}
         if(!inv && ne){
             var dependence=normalDependence(Ms,ne), diagnostics=[];

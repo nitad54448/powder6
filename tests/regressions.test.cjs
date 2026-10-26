@@ -154,6 +154,46 @@ test('a phase-owned TCH Gaussian polynomial is checked over the fitted range', (
   assert.doesNotMatch(bad.fitWarnings[0][0],/inst\./,'the phase reads its own coefficients');
   assert.equal(bad.values[0]['p1.U'],17.4,'the diagnostic does not reset anything');
 });
+test('a refinement cannot step out of the region where the Gaussian variance is non-negative', () => {
+  // The data come from the profile that shipped before 2.42.14, whose variance is negative from
+  // 47.4 to 130.3 deg 2theta; the fit starts from a profile that exists. Unconstrained, the fit
+  // would walk onto that invalid profile (it is the truth), so the guard has to hold it back.
+  const build = () => {
+    const a = app(); a.S.calculation = 'rietveld'; a.S.settings.algorithm = 'lm';
+    a.state.addPhase(a.state.makePhase({ name: 'Si', sg: a.state.resolveSG(227), cell: { a: 5.4311 }, profileType: 'tch_aniso', separatedProfile: false,
+      atoms: [{ label: 'Si1', type: 'Si', x: 0, y: 0, z: 0, B: .6, occ: 1 }] }));
+    const n = 4001, ds = a.state.makeDataset({ name: 'lab', tth: Array.from({ length: n }, (_, i) => 10 + i * .03), y: Array(n).fill(100), inst: { bkgN: 3, lambda2: 0, ratio: 0 } });
+    a.S.datasets.push(ds); a.state.selectIds([ds.id]);
+    const base = { 'p1.scale': 2e-5, 'p1.Y': 0, 'p1.SL': 0, 'p1.HL': 0, bkg0: 40, bkg1: 0, bkg2: 0 };
+    Object.assign(ds.p, base, { 'p1.U': 17.4, 'p1.V': -45.2, 'p1.W': 16.5, 'p1.X': 3 });
+    ds.y = Array.from(a.core.evaluate(a.state.problemFor([ds]), 0).ycalc, v => Math.max(0, Math.round(v / 2) * 2));
+    Object.assign(ds.p, base, { 'p1.U': 2, 'p1.V': -2, 'p1.W': 5, 'p1.X': 1 });
+    Object.keys(ds.fit).forEach(k => { ds.fit[k] = false; });
+    ['p1.U', 'p1.V', 'p1.W', 'p1.X'].forEach(k => { ds.fit[k] = true; });
+    return { a, ds, n };
+  };
+  const minVariance = (v, n) => {
+    const lo = Math.tan(10 * Math.PI / 360), hi = Math.tan((10 + (n - 1) * .03) * Math.PI / 360), c = [lo, hi];
+    if (v['p1.U'] > 0) { const t = -v['p1.V'] / (2 * v['p1.U']); if (t > lo && t < hi) c.push(t); }
+    return Math.min(...c.map(t => v['p1.U'] * t * t + v['p1.V'] * t + v['p1.W']));
+  };
+  for (const pt of [false, true]) {
+    const { a, ds, n } = build(), job = a.state.jobFor(ds);
+    if (pt) { job.algorithm = 'pt'; job.pt = { chains: 2, sweeps: 10, maxTemp: 5, seed: 7 }; job.maxIter = 3; }
+    const result = a.core.refine(job), what = pt ? 'PT' : 'LM';
+    assert.equal(result.ok, true, what + ': ' + result.msg);
+    const worst = minVariance(result.values[0], n);
+    assert.ok(worst >= -1e-9, what + ' left the valid region: ' + worst + ' cdeg^2');
+    if (!pt) {
+      assert.ok(worst < 1e-3, 'the guard did not bind: ' + worst);
+      const warnings = result.fitWarnings[0].join('\n');
+      assert.match(warnings, /held at the variance limit: the Gaussian variance of p1\.U, p1\.V, p1\.W/);
+      assert.match(warnings, /at the floor of the smallest resolvable Gaussian width/);
+    }
+  }
+});
+
+
 
 test('the shipped peak-shape start values have a non-negative Gaussian variance', () => {
   // Minimum of U tan^2 + V tan + W over the whole range; GP/cos^2 = GP + GP tan^2

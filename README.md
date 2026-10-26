@@ -1,6 +1,6 @@
 # Powder 6
 
-Version **2.42.14**, 26 October 2026. See [corrections](CHANGELOG.md).
+Version **2.42.15**, 26 October 2026. See [corrections](CHANGELOG.md).
 
 Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by **Rietveld**, **Le Bail** or **WPPF**, fitted individually or in one global fit, with **structure solution** from the extracted intensities. Everything runs locally; nothing is uploaded.
 
@@ -13,7 +13,7 @@ Full documentation: [`Powder6_documentation.html`](Powder6_documentation.html): 
 - Individual or global fits, with a shared/local padlock on every parameter.
 - LM refinement, or WebGPU parallel tempering with a double-precision LM finish and automatic CPU fallback; exact derivatives where the model is linear; special positions constrained, not corrected afterwards; GSAS-II style atomic constraints.
 - Chebyshev or spline background, excluded regions, instrument calibration separate from sample broadening.
-- Profile diagnostics for negative Gaussian variance, dependent refinement variables and missing uncertainties; explanations remain with saved results. See [ill-conditioned profile refinements](Powder6_documentation.html#profile-conditioning).
+- Profile diagnostics for negative Gaussian variance, dependent refinement variables and missing uncertainties, and a refinement held at that variance boundary instead of walking past it; explanations remain with saved results. See [ill-conditioned profile refinements](Powder6_documentation.html#profile-conditioning).
 - Space-group test, charge flipping (WebGPU with CPU fallback) and a Wyckoff-site search (WebGPU), handing the atoms back for a Rietveld fit.
 - Fourier maps (difference, observed, 2Fo−Fc) of a phase from its WPPF intensities and the atoms of its model, with a peak list that adds atoms to the phase.
 - Soft distance and angle restraints in Rietveld, in the rule language of the Wyckoff search, with a guide that writes them from a PDB, MOL/SDF, XYZ or Z-matrix molecule.
