@@ -248,8 +248,10 @@ RV.panels = (function () {
     host.innerHTML = groups.map(function (g) {
       var closed = !!collapsed[g.key], anchors = g.key === 'ds' && ds.inst.bkgType === 'spline';
       // One phase per group (its own key; ':prof' and ':Atom' groups carry the same phase's other rows), so its
-      // own structure can be saved from the values of this dataset without going to Results.
+      // own structure can be saved from the values of this dataset without going to Results. Only with atoms: a
+      // cell and a space group with no sites is not a structure, and the CIF would say "Atomless phase".
       var cifPhase = g.key.indexOf(':') < 0 ? St.phaseByKey(g.key) : null;
+      if (cifPhase && !cifPhase.atoms.length) cifPhase = null;
       var header='<div class="pgroup" data-group="' + esc(g.key) + '"><button type="button" class="pg-tog" aria-expanded="' + !closed + '">' +
         (g.color ? '<i class="sw" style="background:' + g.color + '"></i>' : '') + '<span class="pg-t">' + esc(g.title) + '</span><span class="pg-s" title="' + esc(g.sub) + '">' + esc(g.sub) + '</span></button>' +
         (cifPhase ? '<button type="button" class="mini" data-phase-cif="' + esc(cifPhase.key) + '"' + dis + ' title="Save the cell, space group and atoms of ' + esc(cifPhase.name) + ' from the values of this dataset as a CIF">Save CIF…</button>' : '') +

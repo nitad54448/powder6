@@ -2,6 +2,10 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.42.17 — 26 October 2026
+
+1. **Save CIF only for a phase that has atoms.** The per-phase button of 2.42.16 appeared on every phase group, including one whose cell and space group carry no sites: that CIF says "Atomless phase: no atomic coordinates have been invented", which is a file nobody asked for. The button now appears only when the phase has atoms, and `savePhaseCif()` refuses an atomless phase with a message if it is called anyway. The `ui-consistency` browser check asserts both states — no button, then one atom, then one button whose CIF carries that atom.
+
 ## 2.42.16 — 26 October 2026
 
 1. **A separated profile was not checked at all.** The variance guard and its diagnostic (2.42.14, 2.42.15) read `inst.GU, inst.GV, inst.GW` for every non-split resolution type, but a separated profile is the instrument's `U, V, W` whatever its type (`profileParams` writes `inst.U …` from `instrumentProfileParams`). For a dataset whose `resolutionType` is `gsas_cw` — older projects, and the fixture the `ui-interactions` browser check uses — the lookup found nothing, fell back to zero and reported a variance of zero: no warning, and no boundary for the refinement. The names now follow the owner: `U, V, W` for the instrument and for a TCH phase, `GU, GV, GW` (with GP folded in) for a phase-owned pseudo-Voigt, `U_L…`/`GU_L…` for the two split flanks. A Node test walks all four resolution types; the browser check is what caught it.

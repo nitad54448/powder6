@@ -427,6 +427,7 @@ RV.results = (function () {
      fit holds several phases. */
   function savePhaseCif(ph, ds) {
     if (!ph) return;
+    if (!ph.atoms.length) { ui.toast(ph.name + ' has no atoms: a cell and a space group alone are not a structure to save.', 'warn'); return; }
     var list = (ds ? [ds] : St.selected()).filter(function (d) { return St.hasPhase(d, ph); });
     if (!list.length) { ui.toast('No selected dataset holds ' + ph.name + ' right now.', 'warn'); return; }
     var kind = ph.method === 'rietveld' && S.calculation === 'rietveld' ? 'fitted values' : 'current values, not fitted';

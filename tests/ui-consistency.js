@@ -49,7 +49,10 @@
     check(w.getComputedStyle(helpIcon).display!=='none','An open accordion hides its question-mark icon');
     limits.open=false;await frame();
     record('the question mark of a block title appears with the block');
-    // Datasets → one Save CIF for each phase, from the values of the dataset being edited
+    // Datasets → one Save CIF for each phase that has atoms, from the values of the dataset being edited
+    check(!q('[data-phase-cif]'),'An atomless phase offers a Save CIF button: a cell and a group are not a structure');
+    const cell=St.cellOf(S.phases[0],S.datasets[0].p);
+    St.addAtomTo(S.phases[0],{label:'O1',type:'O',x:0,y:0,z:0,occ:1,B:.5},cell);St.phaseChanged(S.phases[0]);RV.bus.emit('phases');await frame();
     const phaseCif=all('[data-phase-cif]');
     check(phaseCif.length===1 && phaseCif[0].getAttribute('data-phase-cif')===S.phases[0].key,'The phase group has no single Save CIF button: '+phaseCif.length);
     const originalDownload=RV.ui.download;let cifFile=null;
@@ -58,8 +61,9 @@
     await frame();
     check(cifFile && /^structure_Reference_phase_.*\.cif$/.test(cifFile.name),'No CIF was written: '+(cifFile && cifFile.name));
     check(/_cell_length_a\s+5(?:\.0+)?\b/.test(cifFile.text) && /_space_group_IT_number\s+1\b/.test(cifFile.text),'The phase CIF lacks the cell or the space group');
+    check(/_atom_site_label[\s\S]*\bO1\b/.test(cifFile.text),'The phase CIF lacks its atom');
     check(!/data_d2_/.test(cifFile.text),'The phase CIF carries another dataset');
-    record('each phase in Datasets saves its own structure as a CIF');
+    record('each phase with atoms saves its own structure as a CIF from Datasets');
     check(!q('[data-fitmode-visibility]').hidden,'Batch mode is hidden for two selected datasets');
     q('[aria-label="Batch fit mode"] [data-fitmode="global"]').click();await frame();
     check(RV.app.fitMode()==='global' && all('[data-fitmode="global"]').every(b=>b.getAttribute('aria-pressed')==='true'),'Batch global mode is not synchronized');
