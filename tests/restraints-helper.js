@@ -18,18 +18,27 @@
     ph.restraints.text='Si O1 - 1.90/2.10';
     RV.app.showTab('datasets');await frame();
     var constraints=q('#dataset-constraints-host').closest('details'),restraints=q('#dataset-restraints').closest('details');constraints.open=true;restraints.open=true;
-    check(constraints.querySelector('summary').textContent==='Constraints','Constraints heading renamed');
+    check(constraints.querySelector('summary .acc-t').textContent==='Constraints','Constraints heading renamed');
     check(w.getComputedStyle(q('.ac-host'),'::before').content==='none','no duplicate inside Constraints title');
     check(constraints.nextElementSibling===restraints && restraints.nextElementSibling.id==='dataset-links-group','Restraints is between Constraints and Links');
+    // every one of these sections carries its help in the question mark of its title, and Parameter links and sharing is
+    // a sibling of Links, not an accordion inside it
+    const headOf=k=>q('[data-acc="'+k+'"] > summary'),titleHelp=k=>{const h=headOf(k)&&headOf(k).querySelector(':scope > .acc-help');return h?(h.getAttribute('data-help')||h.getAttribute('data-help-html')||h.getAttribute('title')||''):'';};
+    const icon=(k)=>{const d=q('#dataset-'+k+'-group')||q('#dataset-'+k+'-host').closest('details');return d&&d.querySelector(':scope > summary .acc-help');};
+    check(icon('limits') && /keeps every parameter between its limits/.test(icon('limits').getAttribute('data-help')||''),'the sharing title has no help icon: '+(icon('limits')&&icon('limits').outerHTML));
+    check(!/A refinement keeps every parameter between/.test(q('#dataset-limits-host').textContent),'the sharing description is still a paragraph');
+    check(icon('links') && /dependent parameter follows one independent source/.test(icon('links').getAttribute('data-help')||'') && !/A dependent parameter follows/.test(q('#dataset-links').textContent),'the Links title has no help icon or the description is still a paragraph');
+    check(constraints.nextElementSibling===restraints && restraints.nextElementSibling.id==='dataset-links-group' && q('#dataset-links-group').nextElementSibling.id==='dataset-limits-group' && q('#dataset-copy').previousElementSibling.id==='dataset-limits-group','Parameter links and sharing is not a sibling of Links: '+[...q('#dataset-detail').children].map(n=>n.id||n.tagName).join(','));
+    check(/Equivalence/.test(q('[data-constraints-help]').getAttribute('data-help')||''),'the Constraints title icon has no rule help');
     check(q('#dataset-restraints .rs-main').firstElementChild.querySelector('[data-rs-text]'),'active restraints textbox comes first');
     check(!q('#dataset-restraints .rs-builder') && !q('#dataset-restraints .rs-guide'),'helpers are absent from the inline editor');
     check(!q('#dataset-restraints [data-rs-on]'),'no Apply checkbox');
     check(q('#dataset-restraints .ac-phase h3 .sw-inline'),'phase heading has its colour swatch');
-    check(!q('#dataset-restraints .rs-rule-help') && (q('#dataset-restraints [aria-label="Restraint rules and tolerances"]').getAttribute('data-help-html') || '').includes('angle=3'),'rule explanation is an inline tooltip');
+    check(!q('#dataset-restraints .rs-rule-help') && !q('#dataset-restraints [aria-label="Restraint rules and tolerances"]') && (q('[data-restraints-help]').getAttribute('data-help-html') || '').includes('angle=3'),'the rule explanation is not in the title icon alone: '+q('#dataset-restraints').innerHTML.slice(0,200));
     check((q('[data-constraints-help]').title || q('[data-constraints-help]').getAttribute('data-help') || '').includes('Equivalence') && !q('#dataset-atomic-constraints .ac-help'),'constraint rules appear only in the inline help icon');
     check(q('#dataset-restraints [data-rs-text]').value===ph.restraints.text,'textbox shows active restraints');
-    check(q('#dataset-restraints').firstElementChild.classList.contains('hint') && q('#dataset-restraints').firstElementChild.nextElementSibling.classList.contains('ac-phase') && q('#dataset-restraints').querySelectorAll('[aria-label="Restraint rules and tolerances"]').length===1,'restraint description and help appear once before the phase headings');
-    check(q('#dataset-copy').previousElementSibling.id==='dataset-links-group' && !q('#dataset-copy').nextElementSibling,'Copy accordion is last below Links');
+    check(q('#dataset-restraints').firstElementChild.classList.contains('ac-phase') && !/Restraints guide bond distances/.test(q('#dataset-restraints').textContent) && /Restraints guide bond distances/.test(q('[data-restraints-help]').getAttribute('data-help-html')||''),'the restraint description is not in the title icon alone');
+    check(q('#dataset-copy').previousElementSibling.id==='dataset-limits-group' && !q('#dataset-copy').nextElementSibling,'Copy accordion is last, below Parameter links and sharing');
     var second=St.insertDatasets([St.makeDataset({name:'Other',tth:[10,20,30],y:[1,2,1]})],{estimate:false,select:false})[0];RV.bus.emit('datasets');await frame();
     check(!q('#dataset-copy').hidden && q('#dataset-copy .clone-bar'),'Copy controls are in their accordion');
     var copied='';Object.defineProperty(w.navigator,'clipboard',{configurable:true,value:{writeText:async function(text){copied=text;}}});

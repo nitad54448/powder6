@@ -2,6 +2,21 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.42.3 — 26 October 2026
+
+1. **A smaller question mark.** The help icon is 80 % of a small control (`--help-q-h`, `--help-q-fs` from `--ctl-h-sm` and `--fs-sm`) everywhere it is used, so a title line carries it without shouting. It is the same widget in every panel, and the help it opens is unchanged.
+2. **Datasets: four more titles.** Constraints (its rule help), Restraints (the rule reference and what restraints do) and Links (what a link is: “A dependent parameter follows one independent source exactly. Links can connect different phases or datasets for this method.”) each carried a question mark in, or above, their body; they are in the title now, at the right end, like the Structure blocks. The Restraints description and the Links description are gone from the bodies; the Constraints guidance (“Choose a relationship …, then click Add”) stays, because it says what to do rather than what the section is.
+3. **Parameter links and sharing is its own section.** It was an accordion nested inside Links (moved there and renamed at start-up); it is a sibling of Links now, directly below it and above Copy, with its explanation (“A refinement keeps every parameter between its limits …”) in its title icon instead of a paragraph. `index.html` carries the section, `rv_workspace.js` only places it after Links.
+4. **Tested.** `tests/restraints-helper.js` checks the four title icons and their help, that the two descriptions left the bodies, that the restraint rule reference is in the title, and the order Constraints → Restraints → Links → Parameter links and sharing → Copy.
+
+## 2.42.2 — 26 October 2026
+
+1. **The explanations of the Structure blocks are in their titles.** WPPF intensities, Space group, Charge flipping and Wyckoff search each began with a paragraph of explanation above the form; all four are now the question mark at the right of the title, like the block-level help introduced in 2.42.1 (`BLOCK_HELP` in `rv_solve.js`, `block()`'s optional help argument). The form starts directly under its title.
+2. **Space group.** The title carries one text for both tools — the probability of each set of absences from the WPPF intensities and their correlation (Markvardsen, David, Johnson and Shankland 2001), and finding the symmetry of an atomic model, conversion to the detected group and the Moyo engine. The two sub-blocks keep only what the title does not say: the condition-free group a complete test needs, and which model ADDSYM reads.
+3. **Charge flipping.** The paragraph below the formula unit is gone; the title's help states the method (Oszlányi and Sütő 2004, GPU where there is one, CPU otherwise, the peaks put on the origin of the group and reduced to the asymmetric unit) and then what the formula unit and Z are used for, with the density the form currently gives.
+4. **Fourier map.** Its question mark was a button at the top of the form; it is the same icon in the title now, so all five blocks of Structure read as one column of titles.
+5. **Tested.** `tests/solve-fixes.js` checks each of the five titles for its icon and label, that the paragraphs are gone from the bodies, and that the charge-flipping help still carries the method and formula text.
+
 ## 2.42.1 — 26 October 2026
 
 1. **One help icon, in the title.** The Charge flipping form carried a question mark after Z (a "?" whose help was the density hint) beside a second one for the formula help, so the row ended in two marks and the density hint sat under the Z field instead of with the rest. Both are gone from the row: `formulaRow()` renders the formula unit and Z only, and `block()` takes an optional help icon that sits at the right end of the title (`powder6.css`: `.acc > summary .acc-help`, right-justified and centred on the title line). `renderDensity()` keeps that icon's help current — the formula and Z explanation plus the density the form gives now, in the warning colour while the formula cannot be read or the density is impossible — so nothing the removed marks said is lost.

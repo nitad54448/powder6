@@ -24,7 +24,9 @@
     q('#tab-structure').click();await frame();
     const set=(sel,v)=>{const e=q(sel);e.value=v;e.dispatchEvent(new w.Event('input',{bubbles:true}));e.dispatchEvent(new w.Event('change',{bubbles:true}));};
     set('#sv-formula-wy','PbO2');set('#sv-z-wy','2');
-    set('#sv-wy-particles','256');set('#sv-wy-iterations','10');set('#sv-wy-restarts','20');
+    // a typed seed: the whole page then depends on these settings alone, not on the draw of the moment (the blank-seed
+    // case is checked further down, on the run that reports whatever seed it drew)
+    set('#sv-wy-particles','256');set('#sv-wy-iterations','10');set('#sv-wy-restarts','20');set('#sv-wy-seed','20261026');
     // ten rules: beyond the eight the kernel used to hold
     set('#sv-wy-constraints',['Pb O - /4.5','Pb O - /4.6','Pb O - /4.7','Pb O - /4.8','O O - /4.0','O O - /4.1'].join('\n'));
     await frame();
@@ -45,7 +47,7 @@
       set('#sv-wy-seed',invalid);q('#sv-wy-run').click();await wait(50);
       check(!RV.solve.state.wyRun && !S.busy && /seed is a whole number/.test(q('#status-msg').textContent),'An invalid seed started a search: '+invalid+' — '+q('#status-msg').textContent);
     }
-    set('#sv-wy-seed','');
+    set('#sv-wy-seed','20261026');
     record('An invalid seed is refused before starting a worker');
     const Orig=w.Worker,progress=[];
     w.Worker=function(url,opts){const real=new Orig(url,opts);if(String(url).includes('wyckoff_worker'))real.addEventListener('message',e=>{if(e.data && e.data.type==='wy-progress')progress.push(e.data);});return real;};
@@ -74,18 +76,17 @@
     check(wy.o.restarts===20 && full.every(p=>p.restarts===20),'The requested restart count changed before reaching the GPU');
     for(const wave of waves)check(full.some(p=>p.wave===wave && p.restart===20 && p.generation===p.generations-1),'A full-search wave did not complete restart 20');
     check(progress.filter(p=>p.stage==='screen').every(p=>p.restarts===1),'Screening must use one start');
-    // the blank seed drew one; the search used it and the Log reports it, so the run can be repeated
-    check(Number.isSafeInteger(wy.o.seed) && wy.o.seed>=0 && wy.o.seed<=4294967295,'The search did not record the seed it ran from: '+wy.o.seed);
-    check(shown.includes('seed '+wy.o.seed+'.'),'The Log does not report the seed: '+shown.slice(0,400));
-    check(wy.results.seed===wy.o.seed,'The search result reports a different seed than the job carried: '+wy.results.seed+' vs '+wy.o.seed);
-    record('A blank seed draws one, the search runs from it and the Log and result report it',{seed:wy.o.seed});
+    // the typed seed is what the search ran from, and the Log and the result report it, so the run can be repeated
+    check(wy.o.seed===20261026 && wy.results.seed===20261026,'The typed seed did not reach the search: '+wy.o.seed+' / '+wy.results.seed);
+    check(shown.includes('seed 20261026.'),'The Log does not report the seed: '+shown.slice(0,400));
+    record('A typed seed reaches the worker, the Log and the result',{seed:wy.o.seed});
     const cpuCheck=wy.results.wyckoffResult.cpuCheck;
     check(cpuCheck && Number.isFinite(cpuCheck.cpu) && Number.isFinite(cpuCheck.gpu) && cpuCheck.delta<=1e-3,'CPU and GPU Wyckoff fitness disagree: '+JSON.stringify(cpuCheck));
     check(wy.sols[0].refinement && Number.isFinite(wy.sols[0].refinement.R),'CPU coordinate refinement did not finish');
     record('Every full-search wave completes 20 requested starts; GPU fitness agrees with the CPU and coordinate refinement completes',{waves:waves.length,cpuCheck});
 
     // a shaped shell: the kernel is compiled with neighbour vectors and charges the angles
-    set('#sv-wy-constraints','Pb O 6 1.9/2.9 oct');set('#sv-wy-iterations','60');set('#sv-wy-restarts','1');set('#sv-wy-seed','424242');await frame();
+    set('#sv-wy-constraints','Pb O 6 1.9/2.9 oct');set('#sv-wy-iterations','60');set('#sv-wy-restarts','1');set('#sv-wy-seed','');await frame();
     check(!/not a shape|needs exactly/.test(q('#sv-wy-cstat').textContent),'The octahedron line was refused: '+q('#sv-wy-cstat').textContent);
     set('#sv-wy-constraints','Pb O 4 1.9/2.9 oc');await frame();
     check(/needs exactly 6 neighbours/.test(q('#sv-wy-cstat').textContent),'A wrong count for the shape was not reported: '+q('#sv-wy-cstat').textContent);
@@ -105,10 +106,11 @@
     // the form's percentage reaches the search, for a counted shell; the first run (0 %, bare rules) had none
     check(/Polyhedron moves: 30 %/.test(log2) && !/Polyhedron moves/.test(log),'Polyhedron moves did not follow the form: '+(log2.match(/Polyhedron[^\n]*/) || ['none'])[0]);
     record('Polyhedron moves follow the form, for a counted shell only');
-    // a typed seed is what the search runs from, so the run can be repeated exactly (a kept result carries it too)
-    check(wy2.o.seed===424242 && wy2.results.seed===424242,'The typed seed did not reach the search: '+wy2.o.seed+' / '+(wy2.results && wy2.results.seed));
-    check(log2.includes('seed 424242.'),'The Log does not report the typed seed');
-    record('A typed seed reaches the worker and is reported, so a search repeats exactly');
+    // a blank field draws a new seed for this run, which the result and the Log report: typing it back repeats the run
+    check(Number.isSafeInteger(wy2.o.seed) && wy2.o.seed>=0 && wy2.o.seed<=4294967295 && wy2.o.seed!==20261026,'A blank seed did not draw a new one: '+wy2.o.seed);
+    check(wy2.results.seed===wy2.o.seed,'The search result reports a different seed than the job carried: '+(wy2.results && wy2.results.seed)+' vs '+wy2.o.seed);
+    check(log2.includes('seed '+wy2.o.seed+'.'),'The Log does not report the drawn seed');
+    record('A blank seed draws one, reported in the Log and in the result (a kept result carries it too)',{seed:wy2.o.seed});
 
     check(!errors.length,'Browser errors: '+errors.join('; '));record('no browser errors');
     window.browserTestResult={ok:true,results};

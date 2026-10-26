@@ -71,10 +71,16 @@ RV.restraints = (function(){
     if(!host)return;var list=S.phases.filter(function(ph){return ds && St.hasPhase(ds,ph) && ph.atoms.length>=2;}),signature=list.map(function(ph){return ph.key+':'+ph.name+':'+ph.method+':'+RV.plots.phaseVar(S.phases.indexOf(ph))+':'+ph.atoms.map(function(a){return a.label;}).join(',');}).join('|');
     if(host.dataset.signature===signature){host.querySelectorAll('[data-rs-geom]').forEach(function(node){var editor=node.closest('.rs-editor'),ph=St.phaseByKey(editor.dataset.rsPhase);if(ph)node.innerHTML=geometry(ph,AR.normalize(ph.restraints));});return;}
     host.dataset.signature=signature;
-    host.innerHTML=introHTML()+(list.length?list.map(function(ph){return '<section class="ac-phase"><h3><i class="sw-inline" style="background:'+RV.plots.phaseVar(S.phases.indexOf(ph))+'"></i>'+esc(ph.name)+' <span class="sub">'+esc(RVCore.METHOD_LABELS[ph.method])+(ph.method==='rietveld'?'':', restraints unused')+'</span></h3><div data-rs-dataset="'+esc(ph.key)+'"></div></section>';}).join(''):'<p class="hint">The dataset needs a phase with at least two atoms. Restraints apply in Rietveld fits.</p>');
+    // The block's help is the question mark of its accordion title (index.html): the rule reference and this
+    // description go there, so the editor starts with the rule box itself.
+    var head=host.closest('details'),help=head && head.querySelector(':scope > summary [data-restraints-help]');
+    if(help && !help.getAttribute('data-help-html'))help.setAttribute('data-help-html', introHTML()+ruleHelp());
+    host.innerHTML=(list.length?list.map(function(ph){return '<section class="ac-phase"><h3><i class="sw-inline" style="background:'+RV.plots.phaseVar(S.phases.indexOf(ph))+'"></i>'+esc(ph.name)+' <span class="sub">'+esc(RVCore.METHOD_LABELS[ph.method])+(ph.method==='rietveld'?'':', restraints unused')+'</span></h3><div data-rs-dataset="'+esc(ph.key)+'"></div></section>';}).join(''):'<p class="hint">The dataset needs a phase with at least two atoms. Restraints apply in Rietveld fits.</p>');
     list.forEach(function(ph){mount(host.querySelector('[data-rs-dataset="'+ph.key+'"]'),ph);});
   }
-  function introHTML(){return '<p class="hint">Restraints guide bond distances and geometry during Rietveld refinement. <button type="button" class="help-q" data-help-html="'+esc(ruleHelp())+'" aria-label="Restraint rules and tolerances">?</button></p>';}
+  // The description of the block: the help of its accordion title (with the rule reference, see renderDatasets) and the
+  // introduction of the dialog that holds the full editor, where the rules are one click away.
+  function introHTML(withHelp){return '<p class="hint">Restraints guide bond distances and geometry during Rietveld refinement.'+(withHelp?' <button type="button" class="help-q" data-help-html="'+esc(ruleHelp())+'" aria-label="Restraint rules and tolerances">?</button>':'')+'</p>';}
   function html(ph){
     var r=AR.normalize(ph.restraints),dis=S.busy?' disabled':'';
     if(ph.atoms.length<2)return '<p class="hint">Restraints relate atoms: the phase needs at least two.</p>';
@@ -229,7 +235,7 @@ RV.restraints = (function(){
 
   async function edit(phase){
     if(S.busy)return;var ph=phase && phase.key?phase:St.currentPhase();if(!ph||ph.atoms.length<2){ui.toast('Select a phase with at least two atoms.','warn');return;}
-    await ui.modal({title:'Restraints · '+ph.name,wide:true,body:introHTML()+'<div data-rs-host></div>',buttons:[{label:'Close',primary:true,value:null}],onOpen:function(b){mount(b.querySelector('[data-rs-host]'),ph);}});
+    await ui.modal({title:'Restraints · '+ph.name,wide:true,body:introHTML(true)+'<div data-rs-host></div>',buttons:[{label:'Close',primary:true,value:null}],onOpen:function(b){mount(b.querySelector('[data-rs-host]'),ph);}});
   }
   function init(){
     document.addEventListener('click',function(e){if(e.target.closest('[data-restraints-edit]'))edit();});

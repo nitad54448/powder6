@@ -13,15 +13,15 @@ RV.fourier = (function(){
   function $(q){return document.querySelector(q);}
   function SV(){return RV.solve.state;}
   function saveOpts(){var o=FO.opts;St.store('fourier',{type:o.type,dmin:o.dmin,fine:o.fine,from:o.from,level:o.level,minSigma:o.minSigma,cell:o.cell,atoms:o.atoms});}
-  var HELP={type:'The phases always come from the model.',dmin:'Blank: the smallest d of the extracted reflections.',fine:'Twice as many points per axis: smoother maps and better peak positions, a little slower.',from:'Which values of the atoms give the phases of F.',minSigma:'Peaks weaker than this, in standard deviations of the map, are not listed. Peaks of 3σ or less are usually noise in a powder map.'};
+  var HELP={block:'A Fourier map from the WPPF intensities of the phase and dataset chosen above, with the phases of the atoms of the model: a difference map shows where the model lacks electron density (or scattering length) and where it has too much, the observed map the atoms the data support. A powder line holds several reflections, so each overlap group is shared among them in proportion to the calculated intensities; the map is only as good as that sharing and the model. It works for one phase, with one dataset or the one you choose in Structure.',
+    type:'The phases always come from the model.',dmin:'Blank: the smallest d of the extracted reflections.',fine:'Twice as many points per axis: smoother maps and better peak positions, a little slower.',from:'Which values of the atoms give the phases of F.',minSigma:'Peaks weaker than this, in standard deviations of the map, are not listed. Peaks of 3σ or less are usually noise in a powder map.'};
   function row(key,label,control,help){return '<label for="f_'+key+'" title="'+esc(help)+'">'+esc(label)+'</label><div>'+control+'</div>';}
   function typeLabel(t){return (TYPES.filter(function(x){return x[0]===t;})[0]||[t,t])[1].split('  ')[0].trim();}
 
   // ---------------------------------------------------------------- the form (Commands → Structure)
   function html(block){
     var o=FO.opts;
-    var form='<button type="button" class="help-q" title="A Fourier map from the WPPF intensities of the phase and dataset chosen above, with the phases of the atoms of the model: a difference map shows where the model lacks electron density (or scattering length) and where it has too much, the observed map the atoms the data support. A powder line holds several reflections, so each overlap group is shared among them in proportion to the calculated intensities; the map is only as good as that sharing and the model. It works for one phase, with one dataset or the one you choose in Structure." aria-label="About Fourier maps">?</button>'+
-      '<div class="form-grid sv-form">'+
+    var form='<div class="form-grid sv-form">'+
         row('fo-type','Map','<select id="f_fo-type" data-key="fo-type" title="'+esc(HELP.type)+'">'+TYPES.map(function(t){return '<option value="'+t[0]+'"'+(t[0]===o.type?' selected':'')+'>'+esc(t[1])+'</option>';}).join('')+'</select>',HELP.type)+
         row('fo-dmin','Resolution d (Å)','<input id="f_fo-dmin" data-key="fo-dmin" class="num" value="'+esc(o.dmin)+'" placeholder="Auto" inputmode="decimal" autocomplete="off" title="'+esc(HELP.dmin)+'">',HELP.dmin)+
         row('fo-minsigma','Peaks above (σ)','<input id="f_fo-minsigma" data-key="fo-minsigma" class="num" value="'+esc(String(o.minSigma))+'" inputmode="decimal" autocomplete="off" title="'+esc(HELP.minSigma)+'">',HELP.minSigma)+
@@ -39,7 +39,8 @@ RV.fourier = (function(){
           '<button type="button" data-fo="reset" hidden>Reset view</button><button type="button" data-fo="png">Save PNG</button><button type="button" data-fo="save">Save map</button></div>'+
         '<canvas id="sv-fo-canvas" class="density-canvas" aria-label="Fourier map isosurface. Drag to rotate and wheel to zoom."></canvas><p class="hint" id="sv-fo-note"></p></section>',true,null,'sub');
     var peaks=block('fo-peaks','Peaks','<div id="sv-fo-peaks"><p class="hint">No map yet.</p></div>',true,'id="sv-fo-peaks-n"','sub');
-    return block('wppf-fo','Fourier map',form+map+peaks,false,'id="sv-fo-sum"');
+    // the help of the block belongs in the question mark at the right of its title, like the blocks above it
+    return block('wppf-fo','Fourier map',form+map+peaks,false,'id="sv-fo-sum"',null,{text:HELP.block,label:'About Fourier maps'});
   }
 
   // ---------------------------------------------------------------- the calculation

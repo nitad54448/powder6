@@ -75,10 +75,19 @@
     // the right end of its title, and using it must not open or close the block it explains.
     check(!q('#sv-formula-cf').closest('.sv-row').querySelector('.help-q'),'The charge-flipping formula row still carries a question-mark button');
     const cfHead=q('[data-acc="wppf-cf"] > summary'),cfHelp=cfHead.querySelector('.acc-help');
-    check(cfHelp && cfHead.lastElementChild===cfHelp && cfHelp.getAttribute('aria-label')==='About the formula unit and Z' && /only to name its peaks/.test(cfHelp.getAttribute('data-help')||''),'The Charge flipping title has no help icon with the formula help: '+(cfHelp && cfHelp.outerHTML));
+    check(cfHelp && cfHead.lastElementChild===cfHelp && cfHelp.getAttribute('aria-label')==='About charge flipping' && /Oszlányi/.test(cfHelp.getAttribute('data-help')||'') && /only to name its peaks/.test(cfHelp.getAttribute('data-help')||''),'The Charge flipping title has no help icon with the method and formula help: '+(cfHelp && cfHelp.outerHTML));
+    check(!/Oszlányi|the formula unit names them/.test(q('[data-acc="wppf-cf"] .acc-body').textContent),'The charge-flipping explanation is still a paragraph under the form');
     const cfOpen=q('[data-acc="wppf-cf"]').open;cfHelp.click();await frame();
     check(q('[data-acc="wppf-cf"]').open===cfOpen,'The help icon toggled its block');
-    record('the formula help of charge flipping is a question mark at the right of its title, and it does not toggle the block');
+    record('the help of charge flipping is a question mark at the right of its title, and it does not toggle the block');
+    // The other blocks of Structure carry their help the same way, and no longer as a paragraph above the form.
+    const headHelp=k=>{const h=q('[data-acc="'+k+'"] > summary .acc-help');return h?(h.getAttribute('data-help')||'')+'\u0001'+(h.getAttribute('aria-label')||''):'';};
+    const bodyOf=k=>q('[data-acc="'+k+'"] .acc-body').textContent;
+    check(/^WPPF determines reflection intensities during fitting/.test(headHelp('wppf-source')) && /About WPPF intensities$/.test(headHelp('wppf-source')) && !/WPPF determines reflection intensities/.test(bodyOf('wppf-source')),'WPPF intensities: help not in its title or still a paragraph: '+headHelp('wppf-source'));
+    check(/probability of each set of systematic absences/.test(headHelp('wppf-sgt')) && /Moyo algorithm/.test(headHelp('wppf-sgt')) && /About the space group tools$/.test(headHelp('wppf-sgt')),'Space group: help not in its title: '+headHelp('wppf-sgt'));
+    check(/Atoms of the formula unit on the Wyckoff positions/.test(headHelp('wppf-wy')) && /It needs WebGPU/.test(headHelp('wppf-wy')) && !/Atoms of the formula unit on the Wyckoff positions/.test(bodyOf('wppf-wy')),'Wyckoff search: help not in its title or still a paragraph: '+headHelp('wppf-wy'));
+    check(/A Fourier map from the WPPF intensities/.test(headHelp('wppf-fo')) && /About Fourier maps$/.test(headHelp('wppf-fo')) && !q('[data-acc="wppf-fo"] .acc-body .help-q'),'Fourier map: help not in its title: '+headHelp('wppf-fo'));
+    record('WPPF intensities, Space group, Wyckoff search and Fourier map carry their help in a question mark at the right of the title');
     fi.value='';fi.dispatchEvent(new w.Event('change',{bubbles:true}));await frame();
     check(/Optional here/.test(dens('cf')) && /Required/.test(dens('wy')),'Empty-formula hints: '+dens('cf')+' | '+dens('wy'));
     fi.value='Si';fi.dispatchEvent(new w.Event('change',{bubbles:true}));await frame();

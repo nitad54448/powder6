@@ -311,6 +311,15 @@ RV.solve = (function () {
     cf: 'Charge flipping uses the formula unit and Z only to name its peaks: the strongest scatterer goes on the highest peaks, each element on count × Z atoms per cell. The map itself does not depend on them. The Wyckoff search below uses the same values.',
     wy: 'The Wyckoff search places these atoms and no others: count × Z of each element per cell, on the Wyckoff positions of the space group. Z = Auto tries every Z with a plausible density. Charge flipping above uses the same values to name its peaks.'
   };
+  // The help of a block goes in the question mark at the right of its title (see block() in render(), and
+  // rv_fourier.html), not in a paragraph above the form: one line of explanation under a title is a paragraph the
+  // reader has to step over every time, and the form is what they came for.
+  var BLOCK_HELP = {
+    wppf: 'WPPF determines reflection intensities during fitting. Select their source here; uncertainties and correlations are prepared automatically for the powder space-group test, charge flipping and Wyckoff search. ADDSYM uses an atomic model independently.',
+    sgt: 'The probability of each set of systematic absences of the Laue class, from the WPPF intensities and their full correlation (Markvardsen, David, Johnson and Shankland 2001) or find symmetry present in the atomic positions, conversion to the detected space group, Moyo algorithm.',
+    cf: 'Charge flipping (Oszlányi and Sütő 2004) on the extracted intensities, on the GPU where there is one, otherwise on the CPU. The peaks of the map, put on the origin of the space group and reduced to the asymmetric unit, become sites; the formula unit names them. ' + FORMULA_USE.cf,
+    wy: 'Atoms of the formula unit on the Wyckoff positions of the space group, fitted to the extracted intensities directly (|Fcalc|² against them, weighted by 1/σ²): the search of powder5, in its worker. It needs WebGPU.'
+  };
   // k: 'cf' or 'wy', the method whose row the hint is under
   function densityHint(k) {
     var comp = parseFormula(SV.opts.formula), Z = typedZ(), raw = String(SV.opts.formula || '').trim();
@@ -1082,26 +1091,24 @@ RV.solve = (function () {
       (gpuBudget.checked && !gpuBudget.available ? '<p class="hint sv-warn">WebGPU was not found: the Wyckoff search cannot run here. Turn on hardware (graphics) acceleration in the browser settings, restart the browser and reload this page; see Troubleshooting in the documentation.</p>' : '') +
       // Intensity-based tools share this preparation step; ADDSYM is independent.
       block('wppf-source', 'WPPF intensities',
-        '<p class="hint">WPPF determines reflection intensities during fitting. Select their source here; uncertainties and correlations are prepared automatically for the powder space-group test, charge flipping and Wyckoff search. ADDSYM uses an atomic model independently.</p>' +
         '<div class="sv-row" id="sv-extract-source"><span class="sv-lbl">Phase</span><div class="phase-chips" id="sv-phases"></div>' +
           '<label class="sv-lbl" for="sv-ds">in</label><select id="sv-ds" aria-label="Dataset"></select>' +
           '<span id="sv-switch"></span><span class="tool-gap"></span>' +
           '</div>' +
         '<p class="hint" id="sv-extract-note" role="status"></p>' +
-        '<div class="sv-int" id="sv-int"></div>', true) +
+        '<div class="sv-int" id="sv-int"></div>', true, null, null, { text: BLOCK_HELP.wppf, label: 'About WPPF intensities' }) +
       block('wppf-sgt', 'Space group',
         block('sgt-test', 'Test · powder intensities',
-        '<p class="hint">The probability of each set of systematic absences of the Laue class, from the WPPF intensities and their full correlation (Markvardsen, David, Johnson and Shankland 2001). For a complete test, fit in the space group of the Laue class with no absences (P2/m, Pmmm, P4/mmm, Pm-3m …): a reflection the WPPF fit did not contain was never measured.</p>' +
+        '<p class="hint">For a complete test, fit in the space group of the Laue class with no absences (P2/m, Pmmm, P4/mmm, Pm-3m …): a reflection the WPPF fit did not contain was never measured.</p>' +
         '<p class="buttons sv-actions"><button type="button" class="primary" data-sv="sgt">Test the space groups</button>' +
           '<label class="sv-inline" for="sv-sgtn">Number of reflections</label><input id="sv-sgtn" type="number" min="4" step="1" class="num sv-short" data-opt="sgtN" inputmode="numeric" aria-describedby="sv-sgtn-note" title="Whole number of lowest-angle determined intensities to test"></p><p class="hint" id="sv-sgtn-note"></p>' +
         '<div id="sv-sgt-out"></div>', true, null, 'sub') +
         block('sgt-addsym', 'ADDSYM · atomic model',
-          '<p class="hint">Find symmetry present in the atomic positions, then preview conversion to the detected space group. This uses the starting model, a dataset’s Rietveld model, or after a Le Bail or WPPF fit the dataset’s refined cell with its atoms; it does not need extracted intensities.</p>' +
+          '<p class="hint">This uses the starting model, a dataset’s Rietveld model, or after a Le Bail or WPPF fit the dataset’s refined cell with its atoms; it does not need extracted intensities.</p>' +
           '<div class="form-grid sv-form">'+select('sv-sym-phase','Phase',St.currentPhase() && St.currentPhase().key,S.phases.map(function(p){return [p.key,p.name+' · '+St.sgText(p.sg)];}),'Choose a phase with atoms.','')+'</div>' +
-          '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-addsym" data-sv="find-symmetry" title="Find higher symmetry of the selected atomic model">Find higher symmetry…</button><button type="button" id="sv-subgroups" data-sv="find-subgroups" title="List the maximal subgroups of the space group of the phase (translationengleiche and klassengleiche) and convert the atoms to one of them">Subgroups…</button></p>',true,null,'sub'), false) +
+          '<p class="buttons sv-actions"><button type="button" class="primary" id="sv-addsym" data-sv="find-symmetry" title="Find higher symmetry of the selected atomic model">Find higher symmetry…</button><button type="button" id="sv-subgroups" data-sv="find-subgroups" title="List the maximal subgroups of the space group of the phase (translationengleiche and klassengleiche) and convert the atoms to one of them">Subgroups…</button></p>',true,null,'sub'), false, null, null, { text: BLOCK_HELP.sgt, label: 'About the space group tools' }) +
       block('wppf-cf', 'Charge flipping',
           formulaRow('cf') +
-          '<p class="hint">Charge flipping (Oszlányi and Sütő 2004) on the extracted intensities, on the GPU where there is one, otherwise on the CPU. The peaks of the map, put on the origin of the space group and reduced to the asymmetric unit, become sites; the formula unit names them.</p>' +
           '<p><label class="chk"><input type="checkbox" id="sv-cf-adaptive" data-cf="adaptive"'+(o.cf.adaptive?' checked':'')+'> Adapt search to data quality</label></p>' +
           '<div class="form-grid sv-form">' +
             select('sv-cf-grid', 'Grid', o.cf.grid, [['auto', 'Auto'], ['32', '32³'], ['64', '64³'], ['128', '128³']], 'Points per axis; Auto: the smallest power of two that holds every reflection.', 'data-cf="grid"') +
@@ -1130,10 +1137,9 @@ RV.solve = (function () {
           '<canvas id="sv-density-canvas" class="density-canvas" aria-label="Charge-flipping electron-density isosurface. Drag to rotate and wheel to zoom."></canvas><p class="hint" id="sv-density-note"></p></section>', false, null, 'sub') +
         block('cf-sites', 'Sites', '<div id="sv-cf-sites"></div>', true, 'id="sv-cf-sites-n"', 'sub') +
         structBlock('cf') +
-        resultBlocks('cf', false), false, 'id="sv-cf-sum"', null, { text: FORMULA_USE.cf, label: 'About the formula unit and Z' }) +
+        resultBlocks('cf', false), false, 'id="sv-cf-sum"', null, { text: BLOCK_HELP.cf, label: 'About charge flipping' }) +
       block('wppf-wy', 'Wyckoff search',
           formulaRow('wy') +
-          '<p class="hint">Atoms of the formula unit on the Wyckoff positions of the space group, fitted to the extracted intensities directly (|F<sub>calc</sub>|² against them, weighted by 1/σ²): the search of powder5, in its worker. It needs WebGPU.</p>' +
           '<div class="form-grid sv-form">' +
             field('sv-wy-maxSites', 'Sites per element, at most', o.wy.maxSites, 'Blank: Auto; up to ' + WL.maxSitesPerElement + '.', 'class="num" data-wy="maxSites" placeholder="Auto" inputmode="numeric"') +
             field('sv-wy-maxRepeat', 'Atoms per position, at most', o.wy.maxRepeat, 'Independent atoms on one Wyckoff position at different coordinates; blank: Auto.', 'class="num" data-wy="maxRepeat" placeholder="Auto" inputmode="numeric"') +
@@ -1156,7 +1162,7 @@ RV.solve = (function () {
         block('wy-solution', 'Solution', '<div id="sv-wy-sol"></div>', true, null, 'sub') +
         block('wy-sites', 'Sites', '<div id="sv-wy-sites"></div>', true, null, 'sub') +
         structBlock('wy') +
-        resultBlocks('wy', true), false, 'id="sv-wy-sum"') +
+        resultBlocks('wy', true), false, 'id="sv-wy-sum"', null, { text: BLOCK_HELP.wy, label: 'About the Wyckoff search' }) +
       (RV.fourier ? RV.fourier.html(block) : '') +
       '<datalist id="sv-el-list"></datalist>';
     if(RV.layout)RV.layout.splitStructure(host);
@@ -1221,7 +1227,7 @@ RV.solve = (function () {
     // formula and Z as they are now typed, the density they give and why they cannot be used when they cannot.
     var cfHelp = $('#solve [data-acc="wppf-cf"] > summary .acc-help');
     if (cfHelp) {
-      var h = densityHint('cf'), text = FORMULA_USE.cf + (h.text ? ' ' + h.text : '');
+      var h = densityHint('cf'), text = BLOCK_HELP.cf + (h.text ? ' ' + h.text : '');
       if (cfHelp.getAttribute('data-help') !== text) cfHelp.setAttribute('data-help', text);
       cfHelp.classList.toggle('sv-warn', !!h.warn);
     }
