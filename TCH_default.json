@@ -20,19 +20,19 @@
   "sizeUnit": "nm",
   "label": "Thompson-Cox-Hastings, default",
   "parameters": {
-    "param-u": "17.4000",
+    "param-u": "2.0000",
     "fit-u": false,
-    "param-v": "-45.2000",
+    "param-v": "-2.0000",
     "fit-v": false,
-    "param-w": "16.5000",
+    "param-w": "5.0000",
     "fit-w": false,
-    "param-x": "3.0000",
+    "param-x": "1.0000",
     "fit-x": false,
-    "param-y": "6.7000",
+    "param-y": "0.0000",
     "fit-y": false,
-    "param-sl": "0.1000",
+    "param-sl": "0.0000",
     "fit-sl": false,
-    "param-hl": "-0.2500",
+    "param-hl": "0.0000",
     "fit-hl": false
   }
 }

@@ -134,6 +134,56 @@ test('instrument diagnostics test the full Gaussian variance rather than the sig
   Object.assign(job.values[0],{'inst.U':1,'inst.V':-2,'inst.W':.9});
   assert.match(a.core.refine(job,{evaluateOnly:true}).fitWarnings[0][0],/90\.00 deg/);
 });
+test('a phase-owned TCH Gaussian polynomial is checked over the fitted range', () => {
+  const a=app();a.S.calculation='rietveld';
+  a.state.addPhase(a.state.makePhase({name:'Si',sg:a.state.resolveSG(227),cell:{a:5.4311},profileType:'tch_aniso',separatedProfile:false,
+    atoms:[{label:'Si1',type:'Si',x:0,y:0,z:0,B:.6,occ:1}]}));
+  const ds=a.state.makeDataset({name:'lab',tth:Array.from({length:1401},(_,i)=>10+i*.1),y:Array(1401).fill(100),inst:{bkgN:1,lambda2:0,ratio:0}});
+  a.S.datasets.push(ds);a.state.selectIds([ds.id]);
+  Object.assign(ds.p,{'p1.scale':2e-5,'p1.U':2,'p1.V':-2,'p1.W':5,'p1.X':1,'p1.Y':0,'p1.SL':0,'p1.HL':0,bkg0:40,bkg1:0});
+  ds.y=a.core.evaluate(a.state.problemFor([ds]),0).ycalc;
+  const job=a.state.jobFor(ds);job.vars=[];
+  assert.deepEqual(plain(a.core.refine(job,{evaluateOnly:true}).fitWarnings),[[]],'the shipped start values are valid');
+  // The start values shipped before 2.42.14: min -12.854 cdeg^2 at 104.8 deg 2theta.
+  Object.assign(job.values[0],{'p1.U':17.4,'p1.V':-45.2,'p1.W':16.5});
+  const bad=a.core.refine(job,{evaluateOnly:true});
+  assert.equal(bad.ok,true,bad.msg);
+  assert.match(bad.fitWarnings[0][0],/Phase p1 Gaussian variance \(p1\.U, p1\.V, p1\.W\) is negative/);
+  assert.match(bad.fitWarnings[0][0],/-12\.85[0-9]* cdeg\^2 at 2theta 104\.8/);
+  assert.match(bad.fitWarnings[0][0],/phase profile/);
+  assert.doesNotMatch(bad.fitWarnings[0][0],/inst\./,'the phase reads its own coefficients');
+  assert.equal(bad.values[0]['p1.U'],17.4,'the diagnostic does not reset anything');
+});
+
+test('the shipped peak-shape start values have a non-negative Gaussian variance', () => {
+  // Minimum of U tan^2 + V tan + W over the whole range; GP/cos^2 = GP + GP tan^2
+  // makes the simple pseudo-Voigt the same quadratic. U + GP <= 0 has no floor.
+  const least=(u,v,w,gp=0)=>{const a=u+gp,c=w+gp;if(!(a>0))return -Infinity;const t=Math.max(0,-v/(2*a));return (a*t+v)*t+c;};
+  const a=app(),P=a.core.PROFILE_PARAMS,files={};
+  for(const f of ['Voigt_default.json','TCH_default.json','Split_default.json'])files[f]=JSON.parse(read(f)).parameters;
+  const num=(p,n)=>Number(p['param-'+n.toLowerCase()]);
+  const cases=[['PROFILE_PARAMS.simple_pvoigt',P.simple_pvoigt,['GU','GV','GW','GP']],
+    ['PROFILE_PARAMS.tch_aniso',P.tch_aniso,['U','V','W']],
+    ['PROFILE_PARAMS.split_pvoigt left',P.split_pvoigt,['GU_L','GV_L','GW_L']],
+    ['PROFILE_PARAMS.split_pvoigt right',P.split_pvoigt,['GU_R','GV_R','GW_R']],
+    ['Voigt_default.json',files['Voigt_default.json'],['GU','GV','GW','GP']],
+    ['TCH_default.json',files['TCH_default.json'],['U','V','W']],
+    ['Split_default.json left',files['Split_default.json'],['GU_L','GV_L','GW_L']],
+    ['Split_default.json right',files['Split_default.json'],['GU_R','GV_R','GW_R']]];
+  for(const [label,source,names] of cases){
+    const value=n=>Array.isArray(source[0])?Number(source.find(q=>q[0]===n)[1]):num(source,n);
+    const worst=least(value(names[0]),value(names[1]),value(names[2]),names.length===4?value(names[3]):0);
+    assert.ok(worst>=0,label+': Gaussian variance reaches '+worst+' cdeg^2');
+  }
+  // The TCH preset this replaces, and the reason the test exists.
+  assert.ok(least(17.4,-45.2,16.5)<-12.8);
+  const built=n=>Number(P.tch_aniso.find(q=>q[0]===n)[1]);
+  assert.equal(num(files['TCH_default.json'],'X'),built('X'),'the preset and the built-in start values agree');
+  assert.equal(num(files['TCH_default.json'],'Y'),built('Y'));
+  assert.equal(num(files['TCH_default.json'],'U'),built('U'));
+});
+
+
 
 test('an inactive refined variable cannot silently pass the covariance quality flag', () => {
   const a=model();a.ds.inst.resolutionType='simple_pvoigt';

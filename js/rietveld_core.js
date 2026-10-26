@@ -417,10 +417,22 @@ function sampleProfileNames(system, uniqueAxis, broadening, ops) {
     else { var basis=gsasStephensBasis(ops);out=out.concat(basis?basis.map(function(t){return t.name;}):gsasStrainKeys(system, uniqueAxis)); }
     return out;
 }
+// The TCH start values are the Gaussian polynomial of the other two families
+// (2, -2, 5: variance 4.5 cdeg^2 at its minimum and positive at every angle),
+// X = LX = 1 (size, /cos) and no strain or asymmetry term. The set this
+// replaces (17.4, -45.2, 16.5) has a NEGATIVE variance from 47.4 to 130.3 deg
+// 2theta (minimum -12.854 cdeg^2 at 104.8 deg): every TCH refinement started with
+// no Gaussian component over most of the pattern, the width floor hid it, the
+// coefficients had no effect on the fit there and could not be refined back --
+// and the same start values shipped in TCH_default.json, which then overrode
+// this list, carried X and Y the other way round.
+// SL = HL = 0 because axial asymmetry belongs to the instrument calibration;
+// 0.1/-0.25 made the asymmetry coefficient 0.89 at 10 deg 2theta, which
+// compresses one flank to a tenth of its width.
 var PROFILE_PARAMS = {
     gsas_cw: SAMPLE_PROFILE,
     simple_pvoigt: [['GU', 2], ['GV', -2], ['GW', 5], ['GP', 0], ['LX', 1], ['eta', 0.5]],
-    tch_aniso: [['U', 17.4], ['V', -45.2], ['W', 16.5], ['X', 6.7], ['Y', 3.0], ['SL', 0.1], ['HL', -0.25]],
+    tch_aniso: [['U', 2], ['V', -2], ['W', 5], ['X', 1], ['Y', 0], ['SL', 0], ['HL', 0]],
     split_pvoigt: [['GU_L', 2], ['GV_L', -2], ['GW_L', 5], ['LX_L', 1], ['GU_R', 2], ['GV_R', -2], ['GW_R', 5], ['LX_R', 1], ['eta_split', 0.5]]
 };
 var PROFILE_LABELS = { gsas_cw: 'Thompson-Cox-Hastings', simple_pvoigt: 'Pseudo-Voigt', tch_aniso: 'Thompson-Cox-Hastings', split_pvoigt: 'Split pseudo-Voigt' };
@@ -1303,23 +1315,72 @@ function normalDependence(A, n) {
     return {rank:rank,groups:groups};
 }
 
-/** Validate the instrument's Gaussian polynomial over the fitted angular
+/**
+ * The minimum of the Gaussian variance U tan^2(t) + V tan(t) + W on [lo, hi]
+ * (in tan theta), and where it falls. The parabola opens upward only for U > 0,
+ * so the interior vertex is a candidate then and the two ends are always
+ * considered: with U <= 0 one end carries the minimum.
+ * @returns {{t:number, value:number}}
+ */
+function gaussianVarianceMinimum(u, v, w, lo, hi) {
+    var candidates = [lo, hi];
+    if (u > 0) { var vertex = -v / (2 * u); if (vertex > lo && vertex < hi) candidates.push(vertex); }
+    return candidates.map(function (t) { return { t: t, value: (u * t + v) * t + w }; })
+                     .sort(function (a, b) { return a.value - b.value; })[0];
+}
+
+/**
+ * Validate every Gaussian polynomial the model uses over the fitted angular
  * range, including an interior minimum. Negative V is allowed; it is the
  * combined variance that must be non-negative. This is a diagnostic only:
- * never silently reset fitted values or refinement choices. */
+ * never silently reset fitted values or refinement choices.
+ *
+ * TWO OWNERS, ONE CHECK. A separated (GSAS) phase reads the DATASET's
+ * coefficients ('inst.U' ...); a phase with its own profile reads its own
+ * ('p1.U' ...). Until 2.42.14 only the first was checked, so a TCH phase could
+ * leave its own polynomial with a variance of -300 cdeg^2 at the high-angle end
+ * and nothing said so: the width floor turns that into a zero Gaussian
+ * component, the pattern hardly changes there, and the coefficients look
+ * refined while having no effect. GP of the simple pseudo-Voigt enters as
+ * GP/cos^2(theta) = GP + GP tan^2(theta) -- an identity -- so it is folded into
+ * U and W rather than treated apart.
+ */
 function instrumentProfileWarnings(model, di, v) {
-    var D=model.datasets[di], active=model.phases.find(function(P,i){return D.has[i] && usesSeparatedProfile(P.def);});
-    if(!active || !D.n)return [];
-    var type=D.def.resolutionType || active.def.profileType, suffixes=type==='split_pvoigt'?['_L','_R']:[''], out=[];
-    var lo=Math.tan(Math.max(1e-6,Math.min(179.999999,D.def.tth[0]))*Math.PI/360),
-        hi=Math.tan(Math.max(1e-6,Math.min(179.999999,D.def.tth[D.n-1]))*Math.PI/360);
-    suffixes.forEach(function(suffix){
-        var keys=['U','V','W'].map(function(k){return k+suffix;}), defaults=instrumentProfileParams(type),
-            p=keys.map(function(k){var fallback=defaults.find(function(p){return p[0]===k;});return Number.isFinite(v['inst.'+k])?v['inst.'+k]:fallback?fallback[1]:0;}),
-            candidates=[lo,hi];
-        if(p[0]>0){var vertex=-p[1]/(2*p[0]);if(vertex>lo && vertex<hi)candidates.push(vertex);}
-        var worst=candidates.map(function(t){return {t:t,value:(p[0]*t+p[1])*t+p[2]};}).sort(function(a,b){return a.value-b.value;})[0];
-        if(worst.value < -1e-9)out.push('Instrument Gaussian variance ('+keys.join(', ')+') is negative: minimum '+worst.value.toPrecision(5)+' cdeg^2 at 2theta '+(2*Math.atan(worst.t)*180/Math.PI).toFixed(2)+' deg. Sample broadening or the width floor can hide this invalid instrument profile and make its coefficients poorly determined. Check the resolution calibration; negative V alone is allowed.');
+    var D = model.datasets[di];
+    if (!D.n) return [];
+    var lo = Math.tan(Math.max(1e-6, Math.min(179.999999, D.def.tth[0])) * Math.PI / 360),
+        hi = Math.tan(Math.max(1e-6, Math.min(179.999999, D.def.tth[D.n - 1])) * Math.PI / 360),
+        out = [], seen = {};
+    var coefficient = function (prefix, defaults, name) {
+        if (Number.isFinite(v[prefix + name])) return v[prefix + name];
+        var d = (defaults || []).find(function (p) { return p[0] === name; });
+        return d ? d[1] : 0;
+    };
+    model.phases.forEach(function (P, pi) {
+        if (!D.has[pi]) return;
+        var separated = usesSeparatedProfile(P.def),
+            type = separated ? (D.def.resolutionType || P.def.profileType) : P.def.profileType;
+        // One instrument polynomial per dataset, however many separated phases share it.
+        if (separated && seen[type]) return;
+        if (separated) seen[type] = true;
+        var prefix = separated ? 'inst.' : P.prefix,
+            defaults = separated ? instrumentProfileParams(type) : (PROFILE_PARAMS[type] || PROFILE_PARAMS.simple_pvoigt),
+            gp = type === 'simple_pvoigt' ? coefficient(prefix, defaults, 'GP') : 0,
+            sets = type === 'split_pvoigt' ? [['U_L', 'V_L', 'W_L'], ['U_R', 'V_R', 'W_R']]
+                 : type === 'tch_aniso' ? [['U', 'V', 'W']] : [['GU', 'GV', 'GW']];
+        sets.forEach(function (names) {
+            var worst = gaussianVarianceMinimum(coefficient(prefix, defaults, names[0]) + gp,
+                                                coefficient(prefix, defaults, names[1]),
+                                                coefficient(prefix, defaults, names[2]) + gp, lo, hi);
+            if (!(worst.value < -1e-9)) return;
+            out.push((separated ? 'Instrument' : 'Phase ' + P.def.key) + ' Gaussian variance (' +
+                (separated ? names.join(', ') : names.map(function (n) { return prefix + n; }).join(', ')) +
+                ') is negative: minimum ' + worst.value.toPrecision(5) + ' cdeg^2 at 2theta ' +
+                (2 * Math.atan(worst.t) * 180 / Math.PI).toFixed(2) + ' deg. Sample broadening or the width floor can hide this invalid ' +
+                (separated ? 'instrument' : 'phase') + ' profile and make its coefficients poorly determined. ' +
+                (separated ? 'Check the resolution calibration; negative V alone is allowed.'
+                           : 'Fit a Gaussian polynomial that is non-negative over this range; negative V alone is allowed.'));
+        });
     });
     return out;
 }
