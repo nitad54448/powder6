@@ -65,10 +65,20 @@
     w.Worker=function(url){if(!String(url).includes('wyckoff_worker'))return new Orig(url);fake={sent:[],terminate(){},postMessage(job){this.sent.push(job.type);if(job.type==='wyckoff-search')setTimeout(()=>fake.onmessage({data:{type:'wy-progress',wave:1,waves:1,restart:1,restarts:1,generation:5,generations:10,best:.8,cc:.81,z:2,zIndex:1,zCount:1,assignment:'Si 2i',bestSites:[{element:'Si',wyckoff:'2i',multiplicity:2,x:.1,y:.2,z:.3}]}}),20);}};return fake;};
     q('#tab-structure').click();await frame();
     const fi=q('#sv-formula-wy');fi.value='Si';fi.dispatchEvent(new w.Event('input',{bubbles:true}));fi.dispatchEvent(new w.Event('change',{bubbles:true}));await frame();
-    // The hints are tooltips: the formula help on the input, the Z hint on the "?" (charge flipping) or with the help (Wyckoff search).
-    const shared=k=>q('#sv-formula-'+k).getAttribute('data-formula-help'),dens=k=>k==='cf'?q('.sv-dens[data-k="cf"]').title:q('#sv-formula-wy').title;
+    // The hints are tooltips: the formula help on the input (Wyckoff search) or in the question mark of the title
+    // (charge flipping, which carries the Z and density hint as well); neither row has a question mark of its own.
+    const shared=k=>q('#sv-formula-'+k).getAttribute('data-formula-help'),
+      dens=k=>k==='cf'?(q('[data-acc="wppf-cf"] > summary .acc-help').getAttribute('data-help')||''):q('#sv-formula-wy').title;
     check(/only to name its peaks/.test(shared('cf')) && /places these atoms and no others/.test(shared('wy')) && shared('cf')!==shared('wy'),'Formula hints are not specific: '+shared('cf')+' | '+shared('wy'));
     check(/from the highest peak/.test(dens('cf')) && /Wyckoff search tries Z/.test(dens('wy')),'Z hints are not specific: '+dens('cf')+' | '+dens('wy'));
+    // The formula row carries the density hint only: the formula help of charge flipping is the question-mark icon at
+    // the right end of its title, and using it must not open or close the block it explains.
+    check(!q('#sv-formula-cf').closest('.sv-row').querySelector('.help-q'),'The charge-flipping formula row still carries a question-mark button');
+    const cfHead=q('[data-acc="wppf-cf"] > summary'),cfHelp=cfHead.querySelector('.acc-help');
+    check(cfHelp && cfHead.lastElementChild===cfHelp && cfHelp.getAttribute('aria-label')==='About the formula unit and Z' && /only to name its peaks/.test(cfHelp.getAttribute('data-help')||''),'The Charge flipping title has no help icon with the formula help: '+(cfHelp && cfHelp.outerHTML));
+    const cfOpen=q('[data-acc="wppf-cf"]').open;cfHelp.click();await frame();
+    check(q('[data-acc="wppf-cf"]').open===cfOpen,'The help icon toggled its block');
+    record('the formula help of charge flipping is a question mark at the right of its title, and it does not toggle the block');
     fi.value='';fi.dispatchEvent(new w.Event('change',{bubbles:true}));await frame();
     check(/Optional here/.test(dens('cf')) && /Required/.test(dens('wy')),'Empty-formula hints: '+dens('cf')+' | '+dens('wy'));
     fi.value='Si';fi.dispatchEvent(new w.Event('change',{bubbles:true}));await frame();

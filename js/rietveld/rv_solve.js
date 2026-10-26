@@ -306,6 +306,11 @@ RV.solve = (function () {
     comp.forEach(function (c) { var need = g / gcd(g, c.n); step = step * need / gcd(step, need); });
     return Math.max(1, step);
   }
+  // the formula unit is one value, shown in both methods that use it, each saying what it does with it
+  var FORMULA_USE = {
+    cf: 'Charge flipping uses the formula unit and Z only to name its peaks: the strongest scatterer goes on the highest peaks, each element on count × Z atoms per cell. The map itself does not depend on them. The Wyckoff search below uses the same values.',
+    wy: 'The Wyckoff search places these atoms and no others: count × Z of each element per cell, on the Wyckoff positions of the space group. Z = Auto tries every Z with a plausible density. Charge flipping above uses the same values to name its peaks.'
+  };
   // k: 'cf' or 'wy', the method whose row the hint is under
   function densityHint(k) {
     var comp = parseFormula(SV.opts.formula), Z = typedZ(), raw = String(SV.opts.formula || '').trim();
@@ -1044,8 +1049,12 @@ RV.solve = (function () {
     if (!S.sgReady) { host.innerHTML = '<div class="empty-pane"><p>' + (S.sgLoading ? 'Loading the space-group database…' : 'The space-group database is not loaded: open index.html through a web server.') + '</p></div>'; return; }
     if (!S.phases.length) { host.innerHTML = '<div class="empty-pane"><p>No phase yet.</p><p class="hint">Make a phase from its space group and cell (Phases, New phase), fit it by WPPF, then solve its structure here.</p></div>'; return; }
     var o = SV.opts, acc = RV.acc ? RV.acc.attr : function (k, d) { return d ? ' open' : ''; };
-    function block(key, title, body, dflt, sub, cls) {
-      return '<details class="acc' + (cls ? ' ' + cls : '') + '" data-acc="' + key + '"' + acc(key, dflt) + '><summary><span class="acc-t">' + title + '</span>' + (sub != null ? '<span class="acc-s" ' + sub + '></span>' : '') + '</summary><div class="acc-body">' + body + '</div></details>';
+    // help: {text, label} for a question-mark icon at the right end of the title, for help that belongs to the whole
+    // block rather than to one field (a field's help is its tooltip, on its label and on its control).
+    function block(key, title, body, dflt, sub, cls, help) {
+      return '<details class="acc' + (cls ? ' ' + cls : '') + '" data-acc="' + key + '"' + acc(key, dflt) + '><summary><span class="acc-t">' + title + '</span>' + (sub != null ? '<span class="acc-s" ' + sub + '></span>' : '') +
+        (help ? '<button type="button" class="help-q acc-help" data-acc-help data-help="' + esc(help.text) + '" aria-label="' + esc(help.label || 'Help') + '">?</button>' : '') +
+        '</summary><div class="acc-body">' + body + '</div></details>';
     }
     // the results of the WPPF calculation (rv_results.js fills these hosts), under each solution method
     function resultBlocks(k, withAtoms) {
@@ -1057,16 +1066,13 @@ RV.solve = (function () {
     var POLY_HELP = 'Percentage of trial moves that move a coordination shell as a unit: one centre of a counted rule (A B N dmin/dmax) with its nearest partners, shifted together, rotated about the centre, or snapped to one distance in the window and to the ideal shape of a shaped rule. ' +
       '0 (default): single atoms only, the search as it was. 20–40 % helps isolated polyhedra on general positions (a simulated FeC6 octahedron was solved in every run instead of 2 of 5); it gains little when partners are shared between centres or sit on special positions (PbSO4 is solved either way). ' + WL.polyMoves[0] + '–' + WL.polyMoves[1] + ' %.';
     var CONSTRAINT_HELP = 'One per line: A B N dmin/dmax (N neighbours of B around each A), A B - dmin/ for a floor. End a counted line with a shape to restrain its angles too: tetrahedron, octahedron, square, triangle, linear, or tet, oct, sq, tri, lin, e.g. S O 4 1.40/1.60 tet. Up to ' + WL.maxRules + ' rules and ' + WL.maxCoordSlots + ' neighbours in all.';
-    // the formula unit is one value, shown in both methods that use it, each saying what it does with it
-    var FORMULA_USE = {
-      cf: 'Charge flipping uses the formula unit and Z only to name its peaks: the strongest scatterer goes on the highest peaks, each element on count × Z atoms per cell. The map itself does not depend on them. The Wyckoff search below uses the same values.',
-      wy: 'The Wyckoff search places these atoms and no others: count × Z of each element per cell, on the Wyckoff positions of the space group. Z = Auto tries every Z with a plausible density. Charge flipping above uses the same values to name its peaks.'
-    };
+    // Neither row carries a question mark of its own. The Wyckoff search states the formula help on the label and the
+    // input, with the density hint; charge flipping states it in the question mark at the right of its title
+    // (renderDensity keeps that text current). The fields themselves say the rest.
     function formulaRow(k) {
       var help=k==='wy'?tip(FORMULA_USE[k]):'';
       return '<div class="sv-row"><label class="sv-lbl" for="sv-formula-' + k + '"'+help+'>Formula unit</label><input id="sv-formula-' + k + '"'+help+' data-formula-help="'+esc(FORMULA_USE[k])+'" class="sv-formula" data-opt="formula" value="' + esc(o.formula) + '" placeholder="e.g. PbSO4" spellcheck="false" autocomplete="off">' +
-        '<label class="sv-lbl" for="sv-z-' + k + '">Z</label><input id="sv-z-' + k + '" class="num sv-z" data-opt="z" value="' + esc(o.z) + '" placeholder="Auto" inputmode="numeric" autocomplete="off">' +
-        (k==='wy'?'':'<span class="hint sv-dens" data-k="' + k + '"></span><button type="button" class="help-q"'+tip(FORMULA_USE[k])+' aria-label="Formula unit help">?</button>')+'</div>';
+        '<label class="sv-lbl" for="sv-z-' + k + '">Z</label><input id="sv-z-' + k + '" class="num sv-z" data-opt="z" value="' + esc(o.z) + '" placeholder="Auto" inputmode="numeric" autocomplete="off"></div>';
     }
     function structBlock(k) {
       return block(k + '-struct', '3D structure', '<div class="sv-st-head" id="sv-' + k + '-st-head"></div><div class="sv-struct sv-struct-host" id="sv-' + k + '-st" data-src="' + k + '"></div>', false, null, 'sub');
@@ -1124,7 +1130,7 @@ RV.solve = (function () {
           '<canvas id="sv-density-canvas" class="density-canvas" aria-label="Charge-flipping electron-density isosurface. Drag to rotate and wheel to zoom."></canvas><p class="hint" id="sv-density-note"></p></section>', false, null, 'sub') +
         block('cf-sites', 'Sites', '<div id="sv-cf-sites"></div>', true, 'id="sv-cf-sites-n"', 'sub') +
         structBlock('cf') +
-        resultBlocks('cf', false), false, 'id="sv-cf-sum"') +
+        resultBlocks('cf', false), false, 'id="sv-cf-sum"', null, { text: FORMULA_USE.cf, label: 'About the formula unit and Z' }) +
       block('wppf-wy', 'Wyckoff search',
           formulaRow('wy') +
           '<p class="hint">Atoms of the formula unit on the Wyckoff positions of the space group, fitted to the extracted intensities directly (|F<sub>calc</sub>|² against them, weighted by 1/σ²): the search of powder5, in its worker. It needs WebGPU.</p>' +
@@ -1211,7 +1217,14 @@ RV.solve = (function () {
   }
   function renderDensity() {
     var wyFormula=$('#sv-formula-wy');if(wyFormula){var hint=densityHint('wy'),help=wyFormula.getAttribute('data-formula-help')+(hint.text?' '+hint.text:''),label=$('label[for="sv-formula-wy"]');wyFormula.title=help;wyFormula.classList.toggle('sv-warn',!!hint.warn);if(label){label.title=help;label.classList.toggle('sv-warn',!!hint.warn);}}
-    document.querySelectorAll('#solve .sv-dens').forEach(function (el) { var h = densityHint(el.getAttribute('data-k') === 'cf' ? 'cf' : 'wy'); el.textContent = h.text ? '?' : ''; el.title=h.text; el.tabIndex=0; el.classList.toggle('sv-warn', !!h.warn); });
+    // Charge flipping states the same kind of help in the question mark of its title, and it follows the form: the
+    // formula and Z as they are now typed, the density they give and why they cannot be used when they cannot.
+    var cfHelp = $('#solve [data-acc="wppf-cf"] > summary .acc-help');
+    if (cfHelp) {
+      var h = densityHint('cf'), text = FORMULA_USE.cf + (h.text ? ' ' + h.text : '');
+      if (cfHelp.getAttribute('data-help') !== text) cfHelp.setAttribute('data-help', text);
+      cfHelp.classList.toggle('sv-warn', !!h.warn);
+    }
   }
   function chipsOf(recs, max) {
     var shown = recs.slice(0, max).map(function (r) {
@@ -1633,6 +1646,14 @@ RV.solve = (function () {
     host.addEventListener('click', onClick);
     host.addEventListener('change', onChange);
     host.addEventListener('input', onInput);
+    // The question-mark icon in a block title explains the block: using it must not open or close the block, by pointer
+    // or from the keyboard (both are the summary's own default actions).
+    host.addEventListener('click', function (e) {
+      if (e.target.closest && e.target.closest('[data-acc-help]')) { e.preventDefault(); e.stopPropagation(); }
+    });
+    host.addEventListener('keydown', function (e) {
+      if (e.target.closest && e.target.closest('[data-acc-help]') && (e.key === 'Enter' || e.key === ' ')) e.preventDefault();
+    });
     RV.bus.on('calculation',function(){if(RV.app.resultTab()!=='structure-results' && typeof Density3D!=='undefined')Density3D.dispose();else setTimeout(function(){renderDensityMap();renderStOut();},0);});
     RV.bus.on('tab',function(){if(RV.app.resultTab()!=='structure-results' && typeof Density3D!=='undefined')Density3D.dispose();else renderDensityMap();});
     RV.bus.on('theme',function(){if(typeof Density3D!=='undefined')Density3D.applyTheme();});

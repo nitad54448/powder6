@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.42.1 — 26 October 2026
+
+1. **One help icon, in the title.** The Charge flipping form carried a question mark after Z (a "?" whose help was the density hint) beside a second one for the formula help, so the row ended in two marks and the density hint sat under the Z field instead of with the rest. Both are gone from the row: `formulaRow()` renders the formula unit and Z only, and `block()` takes an optional help icon that sits at the right end of the title (`powder6.css`: `.acc > summary .acc-help`, right-justified and centred on the title line). `renderDensity()` keeps that icon's help current — the formula and Z explanation plus the density the form gives now, in the warning colour while the formula cannot be read or the density is impossible — so nothing the removed marks said is lost.
+2. **Using it does not toggle the block.** A button inside a `<details><summary>` inherits the summary's default action: the icon now cancels the click (and Enter/Space) so the help can be read with the block open or closed (`js/rietveld/rv_solve.js`, `init`).
+3. **Tested.** `tests/solve-fixes.js` checks that the formula row has no question mark, that the icon is the last element of the charge-flipping title with its label and help, that the help follows the typed formula and Z, and that clicking the icon leaves the block as it was.
+
 ## 2.42.0 — 26 October 2026
 
 1. **A saved project is no longer "modified".** The preset files beside the page (`Voigt_default.json` and its siblings) were fetched after the space groups and the scattering tables, and their values are part of the saved document: a save made in the first moments of a session compared the project against a document the presets had not reached, so `hasUnsavedChanges()` answered yes with nothing edited and closing the page asked whether to discard changes. The preset load starts first, is one promise for the page (`RV.cmd.defaultPresetsReady()`), and saving and opening a project wait for it. `setPresetDefault` now only fills in a shape the document does not carry, so a project opened before the files arrive keeps its own start values. This was also a browser-test failure that passed or failed by timing (`tests/project-save.html`).

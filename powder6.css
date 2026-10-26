@@ -735,6 +735,11 @@ table.grid.pm input:disabled { opacity: .45; }
 .acc > summary .acc-t { font-weight: 600; font-size: var(--fs-lg); color: var(--ink); }
 .acc > summary .acc-s { color: var(--ink-3); font-size: var(--fs-sm); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .acc > summary .acc-s.warn { color: var(--warn); }
+/* a question-mark help icon belongs at the right end of the title, on the line of the text rather than on its baseline;
+   it is shown in the warning colour while what it explains cannot be used (a formula the program cannot read, a
+   density no solid has) */
+.acc > summary .acc-help { margin-left: auto; align-self: center; }
+.acc > summary .acc-help.sv-warn { color: var(--warn); border-color: var(--warn); }
 .acc[open] > summary { border-bottom: 1px solid var(--rule-2); border-radius: var(--radius) var(--radius) 0 0; }
 .acc > .acc-body { padding: var(--sp-3) var(--sp-4) var(--sp-4); min-width: 0; }
 .acc.sub { margin: var(--sp-2) 0; background: var(--paper); }
@@ -750,7 +755,7 @@ table.grid.pm input:disabled { opacity: .45; }
 .sv-row select { max-width: 260px; }
 .sv-formula { width: 190px; }
 .sv-z { width: 64px; }
-.sv-dens { margin: 0; flex: 1 1 260px; }
+
 .sv-int { margin-top: 6px; }
 .sv-int p { margin: 4px 0; }
 .sv-int .sub { color: var(--ink-3); font-size: var(--fs-sm); }
