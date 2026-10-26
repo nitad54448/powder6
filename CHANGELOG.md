@@ -2,6 +2,14 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.42.10 — 26 October 2026
+
+1. **The code layout in the documentation lists every file.** It was missing 14 of them (`pt_gpu.js`, `cf_adaptive.js`, `distance_rules.js`, `wyckoff_limits.js`, `atom_restraints.js`, `molecule_rules.js`, `fourier_map.js`, `rv_fourier.js`, `rv_restraints.js`, `rv_fit_history.js`, `rv_project.js`, `rv_layout.js`, `rv_workspace.js`, `rv_wyhelper.js`); each has one line now, next to the files it works with.
+2. **Comments that described code which is gone.** `swarm_wyckoff.js` opened with "Harko.html calls runWyckoffSearch()" and required a `cc_fitness.js` that does not exist (and cited it as the CPU reference for a duplicated ramp formula); both are corrected. `verifyScatteringTable()`'s docstring said a failure "should stop the run", while `rv_app.js` reports it and continues — the docstring now says what happens, and why.
+3. **Dead style and dead ids.** `powder6.css` had a `.results-pane` class that no element carries and a `.sv-shared` rule for a class nothing uses; both are gone. `index.html` carried nine ids that no script, stylesheet, test or `aria` reference reads (`calc-tab-lebail/wppf/rietveld`, `sp-phases`, `sp-fit`, `wppf-tools`, `dataset-properties`, `dataset-parameter-host`, `dataset-limits-title`) — the elements are found by their classes and `data-` attributes, so the ids went.
+4. **CI runs six browser pages instead of two.** `file-readers`, `pattern-only`, `project-save` and `solve-fixes` join `ui-consistency` and `ui-interactions` in the matrix; all four are GPU-free and were run locally before being added. `.vscode/settings.json` now serves on the documented port 8000 rather than 5501.
+5. **Verified.** 178 Node tests pass, and `ui-interactions`, `workspace`, `restraints-helper`, `file-readers`, `pattern-only`, `project-save` and `solve-fixes` pass in headless Chrome.
+
 ## 2.42.9 — 26 October 2026
 
 1. **`symmetry_utils.js`: 968 lines to 222.** The Wyckoff worker used two functions from it — `sharkoOrthMatrix()` and `sharkoReducedCell()` — and nothing anywhere (tests included) called the rest: a 3-D FFT, a Patterson synthesis, Gaussian map smearing, space-group setting resolution with `expandReflections`, a fractional-to-Cartesian length and a minimum-image distance. Those sections, the 40-line comment about a `sharkoLorentzPolarization` the file no longer defines, and the `console.warn` that guarded it are gone; the header no longer claims callers that do not exist, and the worker's load-order note no longer makes `crystal.js` a dependency of this file.

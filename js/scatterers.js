@@ -101,9 +101,10 @@ function evaluateGaussian(entry, stol) {
  *
  * Cheap, and it catches the two failures that matter: coefficients pulled from
  * the wrong accessor in the generator, and a table that has been silently
- * truncated. Called once at load; a failure here should stop the run rather
- * than degrade it, because a wrong f is indistinguishable from a wrong
- * structure once it reaches the correlation.
+ * truncated. Called once at load. A failure is REPORTED, not fatal: the list
+ * comes back to rv_app.js, which logs it as a warning and carries on, because a
+ * table with one wrong entry is still more useful than no Rietveld at all --
+ * and the log line names the species, so the number is not trusted silently.
  */
 function verifyScatteringTable(xray, tolerance = 0.25) {
     const bad = [];

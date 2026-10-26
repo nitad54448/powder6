@@ -358,7 +358,7 @@ textarea.code-area::placeholder, .sv-form textarea::placeholder { font-style: it
 label.chk { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
 
 /* ---------- settings, log, about, results, solve, datasets: scrolling panes ---------- */
-.settings-pane.on, .log-pane.on, .about-pane.on, .results-pane.on, .phase-pane.on, .solve-pane.on, .datasets-pane.on { display: block; overflow: auto; background: var(--paper); }
+.settings-pane.on, .log-pane.on, .about-pane.on, .phase-pane.on, .solve-pane.on, .datasets-pane.on { display: block; overflow: auto; background: var(--paper); }
 .settings-pane { padding: var(--sp-4) var(--inset) var(--sp-5); }
 .settings { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: var(--sp-4) var(--sp-5); align-items: start; max-width: 1180px; }
 .settings .form-grid { grid-template-columns: minmax(0, 1fr) clamp(104px, 40%, 240px); }
@@ -763,7 +763,6 @@ table.grid.pm input:disabled { opacity: .45; }
 .sv-int { margin-top: 6px; }
 .sv-int p { margin: 4px 0; }
 .sv-int .sub { color: var(--ink-3); font-size: var(--fs-sm); }
-.sv-shared { margin: 2px 0 0; font-size: var(--fs-sm); }
 .sv-form { max-width: 820px; margin-top: 10px; grid-template-columns: minmax(170px, auto) minmax(0, 1fr); }
 .sv-form input.num { max-width: 120px; }
 .sv-form select { max-width: 220px; }

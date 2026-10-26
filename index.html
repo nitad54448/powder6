@@ -275,8 +275,8 @@
             <nav id="dataset-tabs" class="dataset-tabs" role="tablist" aria-label="Dataset parameters" hidden></nav>
             <section id="dataset-detail" aria-labelledby="dataset-editor-name">
               <div id="dataset-values"></div>
-              <div id="dataset-properties"><div id="ds-info" class="ds-info param-stats"></div></div>
-              <div id="dataset-parameter-host">
+              <div><div id="ds-info" class="ds-info param-stats"></div></div>
+              <div>
                 <div class="fit-steps">
                   <span class="fit-lbl">Refine parameter groups</span>
                   <div class="fit-groups" role="group" aria-label="Refinement parameter groups">
@@ -298,7 +298,7 @@
                 </section>
               </div>
               <details class="object-group" id="dataset-limits-group">
-                <summary><span class="acc-t" id="dataset-limits-title">Parameter links and sharing</span><button type="button" class="help-q acc-help" data-acc-help data-help="A refinement keeps every parameter between its limits (type inf for none). Ticked “shared”, a parameter gets one value for all the datasets of a global fit that hold its phase (Sharing in the global fit, Refine menu, keeps some of them apart); unticked, one value per dataset. Scales and background stay local. Zero, displacement and transparency default to local and can be shared explicitly." aria-label="About parameter limits and sharing">?</button></summary>
+                <summary><span class="acc-t">Parameter links and sharing</span><button type="button" class="help-q acc-help" data-acc-help data-help="A refinement keeps every parameter between its limits (type inf for none). Ticked “shared”, a parameter gets one value for all the datasets of a global fit that hold its phase (Sharing in the global fit, Refine menu, keeps some of them apart); unticked, one value per dataset. Scales and background stay local. Zero, displacement and transparency default to local and can be shared explicitly." aria-label="About parameter limits and sharing">?</button></summary>
                 <div id="dataset-limits-host">
                   <section>
                     <div id="limits"></div>
@@ -330,7 +330,7 @@
         </div>
         <details id="phase-selection" class="fit-selection" hidden>
           <summary>Choose a phase</summary>
-          <section class="side-phases" id="sp-phases">
+          <section class="side-phases">
             <div class="side-h"><span id="ph-count" class="sub"></span></div>
             <div id="ph-list" class="ds-list" tabindex="0" role="listbox" aria-label="Phases"></div>
             <p class="hint">Select a phase to edit its shared definition here. Dataset-specific phase values and assignments are edited in Datasets.</p>
@@ -344,9 +344,9 @@
       <section id="pane-method" class="pane method-pane" role="tabpanel" aria-labelledby="tab-method">
         <div class="solve-sticky" id="solve-sticky">
           <div class="calculation-tabs" role="radiogroup" aria-label="Calculation method" id="method-selector">
-            <button type="button" role="radio" id="calc-tab-lebail" data-calculation="lebail" aria-checked="true">Le Bail</button>
-            <button type="button" role="radio" id="calc-tab-wppf" data-calculation="wppf" aria-checked="false" tabindex="-1">WPPF</button>
-            <button type="button" role="radio" id="calc-tab-rietveld" data-calculation="rietveld" aria-checked="false" tabindex="-1">Rietveld</button>
+            <button type="button" role="radio" data-calculation="lebail" aria-checked="true">Le Bail</button>
+            <button type="button" role="radio" data-calculation="wppf" aria-checked="false" tabindex="-1">WPPF</button>
+            <button type="button" role="radio" data-calculation="rietveld" aria-checked="false" tabindex="-1">Rietveld</button>
           </div>
           <div class="solve-actions" role="toolbar" aria-label="Calculation actions">
             <button type="button" class="primary" data-workflow="fit">Fit selected datasets</button>
@@ -356,7 +356,7 @@
         </div>
         <section id="method-setup" class="method-setup" aria-label="Calculation setup">
           <div id="method-refine-controls">
-            <section class="fitbar solve-fit" id="sp-fit" role="group" aria-label="Fit">
+            <section class="fitbar solve-fit" role="group" aria-label="Fit">
               <p class="fit-target" id="fit-target"></p>
               <div class="fit-line">
                 <span class="fit-lbl" id="fit-mode-lbl">Mode</span>
@@ -377,7 +377,7 @@
 
       <!-- Structure: built by js/rietveld/rv_solve.js (extraction, space group, charge flipping, Wyckoff search) -->
       <section id="pane-structure" class="pane structure-pane" role="tabpanel" aria-labelledby="tab-structure">
-        <div id="wppf-tools"><div class="solve" id="solve"></div></div>
+        <div><div class="solve" id="solve"></div></div>
       </section>
 
       <!-- Settings -->

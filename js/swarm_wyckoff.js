@@ -4,13 +4,13 @@ const SHARKO_SWARM_WYCKOFF_VERSION = '1.1.1';
 /* ------------------------------------------------------------------
    swarm_wyckoff.js - the whole Wyckoff-constrained structure search.
 
-   Harko.html calls runWyckoffSearch() once and gets ranked structures back.
+   wyckoff_worker.js calls runWyckoffSearch() once and gets ranked structures back.
    Everything between - normalising the observations, fixing the temperature
    factor, enumerating Wyckoff assignments, running the swarm and scoring the
    result - lives here rather than in the page.
 
    Requires, already loaded: symmetry_utils.js, wyckoff_assign.js,
-   cc_fitness.js, observations.js, scatterers.js.
+   observations.js, scatterers.js.
 
    THE SHAPE OF THE SEARCH
 
@@ -931,10 +931,8 @@ function swScatteringTable(refl, demand, options = {}) {
  *
  * Groups arrive sorted by d* ascending, so this is a single bound on the index.
  *
- * (cc_fitness.js has an identical copy. That module is the CPU reference
- * implementation used to validate the kernel; the app does not load it, and
- * duplicating thirty characters of arithmetic is better than making the page
- * fetch a second file for one function.)
+ * The kernel reads the count the host puts in Params.nGroupsActive; there is no second copy of this formula
+ * to keep in step (the WGSL has none, and the old cc_fitness.js reference point is gone).
  */
 function rampedGroupCount(nGroups, generation, maxGen, startFrac = 0.25, fullBy = 0.6) {
     const t = Math.min(1, generation / Math.max(1, maxGen * fullBy));
