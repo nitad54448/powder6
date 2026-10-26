@@ -1,5 +1,5 @@
 // charge_flipping.wgsl
-// CF_KERNEL_ABI: orbit-weak-v1
+// CF_KERNEL_ABI: friedel-weak-v2
 //
 // WebGPU kernels for dual-space charge flipping on powder data, with the
 // space group applied DIRECTLY inside the iteration loop.
@@ -478,9 +478,9 @@ fn constrain(@builtin(global_invocation_id) gid3 : vec3<u32>) {
 let orb = orbits[g];
 if (orb.count == 0u) { return; }
 
-// Weak reflection: retain the calculated modulus and rotate the phase
-// by pi/2. A stored Friedel mate is conjugated, so its stored rotation
-// has the opposite sign.
+// Keep a real density: each Friedel pair gets opposite quarter-turns.
+// CONJ_BIT records operator provenance, which is not a Friedel half-space
+// in a centric orbit (both partners can be direct operator images).
 if (orb.weak != 0u) {
     for (var i = 0u; i < orb.count; i = i + 1u) {
         let p = orb.start + i;
@@ -490,7 +490,11 @@ if (orb.weak != 0u) {
         let a = src[2u * idx];
         let b = src[2u * idx + 1u];
 
-        if ((word & CONJ_BIT) != 0u) {
+        let h = idx % P.n;
+        let k = (idx / P.n) % P.n;
+        let l = idx / (P.n * P.n);
+        let mate = (P.n - h) % P.n + ((P.n - k) % P.n) * P.n + ((P.n - l) % P.n) * P.n * P.n;
+        if (idx > mate) {
             src[2u * idx] = b;
             src[2u * idx + 1u] = -a;
         } else {

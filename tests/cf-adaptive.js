@@ -78,6 +78,22 @@
     check(!S.busy && !RV.solve.state.cfRun && (seedRun.disabled || /seed is a whole number/.test(q('#status-msg').textContent)),'An invalid CF seed started a run: '+q('#status-msg').textContent);
     change(q('#sv-cf-seed'),'');await frame();
     record('a typed CF seed reaches the run; an invalid one is refused before a worker starts');
+    // Exercise the centric weak-reflection path on both real backends, not only P1.
+    const centricJob={type:'run-charge-flipping',gridSize:16,maxIterations:1,thresholdSigma:1.1,seed:543,cell:{a:5,b:5,c:5,alpha:90,beta:90,gamma:90},symops:[{r:[1,0,0,0,1,0,0,0,1],t:[0,0,0]},{r:[-1,0,0,0,-1,0,0,0,-1],t:[0,0,0]}],symLambda:.5,weakFraction:.25,weakGrouping:'individual',overlapTolTth:.001,applyLP:false,minPeakSeparation:.5,maxPeaks:20,peakHeightCutoff:.04,hklList:Array.from({length:8},(_,i)=>({h_orig:i%3+1,k_orig:Math.floor(i/3),l_orig:1,intensity:(i+1)*10,tth:10+i}))};
+    function flip(backend){return new Promise((resolve,reject)=>{const worker=new OriginalWorker('js/charge_flipping_worker.js'),timer=setTimeout(()=>{worker.terminate();reject(Error('Centric CF timed out'));},30000);worker.onmessage=e=>{if(e.data.type==='cf-result'){clearTimeout(timer);worker.terminate();resolve(e.data.results);}else if(e.data.type==='cf-error'){clearTimeout(timer);worker.terminate();reject(Error(e.data.message));}};worker.onerror=e=>{clearTimeout(timer);worker.terminate();reject(Error(e.message));};worker.postMessage({...centricJob,backend});});}
+    const centricResults=await Promise.all(['cpu','gpu'].map(flip));
+    for(const result of centricResults)for(const reflection of centricJob.hklList.slice(0,2)){
+      let real=0,imag=0;for(let z=0;z<16;z++)for(let y=0;y<16;y++)for(let x=0;x<16;x++){const phase=2*Math.PI*(reflection.h_orig*x+reflection.k_orig*y+reflection.l_orig*z)/16,v=result.map[x+16*y+256*z];real+=v*Math.cos(phase);imag-=v*Math.sin(phase);}
+      check(real*real+imag*imag>1e-6,'Centric weak reflection was discarded on '+result.backend);
+    }
+    check(RV.solve.gpuBudget.available!==true || centricResults[1].backend==='gpu','Centric CF unexpectedly fell back from a usable GPU');
+    record('Centric weak reflections survive actual CPU and GPU map readback',{backends:centricResults.map(r=>r.backend)});
+    // A parameter edit invalidates launch immediately, including calls that bypass the disabled button.
+    const oldIntensities=RV.solve.state.ints,countBeforeEdit=jobs.length;St.setParam('zero',ds.p.zero+.01,[ds]);
+    check(q('#sv-cf-run').disabled && RV.solve.state.ints!==oldIntensities,'CF still offers stale intensities after a parameter edit');
+    oldIntensities.stale=true;RV.solve.state.ints=oldIntensities;q('#sv-cf-run').disabled=false;q('#sv-cf-run').click();
+    check(!S.busy && !RV.solve.state.cfRun && jobs.length===countBeforeEdit,'CF launched with stale intensities when called directly');RV.solve.state.ints=null;
+    record('Parameter edits disable CF and the launch handler independently refuses stale extraction');
     check(!errors.length,'Browser errors: '+errors.join('; '));record('adaptive workflow completes without browser errors');
     window.browserTestResult={ok:true,results};
   }catch(e){results.push({name:'failure',error:e.stack || String(e)});out.textContent=JSON.stringify(results,null,2);window.browserTestResult={ok:false,results};}

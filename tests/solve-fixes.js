@@ -60,6 +60,13 @@
     note=RV.solve.assignCf(R,'FeO2',1);check(R.sites[0].mult===2 && R.unplaced.length===1,'Re-assigning is not repeatable');
     record('CF moves a heavy-atom peak onto a nearby special position, and names elements it cannot place',{note});
 
+    const charged={I:R.I,sites:[Object.assign(site(1,.2,.2,.2,10),{mult:1,wyck:'1a',charge:2,chargeRel:.2}),Object.assign(site(2,.3,.25,.2,5),{mult:1,wyck:'1a',charge:10,chargeRel:1})]};
+    RV.solve.assignCf(charged,'PbS',1);
+    check(charged.sites[1].element==='Pb' && charged.sites[0].element==='S','Elements were assigned by height instead of integrated charge');
+    delete charged.sites[0].charge;delete charged.sites[1].charge;RV.solve.assignCf(charged,'PbS',1);
+    check(charged.sites[0].element==='Pb','Legacy sites without charge lost their height fallback');
+    record('CF element assignment uses integrated charge, with a height fallback for legacy results');
+
     // 4. Wyckoff Stop: the best structure is refined, with a warning to wait
     const Orig=w.Worker;let fake=null;
     w.Worker=function(url){if(!String(url).includes('wyckoff_worker'))return new Orig(url);fake={sent:[],terminate(){},postMessage(job){this.sent.push(job.type);if(job.type==='wyckoff-search')setTimeout(()=>fake.onmessage({data:{type:'wy-progress',wave:1,waves:1,restart:1,restarts:1,generation:5,generations:10,best:.8,cc:.81,z:2,zIndex:1,zCount:1,assignment:'Si 2i',bestSites:[{element:'Si',wyckoff:'2i',multiplicity:2,x:.1,y:.2,z:.3}]}}),20);}};return fake;};
@@ -70,7 +77,7 @@
     const shared=k=>q('#sv-formula-'+k).getAttribute('data-formula-help'),
       dens=k=>k==='cf'?(q('[data-acc="wppf-cf"] > summary .acc-help').getAttribute('data-help')||''):q('#sv-formula-wy').title;
     check(/only to name its peaks/.test(shared('cf')) && /places these atoms and no others/.test(shared('wy')) && shared('cf')!==shared('wy'),'Formula hints are not specific: '+shared('cf')+' | '+shared('wy'));
-    check(/from the highest peak/.test(dens('cf')) && /Wyckoff search tries Z/.test(dens('wy')),'Z hints are not specific: '+dens('cf')+' | '+dens('wy'));
+    check(/largest integrated charge/.test(dens('cf')) && /Wyckoff search tries Z/.test(dens('wy')),'Z hints are not specific: '+dens('cf')+' | '+dens('wy'));
     // The formula row carries the density hint only: the formula help of charge flipping is the question-mark icon at
     // the right end of its title, and using it must not open or close the block it explains.
     check(!q('#sv-formula-cf').closest('.sv-row').querySelector('.help-q'),'The charge-flipping formula row still carries a question-mark button');

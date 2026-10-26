@@ -701,6 +701,10 @@ const systematicallyAbsent = members.some(p => {
     d: Number.isFinite(peak.d) ? peak.d : null,
     members,
     mTrue,
+    // If a direct operator sends h to -h, conj(F(h)) = F(h) exp(i theta).
+    // Its phase is therefore -theta/2 modulo pi, rather than arbitrary.
+    centricPhase: (() => { const mate = positions.get(`${-h0},${-k0},${-l0}`);
+        return mate && !mate.conj ? -0.5 * Math.atan2(mate.ci, mate.cr) : NaN; })(),
     targetI,
     systematicallyAbsent,
     rawI: Number.isFinite(peak.rawIntensity)
@@ -803,7 +807,7 @@ if (symops && requestedLambda >= 0.999 && significantAbsent > 0) {
 }
 
 // --- pass 3: flatten ----------------------------------------------------
-    const orbitStart = [], orbitCount = [], orbitTargetI = [];
+    const orbitStart = [], orbitCount = [], orbitTargetI = [], orbitCentricPhase = [];
     const idxFlat = [], phaseFlat = [];
     const clusterOrbitStart = [], clusterNOrbits = [], clusterObsI = [];
 
@@ -854,6 +858,7 @@ const start = cursor;
         orbitStart.push(start);
         orbitCount.push(count);
         orbitTargetI.push(scaled);
+        orbitCentricPhase.push(r.centricPhase);
 
 
 
@@ -912,6 +917,7 @@ const absentList = Array.from(abs.absent);
         orbitStart: Uint32Array.from(orbitStart),
         orbitCount: Uint32Array.from(orbitCount),
         orbitTargetI: Float32Array.from(orbitTargetI),
+        orbitCentricPhase: Float64Array.from(orbitCentricPhase),
         orbitIdx,
         phase: Float32Array.from(phaseFlat),
         clusterOrbitStart: Uint32Array.from(cOrbitStart),
@@ -952,7 +958,8 @@ function modelInitialGrid(model, N, seed) {
         // factors, so the starting point already obeys the space group.
         // rho = sum F exp(+2 pi i h.x) (the inverse transform of fft3d), so
         // F(hR) = F(h) exp(+2 pi i h.t): the stored phase, not its conjugate.
-        const ang = 2 * Math.PI * rand();
+        const u = rand(), centric = model.orbitCentricPhase[g];
+        const ang = Number.isFinite(centric) ? centric + (u < 0.5 ? 0 : Math.PI) : 2 * Math.PI * u;
         const f0r = amp * Math.cos(ang), f0i = amp * Math.sin(ang);
         for (let i = 0; i < count; i++) {
             const p = start + i;
@@ -1469,15 +1476,16 @@ const weakI = weak.cutoff;
             const tgt = Math.max(0, target[g]);
 
             if (weak.flags[g]) {
-                // Weak: keep |Fcalc| and advance the phase by +pi/2 instead of
-                // imposing |Fobs|. A member holding the Friedel mate stores
-                // conj(F), and conj(i*F) is -i*conj(F), so the rotation has the
-                // opposite sense there.
+                // Rotate Friedel partners in opposite directions so density stays real.
+                // CONJ_BIT describes how an operator produced a member; in a centric
+                // orbit both partners can be direct, so it cannot choose this sign.
                 for (let i = 0; i < count; i++) {
                     const word = idx[start + i];
                     const j = word & 0x7fffffff;
                     const a = re[j], b = im[j];
-                    if (word & 0x80000000) { re[j] =  b; im[j] = -a; }
+                    const h = j % N, k = Math.floor(j / N) % N, l = Math.floor(j / (N * N));
+                    const mate = (N - h) % N + ((N - k) % N) * N + ((N - l) % N) * N * N;
+                    if (j > mate)          { re[j] =  b; im[j] = -a; }
                     else                   { re[j] = -b; im[j] =  a; }
                 }
                 continue;
@@ -1764,7 +1772,7 @@ async function cfLoadShader() {
     }
 
     const source = await cfWaitForGPU(resp.text(),'reading the charge-flipping shader');
-    const requiredAbi = 'CF_KERNEL_ABI: orbit-weak-v1';
+    const requiredAbi = 'CF_KERNEL_ABI: friedel-weak-v2';
 
     if (!source.includes(requiredAbi)) {
         const got =
@@ -2503,7 +2511,7 @@ reflections: modelReport(model)
 // policy it expects.
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-        fft1d, fft3d, buildReflectionModel, findSystematicAbsences,
+        fft1d, fft3d, buildReflectionModel, modelInitialGrid, findSystematicAbsences,
         lorentzPolarization, polarizationK, describePolarization,
         normalizeSymops, findPeaks,
         runChargeFlipping: runChargeFlippingCPU, runChargeFlippingCPU, compareCFMaps,
@@ -2853,11 +2861,13 @@ async function buildStructure(job) {
 
     const rawPeaks = findPeaks(sym, N, cell, {
         minSeparation: job.minPeakSeparation,
-        maxPeaks: job.maxPeaks ?? 60,
+        // Limit independent sites after reduction, never full-cell images here.
+        maxPeaks: Infinity,
         heightCutoff: job.peakHeightCutoff ?? 0.04
     });
     const rawPeakCount = rawPeaks.length;
-    const sites = reduceToAsymmetricUnit(rawPeaks, symops, cell, job.minPeakSeparation * 0.6);
+    const sites = reduceToAsymmetricUnit(rawPeaks, symops, cell, job.minPeakSeparation * 0.6)
+        .slice(0, job.maxPeaks ?? 60);
 
     return {
         map: sym,

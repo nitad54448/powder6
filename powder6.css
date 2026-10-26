@@ -958,6 +958,7 @@ table.grid.ac-list input.ac-m { width: 64px; min-width: 0; max-width: 64px; padd
 .fit-selection input[type=search] { margin: var(--sp-2) var(--sp-3); min-width: 0; width: calc(100% - 2 * var(--sp-3)); }
 .dataset-parameters { display: block; }
 .dataset-parameters .param-list { overflow: auto; max-height: none; padding: 0; }
+.dataset-parameters .prow, .dataset-parameters .anchor-head, .dataset-parameters .zone-row, .dataset-parameters .zone-head { margin-inline: 0; }
 .dataset-parameters .prow, .dataset-parameters .param-list.global .prow { grid-template-columns: minmax(56px,1.1fr) minmax(64px,1.4fr) 34px minmax(40px,.9fr) var(--ctl-h-sm) 18px; gap: var(--sp-1) var(--sp-2); }
 .dataset-parameters .pv[readonly] { border-color: transparent; background: var(--paper); cursor: default; }
 .dataset-parameters .prow.anchor-row, .dataset-parameters .anchor-head { grid-template-columns: minmax(44px,.8fr) minmax(0,1fr) minmax(0,1fr) minmax(0,.6fr) var(--ctl-h-sm) 18px; }

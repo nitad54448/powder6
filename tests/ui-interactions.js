@@ -98,6 +98,14 @@
         S.phases[0].v[b]=startB;St.setParam(b,1.75,[ds]);   // restored by hand: Undo would replace the dataset objects this page holds
         record('Phases: a Structure block, Starting model → datasets and Dataset → starting model');
         St.setCalculation('rietveld');RV.phasesTab.values();atomic=q('#ph-atoms [data-at="B"]');near(Number(atomic.value),S.phases[0].v[b],'Dataset B changed the phase definition');q('#tab-datasets').click();await frame();atomic=q('.prow[data-name="'+b+'"] .pv');check(!atomic.readOnly,'Dataset atomic B is read only');near(Number(atomic.value),1.75,'Rietveld dataset B changed');record('dataset atomic values and phase starting models have separate ownership');
+        const atomAcc=atomic.closest('details[data-acc^="dataset-atoms-"]');
+        check(atomAcc && atomAcc.querySelectorAll('.pgroup').length===S.phases[0].atoms.length,'Dataset atoms are not grouped by phase');
+        const datasetStructure=atomAcc.nextElementSibling;
+        check(datasetStructure && datasetStructure.dataset.acc==='dataset-structure-'+S.phases[0].key,'Dataset Structure is not directly after its atoms');
+        atomAcc.open=false;datasetStructure.open=true;await frame();await frame();
+        check(atomAcc.getBoundingClientRect().height<=atomAcc.querySelector('summary').getBoundingClientRect().height+3 && datasetStructure.querySelector('canvas'),'Collapsing dataset atoms hid Structure or prevented its viewer');
+        atomAcc.open=true;await frame();
+        record('Dataset atoms collapse together and their Structure viewer remains available below them');
         // no panel headings, no help line: the mouse controls are behind a round "i" at the right of the first toolbar row
         q('#tab-pattern').click();await frame();
         check(!q('.panel-heading') && !q('.phint'),'A panel heading or the plot help line is still there');

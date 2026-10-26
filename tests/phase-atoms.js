@@ -42,6 +42,14 @@
     check(ph.atoms.length===17 && ph.atoms.every(a=>a.site.mult===ph.ops.length),'The fragment did not give 17 atoms on general positions: '+ph.atoms.length);
     check(/^C1 N1 - /m.test(ph.restraints.text) && /fragment/i.test(q('#status-msg').textContent),'No restraints or no report: '+q('#status-msg').textContent);
     record('Fragment from cime.pdb: 17 heavy atoms on general positions, with bond and angle restraints');
+    const atomBlock=q('#ph-atoms').closest('details'),structureBlock=q('[data-acc="phase-structure"]');
+    check(atomBlock && atomBlock.contains(frag()) && structureBlock===atomBlock.nextElementSibling,'Atoms are not grouped in an accordion immediately followed by Structure');
+    atomBlock.open=false;structureBlock.open=true;await frame();await frame();
+    check(atomBlock.getBoundingClientRect().height<=atomBlock.querySelector('summary').getBoundingClientRect().height+3 && structureBlock.getBoundingClientRect().height>0 && q('#ph-struct canvas'),'Collapsing Atoms hid Structure or the viewer was not drawn');
+    RV.phasesTab.build();await frame();
+    check(!q('#ph-atoms').closest('details').open,'A rebuild forgot the collapsed Atoms preference');
+    q('#ph-atoms').closest('details').open=true;await frame();
+    record('The phase atom list collapses independently of its Structure viewer and remembers its state');
 
     const cif=['data_x','_cell_length_a 10.39','_cell_length_b 18.82','_cell_length_c 6.82','_cell_angle_alpha 90','_cell_angle_beta 106.5','_cell_angle_gamma 90',"_space_group_name_H-M_alt 'P 1 21/c 1'",
       'loop_','_atom_site_label','_atom_site_type_symbol','_atom_site_fract_x','_atom_site_fract_y','_atom_site_fract_z','S1 S 0.11 0.21 0.31','N1 N 0.41 0.12 0.33'].join(String.fromCharCode(10));

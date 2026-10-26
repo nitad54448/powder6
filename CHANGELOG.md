@@ -2,6 +2,26 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.44.0 — 26 October 2026
+
+1. **Parameters before Links.** Rename Parameter links and sharing to Parameters, directly before Links at the same level. Bounds remain available for the dataset being inspected.
+2. **Show sharing only where it applies.** The Shared column, checkboxes, padlocks and Sharing button appear only for global fits with multiple selected datasets that hold the independent parameter. Local background/scale values, linked dependent parameters, unselected datasets and parameters held by only one selected dataset do not offer a sharing checkbox. Switching fit mode or selection preserves the sharing preferences. Reset limits does not reset hidden shared flags.
+3. **Hide an empty Links block.** Parameters offers Add parameter link… until a relationship exists. Creating the first link reveals Links, including for a link within one dataset; removing the last hides it again. Existing relationships remain manageable in individual fits.
+4. **Checks.** A browser regression exercises single and global fits, parameter applicability, within-dataset link creation, dependent targets, selection changes, reset behavior and removal of the last link. Workspace, responsive UI and restraints-helper browser checks cover the new section order and compatibility.
+
+## 2.43.1 — 26 October 2026
+
+1. **Remove the horizontal scrollbar below Structure.** Dataset parameter rows and background/exclusion headers inherited negative side margins intended for a padded container. In the dataset editor the container has no padding, so the rows extended four pixels outside it and created a horizontal scrollbar below the whole parameter list, including Structure. The dataset rows now keep their margins inside the container.
+
+## 2.43.0 — 26 October 2026
+
+1. **Real density in charge flipping.** Initial phases of centric reflections obey their phase restrictions, including translated inversion centres. Weak Friedel partners receive opposite quarter-turns on the CPU and GPU, independently of whether a symmetry operator generated each member directly. This prevents their density being lost into an imaginary component. The worker requires the updated shader marker to reject a cached older kernel.
+2. **Keep independent sites in high symmetry.** The peak limit applies after symmetry reduction, rather than truncating the full-cell peak list before equivalent images are merged. A cubic regression map with three independent 48-fold sites retains all three.
+3. **Refuse stale intensities.** Parameter edits clear the current extraction when it no longer matches the cache. Both charge-flipping and Wyckoff launch handlers independently check freshness, including dataset values and the fit record; disabling a button is not the only guard.
+4. **Name peaks by integrated charge.** CF sites retain their integrated charge and normalized charge through results, History and projects. Formula assignment and automatic Z use the largest integrated charge; older results without integrals keep the height fallback. The sites table shows both Height and Charge. Element assignment remains a chemical heuristic.
+5. **Atoms and Structure.** Each phase's atoms are grouped in a collapsible accordion in Phases and in the dataset's Rietveld controls. A separate Structure accordion immediately follows the atom list, so collapsing the atoms leaves the viewer accessible. Dataset structures use that dataset's constrained coordinates, cell, occupancies and displacement parameters. The Phases Structure heading remains available even before atoms are added.
+6. **Regression coverage.** Numerical checks cover centric amplitudes, translated inversion, real density in all 230 standard space-group settings, weak-reflection survival and full symmetry orbits. Browser checks cover the real CPU/GPU weak-reflection paths, stale launch rejection, charge-based element assignment and independently collapsing atoms beside a working Structure viewer.
+
 ## 2.42.17 — 26 October 2026
 
 1. **Save CIF only for a phase that has atoms.** The per-phase button of 2.42.16 appeared on every phase group, including one whose cell and space group carry no sites: that CIF says "Atomless phase: no atomic coordinates have been invented", which is a file nobody asked for. The button now appears only when the phase has atoms, and `savePhaseCif()` refuses an atomless phase with a message if it is called anyway. The `ui-consistency` browser check asserts both states — no button, then one atom, then one button whose CIF carries that atom.

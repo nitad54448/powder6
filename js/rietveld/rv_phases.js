@@ -130,21 +130,21 @@ RV.phasesTab = (function () {
                  ' inputmode="decimal" autocomplete="off" spellcheck="false"><span class="u">' + (/^[abc]$/.test(c) ? 'Å' : '°') + '</span>';
         }).join('') + '</div><dl class="cell-info" id="ph-cell-info"></dl></section>' +
       '</div>' +
-      '<section class="pblock atoms-block"><h2>Atoms <span class="sub" id="ph-atoms-n"></span></h2>' +
+      '<details class="acc atoms-block" data-acc="phase-atoms-' + esc(ph.key) + '"' + RV.acc.attr('phase-atoms-'+ph.key,true) + '><summary><span class="acc-t">Atoms</span><span class="acc-s" id="ph-atoms-n"></span></summary><div class="acc-body">' +
         '<p class="hint" id="ph-atom-src"></p>' +
         '<div class="table-wrap"><table class="grid atoms"><thead><tr><th>Label</th><th>Scatterer</th><th>x</th><th>y</th><th>z</th><th>Occ.</th><th>B /Å²</th>' +
         '<th title="Wyckoff position (multiplicity and letter) and the coordinates it allows">Site</th><th></th></tr></thead><tbody id="ph-atoms">' +
         (ph.atoms.map(atomRow).join('') || '<tr><td colspan="9" class="hint">No atoms: Le Bail and WPPF use the cell and space group. Add atoms or import a CIF for Rietveld.</td></tr>') +
         '</tbody></table></div><p class="buttons"><button type="button" data-act="atom">Add atom…</button><button type="button" data-act="atoms-cif" title="Read the atom sites of a structure CIF into this phase (add or replace); the phase keeps its cell and space group">Atoms from CIF…</button><button type="button" data-act="fragment" title="Put a molecule (PDB, MOL/SDF, XYZ, Z-matrix) into this phase as atoms on general positions, with restraints for its bonds and angles">Fragment…</button></p>' +
-        '<p class="hint">x, y, z are fractional. A coordinate in grey is set by the site of the atom (shown on the right); typing a value there moves the atom off that site. Occ. is the fraction of the site occupied.</p></section>' +
+        '<p class="hint">x, y, z are fractional. A coordinate in grey is set by the site of the atom (shown on the right); typing a value there moves the atom off that site. Occ. is the fraction of the site occupied.</p></div></details>' +
+      '<details class="acc" data-acc="phase-structure"' + RV.acc.attr('phase-structure') + '><summary><span class="acc-t">Structure</span><span class="acc-s">picture, coordination and distances</span></summary>' +
+        '<div class="acc-body"><p class="buttons"><label>Model <select id="ph-struct-src" aria-label="Atomic model shown"></select></label></p><div id="ph-struct"></div></div></details>' +
       (ph.atoms.length ? '<section class="pblock constraints-block"><h2>Constraints <span class="sub" id="ph-ac-n"></span></h2>' +
         '<p class="hint">GSAS-II relationships between the atomic parameters of ' + esc(ph.name) + ': hold, equivalence and constraint equation. Rietveld applies them exactly in every dataset' + (ph.method === 'rietveld' ? '' : '; ' + esc(ph.name) + ' is fitted by ' + esc(C.METHOD_LABELS[ph.method]) + ' now, so they are kept but unused') + '. Constrained parameters are marked in Parameters.</p>' +
         '<div id="ph-ac"></div></section>' : '') +
       (ph.atoms.length > 1 ? '<section class="pblock constraints-block"><h2>Restraints <span class="sub" id="ph-rs-n"></span></h2>' +
         '<p class="hint">Soft distance and angle restraints between atoms (the rules of the Wyckoff search, on atom labels), added to χ² by Rietveld' + (ph.method === 'rietveld' ? '' : '; ' + esc(ph.name) + ' is fitted by ' + esc(C.METHOD_LABELS[ph.method]) + ' now, so they are kept but unused') + '.</p>' +
         '<p class="buttons"><button type="button" data-restraints-edit>Edit restraints…</button></p></section>' : '') +
-      (ph.atoms.length ? '<details class="acc" data-acc="phase-structure"' + RV.acc.attr('phase-structure') + '><summary><span class="acc-t">Structure</span><span class="acc-s">picture, coordination and distances</span></summary>' +
-        '<div class="acc-body"><p class="buttons"><label>Model <select id="ph-struct-src" aria-label="Atomic model shown"></select></label></p><div id="ph-struct"></div></div></details>' : '') +
       '<p class="buttons phase-model-copy"><button type="button" data-act="model-to-datasets" title="Copy the cell and the atoms of this starting model into the datasets that hold the phase">Starting model → datasets…</button>' +
         '<button type="button" data-act="model-from-dataset" title="Make a dataset’s cell and atoms (its fitted values) the starting model of this phase">Dataset → starting model…</button></p>';
     if ($('#ph-ac')) $('#ph-ac').innerHTML='<p class="hint">'+(ph.constraints || []).map(function(c){return esc(AtomicConstraints.text(c));}).join('; ')+'</p><button type="button" data-edit-method>Edit constraints in Datasets →</button>';
@@ -776,6 +776,8 @@ RV.phasesTab = (function () {
     var html = opts.map(function (o) { return '<option value="' + esc(o[0]) + '">' + esc(o[1]) + '</option>'; }).join('');
     if (sel.innerHTML !== html) sel.innerHTML = html;
     sel.value = want;
+    if (!ph.atoms.length) { host.textContent='Add atoms to this phase to view its structure, coordination and distances.'; sel.hidden=true; structKey=''; return; }
+    sel.hidden=false;
     if (!RV.acc.isShown(host)) return;
     var model;
     try { model = symmetryModel(ph, { source: want }); } catch (e) { host.textContent = e.message; structKey = ''; return; }

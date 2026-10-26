@@ -5,6 +5,12 @@ RV.panels = (function () {
   function $(s) { return document.querySelector(s); }
   function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
   function fitMode() { return RV.app && RV.app.fitMode ? RV.app.fitMode() : 'single'; }
+  function canShareParameter(name,ds) {
+    if(!ds || fitMode()!=='global' || !S.sel.has(ds.id) || !St.shareable(name) || !St.isVariable(name))return false;
+    var c=C.classify(name);if(c.phase && S.disabledPhases.includes(c.phase))return false;
+    if(S.parameterLinks.some(function(l){return l.target.datasetId===ds.id && l.target.name===name;}))return false;
+    return St.selected().filter(function(d){return Object.prototype.hasOwnProperty.call(d.p,name) && !S.parameterLinks.some(function(l){return l.target.datasetId===d.id && l.target.name===name;});}).length>1;
+  }
   function editorDataset() { return RV.workspace && RV.workspace.dataset ? RV.workspace.dataset() : St.first(); }
 
   // ================================================================ Datasets
@@ -208,7 +214,7 @@ RV.panels = (function () {
         });
         r.push({ name: pre + 'occ', label: 'occ', unit: '', tip: 'Occupancy of ' + at.label });
         r.push({ name: pre + 'B', label: 'B', unit: 'Å²', tip: 'Isotropic displacement of ' + at.label });
-        out.push({ key: ph.key + ':' + at.label, title: ph.name + ' · ' + at.label, sub: at.type + ', ' + at.site.wyck + ' (' + at.site.expr + ')', color: col, rows: r });
+        out.push({ key: ph.key + ':' + at.label, atomPhase: ph.key, title: ph.name + ' · ' + at.label, sub: at.type + ', ' + at.site.wyck + ' (' + at.site.expr + ')', color: col, rows: r });
       });
     });
     return out;
@@ -245,6 +251,7 @@ RV.panels = (function () {
     }
     var groups = groupsFor(ds), dis = S.busy ? ' disabled' : '';
     shownGroups = groups;
+    host.querySelectorAll('[data-dataset-structure]').forEach(function(view){if(typeof WyckoffReport!=='undefined')WyckoffReport.dispose(view);});
     host.innerHTML = groups.map(function (g) {
       var closed = !!collapsed[g.key], anchors = g.key === 'ds' && ds.inst.bkgType === 'spline';
       // One phase per group (its own key; ':prof' and ':Atom' groups carry the same phase's other rows), so its
@@ -270,7 +277,32 @@ RV.panels = (function () {
             '</div>';
         }).join('') + '</div>';
     }).join('');
+    // Keep existing atom parameter groups together; their fields and refinement controls stay intact.
+    S.phases.forEach(function(ph){
+      var atomGroups=groups.filter(function(g){return g.atomPhase===ph.key;});
+      if(!atomGroups.length)return;
+      var headings=Array.from(host.querySelectorAll('.pgroup')).filter(function(el){return atomGroups.some(function(g){return g.key===el.dataset.group;});});
+      var key='dataset-atoms-'+ph.key,box=document.createElement('details');box.className='acc';box.dataset.acc=key;box.open=RV.acc.isOpen(key,true);
+      box.innerHTML='<summary><span class="acc-t">'+esc(ph.name)+' · Atoms</span><span class="acc-s">'+plural(ph.atoms.length,'site')+'</span></summary><div class="acc-body"></div>';
+      host.insertBefore(box,headings[0]);var body=box.querySelector('.acc-body');
+      headings.forEach(function(heading){var rows=heading.nextElementSibling;body.appendChild(heading);body.appendChild(rows);});
+      var structure=document.createElement('details');structure.className='acc';structure.dataset.acc='dataset-structure-'+ph.key;structure.open=RV.acc.isOpen(structure.dataset.acc,false);
+      structure.innerHTML='<summary><span class="acc-t">Structure</span><span class="acc-s">'+esc(ph.name)+' · picture, coordination and distances</span></summary><div class="acc-body"><div class="sv-struct" data-dataset-structure="'+esc(ph.key)+'"></div></div>';
+      box.after(structure);
+    });
     renderValues();
+  }
+  function renderDatasetStructures(){
+    if(!RV.app || RV.app.commandTab()!=='datasets' || !RV.rietveldStructure)return;
+    var ds=editorDataset();if(!ds)return;
+    document.querySelectorAll('#param-list [data-dataset-structure]').forEach(function(host){
+      if(!RV.acc.isShown(host))return;
+      if(S.busy){if(typeof WyckoffReport!=='undefined')WyckoffReport.dispose(host);host.textContent='The structure will update when the calculation finishes.';host.__structureKey='';return;}
+      var ph=St.phaseByKey(host.dataset.datasetStructure);if(!ph)return;
+      try{var st=RV.rietveldStructure.structure(ph,ds),key=JSON.stringify(st);if(key===host.__structureKey && host.childElementCount)return;
+        if(typeof WyckoffReport!=='undefined'){WyckoffReport.render(host,st);host.__structureKey=key;}else host.textContent='The structure viewer is not loaded.';
+      }catch(e){host.textContent='Structure unavailable: '+e.message;host.__structureKey='';}
+    });
   }
   // Datasets → Excluded regions: one row per zone (from, to, a tick to apply it, a button to remove it), applied ones and kept-aside ones in angle order
   function zoneRows(ds, dis) {
@@ -320,7 +352,7 @@ RV.panels = (function () {
       if (pn) { if (pn.dataset.tip == null) pn.dataset.tip = pn.title || ''; pn.title = ar ? ar.text + '. ' + pn.dataset.tip : pn.dataset.tip; }
       var physical=geometryTip(ds,n); if(physical){row.title=physical;inp.title=physical;var label=row.querySelector('.pn');if(label)label.title=physical;}
       if (editing !== n) inp.value = fmtParam(n,v);
-      if (row.classList.contains('dep')) { row.querySelector('.pl').hidden = !g; return; }
+      if (row.classList.contains('dep')) { row.querySelector('.pl').hidden = true; return; }
       // among the selected datasets that hold the parameter (its phase may be in only some of them)
       var hold = list.filter(function (x) { return Object.prototype.hasOwnProperty.call(x.p, n); }), part = hold.length < list.length ? ' that hold it' : '';
       var nFit = hold.filter(function (x) { return x.fit[n]; }).length, mixed = hold.length > 1 && nFit > 0 && nFit < hold.length, fit = !!ds.fit[n];
@@ -342,10 +374,10 @@ RV.panels = (function () {
       if (ar && ar.follows) { var src = ar.follows.datasetId != null ? St.byId(ar.follows.datasetId) : ds; fit = !!(src && src.fit[ar.follows.name]); mixed = false; pf.checked = fit; pf.indeterminate = false; pf.title = ar.text + '; its tick follows ' + ar.follows.name + ' (' + (fit ? 'refined' : 'fixed') + ').'; }
       row.classList.toggle('fixed', !fit && !mixed);
       var pl = row.querySelector('.pl'), can = St.shareable(n), sh = St.isShared(n);
-      pl.hidden = !g;
-      if (g) {
+      pl.hidden = !canShareParameter(n,ds) || !!(ar && ar.ignore);
+      if (!pl.hidden) {
         // shared by all the selected datasets that hold it, by some (the others keep their own value), or local
-        var so = can && sh ? St.shareOf(n, list) : null, many = !!so && so.held.length > 1;
+        var so = can && sh ? St.shareOf(n, St.selected()) : null, many = !!so && so.held.length > 1;
         var apart = many && St.isApart(ds, n), some = many && !apart && so.alone.length > 0;
         pl.innerHTML = can ? LOCK_SVG[sh && !apart ? 'shared' : 'local'] : '';
         pl.className = 'pl ' + (can ? (!sh ? 'local' : apart ? 'local apart' : some ? 'shared some' : 'shared') : 'own');
@@ -372,7 +404,7 @@ RV.panels = (function () {
       cb.disabled=!!S.busy || !tot;
       cb.title = on + ' of ' + tot + ' refined in ' + ds.name + '. Click to ' + (on === tot ? 'hold them all fixed.' : 'refine them all.');
     });
-    renderStats();
+    renderStats();renderDatasetStructures();
   }
   function renderStats() {
     // Actionable parameter diagnostics belong beside the editors; numerical
@@ -548,6 +580,8 @@ RV.panels = (function () {
     });
   }
   function initParams() {
+    RV.bus.on('acc',renderDatasetStructures);
+    RV.bus.on('tab',function(t){if(t==='datasets')renderDatasetStructures();});
     bindParams();
     $('#param-prev').addEventListener('click', function () { stepDataset(-1); });
     $('#param-next').addEventListener('click', function () { stepDataset(1); });
@@ -719,22 +753,25 @@ RV.panels = (function () {
   function renderLimits() {
     var host = $('#limits'), ds = editorDataset();
     if (!ds) { host.innerHTML = '<p class="hint">No dataset yet.</p>'; return; }
-    var names = St.namesFor(ds).filter(St.isVariable);
-    host.innerHTML = '<table class="grid compact limits-table"><colgroup><col style="width:26%"><col style="width:22%"><col style="width:16%"><col style="width:16%"><col style="width:11%"><col style="width:9%"></colgroup><thead><tr><th>Parameter</th><th title="Value in ' + esc(ds.name) + '">Value</th><th>Min</th><th>Max</th>' +
-      '<th title="Global fit: one value for all datasets (ticked) or one value per dataset">Shared</th><th></th></tr></thead><tbody>' +
+    var names = St.namesFor(ds).filter(St.isVariable),sharing=names.some(function(n){return canShareParameter(n,ds);});
+    var sharingButton=$('#fit-sharing'),reset=$('#lim-reset');if(sharingButton)sharingButton.hidden=!sharing;
+    if(reset)reset.textContent=sharing?'All limits and shared flags to their defaults':'All limits to their defaults';
+    var help=$('#dataset-limits-group summary .acc-help');if(help)help.setAttribute('data-help','A refinement keeps every parameter between its limits (type inf for none).'+(sharing?' Shared parameters use one value across selected datasets in the global fit; unticked parameters keep separate values. Sharing… chooses which datasets take part.':''));
+    host.innerHTML = '<table class="grid compact limits-table"><colgroup><col style="width:26%"><col style="width:22%"><col style="width:16%"><col style="width:16%">' + (sharing?'<col style="width:11%">':'') + '<col style="width:9%"></colgroup><thead><tr><th>Parameter</th><th title="Value in ' + esc(ds.name) + '">Value</th><th>Min</th><th>Max</th>' +
+      (sharing?'<th title="Global fit: one value for all datasets (ticked) or one value per dataset">Shared</th>':'') + '<th></th></tr></thead><tbody>' +
       names.map(function (n) {
-        var L = St.limitsOf(n, ds.p[n]), own = !!S.limits[n], can = St.shareable(n);
+        var L = St.limitsOf(n, ds.p[n]), own = !!S.limits[n], can = canShareParameter(n,ds);
         return '<tr data-name="' + esc(n) + '"><td><code>' + esc(n) + (St.isSizeParam(n) ? ' (nm)' : '') + '</code></td><td>' + fmtParam(n,ds.p[n]) + '</td>' +
           '<td><input data-lim="0" value="' + fmtVal(St.toDisplay(n,L[0])) + '" inputmode="decimal"></td><td><input data-lim="1" value="' + fmtVal(St.toDisplay(n,L[1])) + '" inputmode="decimal"></td>' +
-          '<td>' + (can ? '<input type="checkbox" data-shared' + (St.isShared(n) ? ' checked' : '') + '>' : '<small title="Always one value per dataset">—</small>') + '</td>' +
+          (sharing?'<td>' + (can ? '<input type="checkbox" data-shared aria-label="Share '+esc(n)+' in the global fit"' + (St.isShared(n) ? ' checked' : '') + '>' : '') + '</td>':'') +
           '<td>' + (own ? '<button type="button" class="link" data-lim-reset>default</button>' : '') + '</td></tr>';
       }).join('') + '</tbody></table>';
   }
   function onLimit(e) {
     var tr = e.target.closest('tr');
     if (!tr) return;
-    var n = tr.getAttribute('data-name'), ds = St.first() || S.datasets[0];
-    if (e.target.hasAttribute('data-shared')) { St.setShared(n, e.target.checked); return; }
+    var n = tr.getAttribute('data-name'), ds = editorDataset();
+    if (e.target.hasAttribute('data-shared')) { if(canShareParameter(n,ds))St.setShared(n, e.target.checked); return; }
     var w = e.target.getAttribute('data-lim');
     if (w == null) return;
     var L = St.limitsOf(n, ds && ds.p[n]), raw = e.target.value.trim().toLowerCase(), v = /^-?inf/.test(raw) ? (raw.charAt(0) === '-' ? -Infinity : Infinity) : ui.parseNum(raw);
@@ -761,11 +798,12 @@ RV.panels = (function () {
       ui.confirm('Reset the refinement, data and plot settings to their original values? Limits and shared flags are kept.', 'Reset settings').then(function (ok) { if (ok) { St.resetSettings(); ui.toast('Settings reset.', 'info'); } });
     });
     $('#lim-reset').addEventListener('click', function () {
-      S.limits = {}; S.shared = {}; renderLimits(); RV.bus.emit('shared', {});
-      ui.toast('All limits and shared flags back to their defaults.', 'info');
+      var sharing=St.namesFor(editorDataset()).some(function(n){return canShareParameter(n,editorDataset());});
+      S.limits = {}; if(sharing)S.shared = {}; renderLimits(); RV.bus.emit('shared', {});
+      ui.toast(sharing?'All limits and shared flags back to their defaults.':'All limits back to their defaults.', 'info');
     });
     RV.bus.on('settings', syncSettings);
-    ['selection', 'datasetFocus', 'datasets', 'phases', 'shared', 'data'].forEach(function (ev) { RV.bus.on(ev, function () { if (RV.app && RV.app.commandTab() === 'datasets') renderLimits(); }); });
+    ['selection', 'datasetFocus', 'datasets', 'phases', 'shared', 'data', 'fitmode', 'calculation', 'params'].forEach(function (ev) { RV.bus.on(ev, function () { if (RV.app && RV.app.commandTab() === 'datasets') renderLimits(); }); });
     RV.bus.on('tab', function (t) { if (t === 'datasets') renderLimits(); });
   }
 

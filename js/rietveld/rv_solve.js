@@ -308,7 +308,7 @@ RV.solve = (function () {
   }
   // the formula unit is one value, shown in both methods that use it, each saying what it does with it
   var FORMULA_USE = {
-    cf: 'Charge flipping uses the formula unit and Z only to name its peaks: the strongest scatterer goes on the highest peaks, each element on count × Z atoms per cell. The map itself does not depend on them. The Wyckoff search below uses the same values.',
+    cf: 'Charge flipping uses the formula unit and Z only to name its peaks: the strongest scatterer goes on the peaks with the largest integrated charge, each element on count × Z atoms per cell. The map itself does not depend on them. The Wyckoff search below uses the same values.',
     wy: 'The Wyckoff search places these atoms and no others: count × Z of each element per cell, on the Wyckoff positions of the space group. Z = Auto tries every Z with a plausible density. Charge flipping above uses the same values to name its peaks.'
   };
   // The help of a block goes in the question mark at the right of its title (see block() in render(), and
@@ -332,7 +332,7 @@ RV.solve = (function () {
       var rho = density(Z, comp), bad = !(rho >= RHO_MIN && rho <= RHO_MAX);
       return { text: 'Z = ' + Z + ': ρ = ' + rho.toFixed(3) + ' g/cm³ (M = ' + M.toFixed(2) + ' g/mol, V = ' + V.toFixed(1) + ' Å³).' + (bad ? ' No solid has that density: Z counts formula units, not atoms.' : ''), warn: bad };
     }
-    if (k === 'cf') return { text: 'Z = Auto: from the highest peak, its site multiplicity over the count of the heaviest element. M = ' + M.toFixed(2) + ' g/mol, V = ' + V.toFixed(1) + ' Å³.', warn: false };
+    if (k === 'cf') return { text: 'Z = Auto: from the peak with the largest integrated charge, its site multiplicity over the count of the heaviest element. M = ' + M.toFixed(2) + ' g/mol, V = ' + V.toFixed(1) + ' Å³.', warn: false };
     var w = wyOptions(), lo = Math.max(1, Math.ceil(V * w.rhoMin / (AMU_A3 * M) - 1e-9)), hi = Math.min(WL.zMax, Math.floor(V * w.rhoMax / (AMU_A3 * M) + 1e-9)), st = zStep(comp), list = [];
     for (var z = Math.max(st, Math.ceil(lo / st) * st); z <= hi && list.length < WL.maxZSearches; z += st) list.push(z);
     return { text: 'Z = Auto: ' + (list.length ? 'the Wyckoff search tries Z = ' + list.join(', ') + (st > 1 ? ' (multiples of ' + st + ' the positions allow)' : '') + ', ρ ' + density(list[0], comp).toFixed(2) + '–' + density(list[list.length - 1], comp).toFixed(2) + ' g/cm³'
@@ -423,7 +423,9 @@ RV.solve = (function () {
     var ph = St.phaseByKey(I.phaseKey);
     if (!ph) return 'The phase ' + I.phaseName + ' of this extraction is gone.';
     if (ph.sg.hall !== I.sg.hall) return 'The space group of ' + ph.name + ' changed since this extraction (' + I.sg.symbol + ' then, ' + ph.sg.symbol + ' now): fit by WPPF again.';
-    if (I.stale) return 'The values changed since this extraction: refit by WPPF to update the intensities.';
+    var ds=St.byId(I.dsId),cache=SV.extractions[I.dsId+':'+I.phaseKey] || SV.extractions[I.dsId];
+    if(!ds)return 'The dataset of this extraction is gone.';
+    if (I.stale || (cache && cache.I===I && (cache.stats!==ds.stats || (cache.values && cache.values!==intensityValues(ds))))) return 'The values changed since this extraction: refit by WPPF to update the intensities.';
     return '';
   }
 
@@ -532,6 +534,8 @@ RV.solve = (function () {
     if (S.busy || SV.cfRun || SV.wyRun) return;
     var I = SV.ints;
     if (!I) { ui.toast('Fit by WPPF first; intensities are prepared automatically.', 'warn'); return; }
+    var sourceIssue = staleNote();
+    if (sourceIssue) { ui.toast(sourceIssue, 'warn'); return; }
     var o = cfOptions();
     if (o.error) { ui.toast('Charge flipping: ' + o.error, 'warn'); return; }
     var search=null;
@@ -644,7 +648,7 @@ RV.solve = (function () {
     var chosenOptions=run.bestOptions || run.o,snapTol = 0.6 * chosenOptions.peakMerge, pseudo = { ops: I.ops, wyckoff: I.wyckoff };
     var sites = (run.structure ? run.structure.sites : []).map(function (s) {
       var site = siteFor(pseudo, [s.x, s.y, s.z], I.cell, snapTol);
-      return { rank: s.rank, x: site.pos[0], y: site.pos[1], z: site.pos[2], raw: [s.x, s.y, s.z], height: s.height, relative: s.relative, mult: site.mult, wyck: site.wyck, element: '', use: false };
+      return { rank: s.rank, x: site.pos[0], y: site.pos[1], z: site.pos[2], raw: [s.x, s.y, s.z], height: s.height, relative: s.relative, charge: s.charge, chargeRel: s.chargeRel, mult: site.mult, wyck: site.wyck, element: '', use: false };
     });
     SV.cf = { best: run.best, structure: run.structure, sites: sites, trials: run.o.trials, trialsDone: run.done, bestTrial: run.bestTrial,
               stopped: run.stopped, o: chosenOptions, grid: run.grid, auto: run.auto, ag: run.ag, note: run.inp.note, n: run.inp.hklList.length, I: I, stamp: I.stamp, err: err, seconds: dt,formula:SV.opts.formula,nameFromFormula:!!parseFormula(SV.opts.formula),
@@ -683,7 +687,7 @@ RV.solve = (function () {
     }
     return null;
   }
-  /* Element types for the peaks from the formula unit: the strongest scatterer on the highest peaks, each element on as
+  /* Element types from the formula unit: strongest scatterers on the largest integrated charges (legacy: heights), on as
      many atoms per cell as its count times Z asks (Z typed, or from the first peak: the heaviest atom on one site).
      A peak whose site holds more atoms than the element still needs is moved onto a nearby special position of small
      enough multiplicity (charge-flipping peaks of atoms on inversion centres or mirrors are rarely exactly on them);
@@ -696,7 +700,9 @@ RV.solve = (function () {
     var comp = parseFormula(formula==null?SV.opts.formula:formula);
     if (!comp) { R.sites.forEach(function (s) { s.use = s.relative >= 0.2; }); R.unplaced = []; return ''; }
     var rad = R.I.radiation, order = comp.slice().sort(function (a, b) { return power(b.el, rad) - power(a.el, rad); });
-    var list = R.sites.slice().sort(function (a, b) { return b.height - a.height; }), Z = z===undefined?typedZ():z;
+    // Legacy saved sites may have no integrals; use one ranking scale for the whole list.
+    var byCharge = R.sites.every(function(s){return Number.isFinite(s.charge);}) && R.sites.some(function(s){return s.charge>0;});
+    var list = R.sites.slice().sort(function (a, b) { return (byCharge ? b.charge-a.charge : b.height-a.height) || b.height-a.height; }), Z = z===undefined?typedZ():z;
     list.forEach(function (s) { s.element = ''; s.use = false; });
     if (!Z) Z = list[0].mult / order[0].n;
     var missing = [], moved = [];
@@ -746,6 +752,8 @@ RV.solve = (function () {
     if (S.busy || SV.wyRun || SV.cfRun) return;
     var I = SV.ints, formula = String(SV.opts.formula || '').trim();
     if (!I) { ui.toast('Fit by WPPF first; intensities are prepared automatically.', 'warn'); return; }
+    var sourceIssue = staleNote();
+    if (sourceIssue) { ui.toast(sourceIssue, 'warn'); return; }
     if (!formula) { ui.toast('The Wyckoff search needs the formula unit in Commands → Structure.', 'warn'); return; }
     var comp = parseFormula(formula);
     if (!comp) { ui.toast(formula + ' is not a formula this program can read.', 'warn'); return; }
@@ -1183,7 +1191,7 @@ RV.solve = (function () {
     sw.innerHTML = ph && ph.method !== 'wppf' ? '<button type="button" data-sv="to-wppf" title="Fit ' + esc(ph.name) + ' by WPPF: its intensities become free variables of the fit">Fit ' + esc(ph.name) + ' by WPPF</button>' : '';
     // the state of the fit is the tooltip of the button, or the reason it is greyed
     var ds0=dataset(),I=prepared(ds0,ph),why=extractWhy(ph,ds0);
-    if(I)SV.ints=I;
+    SV.ints=I;
     var attempt=ds0 && ph && preparationAttempts[ds0.id+':'+ph.key];
     $('#sv-extract-note').textContent=I?'WPPF intensities available for '+ph.name+' in '+ds0.name+'.':
       why || (preparationPending?'Preparing intensity uncertainties and correlations...':attempt?'Intensity preparation did not complete. Check the Log; refit this dataset to try again.':'Preparing WPPF intensities automatically...');
@@ -1197,8 +1205,8 @@ RV.solve = (function () {
     var I = SV.ints, none = 'Fit this dataset by WPPF; its intensities are prepared automatically.';
 
     ui.able(document.querySelector('#solve [data-sv="sgt"]'), S.busy?'Calculation running.':sgtCountIssue() || (!I || !I.pre || !I.pre.n?'The extraction holds no precision block.':''));
-    ui.able($('#sv-cf-run'), S.busy?'Calculation running.':!I?none:cfOptions().error || '');
-    ui.able($('#sv-wy-run'), S.busy?'Calculation running.':!I ? none : !parseFormula(SV.opts.formula) ? 'Give the formula unit in Commands → Structure.' : '');
+    ui.able($('#sv-cf-run'), S.busy?'Calculation running.':!I?none:staleNote() || cfOptions().error || '');
+    ui.able($('#sv-wy-run'), S.busy?'Calculation running.':!I ? none : staleNote() || (!parseFormula(SV.opts.formula) ? 'Give the formula unit in Commands → Structure.' : ''));
     if(RV.wyHelper)RV.wyHelper.able($('#sv-wy-helper'));
     syncSymmetry();
   }
@@ -1261,11 +1269,11 @@ RV.solve = (function () {
         (T.sigmaExact ? 'the uncertainties are the marginal ones of the extraction' : 'some reflections coincide exactly, so their uncertainties are conditional') + '. Choosing a group sets the space group of the phase; fit by WPPF again in it before solving.</p>';
   }
   function cfSitesTable(R) {
-    return '<div class="table-wrap"><table class="grid compact sv-sites"><thead><tr><th title="Export and show this site">Use</th><th>#</th><th>Element</th><th>x</th><th>y</th><th>z</th><th>Site</th><th title="Peak height over the highest">Height</th></tr></thead><tbody>' +
+    return '<div class="table-wrap"><table class="grid compact sv-sites"><thead><tr><th title="Export and show this site">Use</th><th>#</th><th>Element</th><th>x</th><th>y</th><th>z</th><th>Site</th><th title="Peak height over the highest">Height</th><th title="Integrated density above the local baseline, relative to the largest integral">Charge</th></tr></thead><tbody>' +
       R.sites.map(function (s, i) {
         return '<tr' + (s.use ? '' : ' class="off"') + '><td><input type="checkbox" data-cfuse="' + i + '"' + (s.use ? ' checked' : '') + ' aria-label="Use site ' + s.rank + '"></td><td>' + s.rank + '</td>' +
                '<td><input class="sv-el" data-cfel="' + i + '" list="sv-el-list" value="' + esc(s.element) + '" spellcheck="false" autocomplete="off" aria-label="Element of site ' + s.rank + '"></td>' +
-               '<td>' + f(s.x, 4) + '</td><td>' + f(s.y, 4) + '</td><td>' + f(s.z, 4) + '</td><td' + (Number.isFinite(s.snapped) ? ' title="Peak moved ' + s.snapped.toFixed(2) + ' Å onto this special position so that ' + esc(capEl(s.element)) + ' gets the number of atoms the formula asks for"' : '') + '>' + esc(s.wyck) + (Number.isFinite(s.snapped) ? ' ↦' : '') + '</td><td>' + f(s.relative, 3) + '</td></tr>';
+               '<td>' + f(s.x, 4) + '</td><td>' + f(s.y, 4) + '</td><td>' + f(s.z, 4) + '</td><td' + (Number.isFinite(s.snapped) ? ' title="Peak moved ' + s.snapped.toFixed(2) + ' Å onto this special position so that ' + esc(capEl(s.element)) + ' gets the number of atoms the formula asks for"' : '') + '>' + esc(s.wyck) + (Number.isFinite(s.snapped) ? ' ↦' : '') + '</td><td>' + f(s.relative, 3) + '</td><td>' + f(s.chargeRel, 3) + '</td></tr>';
       }).join('') + '</tbody></table></div>' +
       ((R.unplaced || []).length ? '<p class="sv-warn">Not placed: ' + esc(R.unplaced.join(', ')) + '. No peak lies within ' + CF_SNAP_MAX + ' Å of a free position of small enough multiplicity. Check Z, or type the element on a site by hand.</p>' : '');
   }
