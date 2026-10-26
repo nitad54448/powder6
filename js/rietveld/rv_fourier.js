@@ -52,12 +52,22 @@ RV.fourier = (function(){
     });
   }
   function status(msg,bad){var e=$('#sv-fo-status');if(e){e.textContent=msg||'';e.classList.toggle('sv-warn',!!bad);}}
-  function run(){
-    if(S.busy)return;
+  // Why the map cannot be computed now, or '' when it can: the two halves of its input are the atoms of the
+  // phase (they give the phases of F) and its WPPF intensities. The button says which is missing instead of
+  // being pressed into an error the form already knew about.
+  function blocker(){
     var sv=SV(),ph=St.phaseByKey(sv.phaseKey),ds=St.byId(sv.dsId),I=sv.ints;
-    if(!ph||!ds){status('Choose a phase and a dataset above.',true);return;}
-    if(!ph.atoms.length){status('A Fourier map takes its phases from the model: '+ph.name+' has no atoms. Add atoms (or solve the structure first).',true);return;}
-    if(!I||I.stale||I.phaseKey!==ph.key||I.dsId!==ds.id){status('The WPPF intensities are not ready: fit '+ph.name+' by WPPF in '+ds.name+' (they are prepared automatically).',true);return;}
+    if(!ph||!ds)return 'Choose a phase and a dataset above.';
+    if(!ph.atoms.length)return ph.name+' has no atoms: a Fourier map takes its phases from the model. Add atoms, or solve the structure first.';
+    if(!I||I.stale||I.phaseKey!==ph.key||I.dsId!==ds.id)return 'No WPPF intensities for '+ph.name+' in '+ds.name+': fit it by WPPF first (they are prepared automatically).';
+    return '';
+  }
+  function sync(){var b=$('[data-fo="run"]');if(b)ui.able(b,blocker());}
+  function run(){
+    if(S.busy){sync();return;}
+    var why=blocker();
+    if(why){status(why,true);sync();return;}
+    var sv=SV(),ph=St.phaseByKey(sv.phaseKey),ds=St.byId(sv.dsId),I=sv.ints;
     var o=FO.opts,v=o.from==='dataset'&&St.hasPhase(ds,ph)&&ph.atoms.every(function(a){return Number.isFinite(ds.p[ph.key+'.'+a.label+'.x']);})?ds.p:ph.v,res;
     var inRange=I.refl.filter(function(r){return r.inRange&&Number.isFinite(r.area);});
     var dmin=ui.parseNum(o.dmin);if(!(dmin>0))dmin=Math.max(0.5,Math.min.apply(null,inRange.map(function(r){return r.d;}).filter(function(d){return d>0;})));
@@ -84,6 +94,7 @@ RV.fourier = (function(){
   function render(){
     var R=FO.result,none=$('#sv-fo-none'),host=$('#sv-fo-density'),peaks=$('#sv-fo-peaks'),sum=$('#sv-fo-sum'),n=$('#sv-fo-peaks-n');
     if(!none&&!peaks)return;
+    sync();
     if(!R){if(none)none.hidden=false;if(host)host.hidden=true;if(peaks)peaks.innerHTML='<p class="hint">No map yet.</p>';if(sum)sum.textContent='';if(n)n.textContent='';return;}
     if(none)none.hidden=true;if(host)host.hidden=false;
     if(peaks)peaks.innerHTML=peaksHTML(R);
@@ -176,6 +187,9 @@ RV.fourier = (function(){
     RV.bus.on('tab',function(){if(RV.app.resultTab()==='structure-results'&&RV.layout.structureKind()==='fo')show();});
     RV.bus.on('theme',function(){if(typeof Density3D!=='undefined'&&FO.result&&RV.layout.structureKind()==='fo')Density3D.applyTheme();});
     RV.bus.on('phases',function(){if(FO.result&&!St.phaseByKey(FO.result.phaseKey)){FO.result=null;render();}});
+    // the button says what is missing: the atoms of the phase, or its WPPF intensities. Both change with the
+    // data (an atom added, a fit, another phase or dataset chosen), so the state follows those events.
+    ['phases','params','stats','datasets','selection','tables'].forEach(function(ev){RV.bus.on(ev,function(){sync();});});
   }
-  return {init:init,html:html,render:render,show:show,state:FO,run:run};
+  return {init:init,html:html,render:render,show:show,state:FO,run:run,sync:sync};
 })();

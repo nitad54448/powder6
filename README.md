@@ -1,6 +1,6 @@
 # Powder 6
 
-Version **2.42.15**, 26 October 2026. See [corrections](CHANGELOG.md).
+Version **2.42.16**, 26 October 2026. See [corrections](CHANGELOG.md).
 
 Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by **Rietveld**, **Le Bail** or **WPPF**, fitted individually or in one global fit, with **structure solution** from the extracted intensities. Everything runs locally; nothing is uploaded.
 
@@ -19,7 +19,7 @@ Full documentation: [`Powder6_documentation.html`](Powder6_documentation.html): 
 - Soft distance and angle restraints in Rietveld, in the rule language of the Wyckoff search, with a guide that writes them from a PDB, MOL/SDF, XYZ or Z-matrix molecule.
 - Atoms into an existing phase: from a structure CIF, or a molecule as a fragment (atoms on general positions, with restraints for its bonds and angles).
 - Readers for xy/csv/txt, PANalytical `.xrdml`, Bruker `.brml`/`.uxd`, Rigaku `.ras`/`.rasx`, Philips `.udf`, GSAS `.xra`/`.esd`, Jade `.mdi`, "start step end" free format (FullProf/WinPLOTR/EXPO), pdCIF, and project files.
-- Results as text, CIF, pdCIF, SHELX HKLF 4 and a PDF report; command line, edit undo, and persistent calculation History with Set/Keep.
+- Results as text, CIF, pdCIF, SHELX HKLF 4 and a PDF report (a single phase can be saved as a CIF from its own group in Datasets); command line, edit undo, and persistent calculation History with Set/Keep.
 - Structure → Space group has **Test** for systematic absences of the extracted powder intensities and **ADDSYM** for symmetry of an atomic model. Find higher symmetry… calls the public, locally bundled Moyo 0.21.0 WebAssembly API in a worker. **Subgroups…** lists the maximal translationengleiche and klassengleiche subgroups of the phase's space group and opens Convert… with the one chosen. The starting model, a dataset’s Rietveld model, or after a Le Bail or WPPF fit the dataset’s refined cell with its atoms can be selected. See [atomic-model symmetry](#atomic-model-symmetry) and the [bundled Moyo code](#bundled-moyo-code).
 - Phases → Convert… carries a phase to another space group or setting (subgroups split sites, supergroups merge them when the structure has the symmetry); cell, positions and every dataset are transformed.
 - Compressed `.project` files (`.archive` and the `.powder6` files of earlier versions open too), and overview/focused inspection for large series.

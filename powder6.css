@@ -744,6 +744,9 @@ table.grid.pm input:disabled { opacity: .45; }
    density no solid has) */
 .acc > summary .acc-help { margin-left: auto; align-self: center; }
 .acc > summary .acc-help.sv-warn { color: var(--warn); border-color: var(--warn); }
+/* A closed block shows its title and nothing else: its question mark explains what is inside, so it
+   appears with the block. A closed accordion is a heading; the icon is part of what it opens. */
+.acc:not([open]) > summary .acc-help, .object-group:not([open]) > summary .acc-help { display: none; }
 .acc[open] > summary { border-bottom: 1px solid var(--rule-2); border-radius: var(--radius) var(--radius) 0 0; }
 .acc > .acc-body { padding: var(--sp-3) var(--sp-4) var(--sp-4); min-width: 0; }
 .acc.sub { margin: var(--sp-2) 0; background: var(--paper); }

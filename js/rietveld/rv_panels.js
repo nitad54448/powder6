@@ -247,8 +247,12 @@ RV.panels = (function () {
     shownGroups = groups;
     host.innerHTML = groups.map(function (g) {
       var closed = !!collapsed[g.key], anchors = g.key === 'ds' && ds.inst.bkgType === 'spline';
+      // One phase per group (its own key; ':prof' and ':Atom' groups carry the same phase's other rows), so its
+      // own structure can be saved from the values of this dataset without going to Results.
+      var cifPhase = g.key.indexOf(':') < 0 ? St.phaseByKey(g.key) : null;
       var header='<div class="pgroup" data-group="' + esc(g.key) + '"><button type="button" class="pg-tog" aria-expanded="' + !closed + '">' +
         (g.color ? '<i class="sw" style="background:' + g.color + '"></i>' : '') + '<span class="pg-t">' + esc(g.title) + '</span><span class="pg-s" title="' + esc(g.sub) + '">' + esc(g.sub) + '</span></button>' +
+        (cifPhase ? '<button type="button" class="mini" data-phase-cif="' + esc(cifPhase.key) + '"' + dis + ' title="Save the cell, space group and atoms of ' + esc(cifPhase.name) + ' from the values of this dataset as a CIF">Save CIF…</button>' : '') +
         (g.key==='exclusions'?'':'<input type="checkbox" class="pg-fit"' + dis + ' aria-label="Fit all of ' + esc(g.title + ', ' + g.sub) + '">')+'</div>';
       if(g.key==='exclusions')return header+'<div class="pg-rows" id="dataset-exclusions"'+(closed?' hidden':'')+'>'+zoneRows(ds,dis)+'<p class="buttons"><button type="button" id="ds-excl"'+dis+'>Add zone</button></p></div>';
       var type=ds.inst.resolutionType || 'tch_aniso';if(type==='gsas_cw')type='tch_aniso';
@@ -467,6 +471,13 @@ RV.panels = (function () {
       editing = null; renderValues(); editing = n;
     }, { passive: false });
     host.addEventListener('click', function (e) {
+      var cif = e.target.closest('[data-phase-cif]');
+      if (cif) {
+        e.preventDefault(); e.stopPropagation();
+        var cp = St.phaseByKey(cif.getAttribute('data-phase-cif'));
+        if (cp && !S.busy && RV.results) RV.results.savePhaseCif(cp, editorDataset());
+        return;
+      }
       var tog = e.target.closest('.pg-tog');
       if (tog) {
         var gk = tog.closest('.pgroup').getAttribute('data-group'), rows = tog.closest('.pgroup').nextElementSibling, open = rows.hidden;

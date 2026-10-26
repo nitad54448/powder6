@@ -40,6 +40,26 @@
     check(q('#dataset-detail').getAttribute('aria-labelledby')==='dataset-editor-name','Dataset editor has no visible accessible heading');
     check(q('#dataset-tabs').hidden && !q('#dataset-values h1'),'Repeated dataset headings returned');
     record('Selected dataset accordions activate the correct editor without duplicate titles');
+    // A question mark explains what a block opens, so it is part of the open block: closed, the heading is just a title.
+    const limits=q('#dataset-limits-group'),helpIcon=limits && limits.querySelector('summary .acc-help');
+    check(helpIcon,'An accordion title lost its question-mark icon');
+    limits.open=false;await frame();
+    check(w.getComputedStyle(helpIcon).display==='none','A closed accordion still shows its question-mark icon');
+    limits.open=true;await frame();
+    check(w.getComputedStyle(helpIcon).display!=='none','An open accordion hides its question-mark icon');
+    limits.open=false;await frame();
+    record('the question mark of a block title appears with the block');
+    // Datasets → one Save CIF for each phase, from the values of the dataset being edited
+    const phaseCif=all('[data-phase-cif]');
+    check(phaseCif.length===1 && phaseCif[0].getAttribute('data-phase-cif')===S.phases[0].key,'The phase group has no single Save CIF button: '+phaseCif.length);
+    const originalDownload=RV.ui.download;let cifFile=null;
+    RV.ui.download=(name,text)=>{cifFile={name,text};};
+    try{phaseCif[0].click();}finally{RV.ui.download=originalDownload;}
+    await frame();
+    check(cifFile && /^structure_Reference_phase_.*\.cif$/.test(cifFile.name),'No CIF was written: '+(cifFile && cifFile.name));
+    check(/_cell_length_a\s+5(?:\.0+)?\b/.test(cifFile.text) && /_space_group_IT_number\s+1\b/.test(cifFile.text),'The phase CIF lacks the cell or the space group');
+    check(!/data_d2_/.test(cifFile.text),'The phase CIF carries another dataset');
+    record('each phase in Datasets saves its own structure as a CIF');
     check(!q('[data-fitmode-visibility]').hidden,'Batch mode is hidden for two selected datasets');
     q('[aria-label="Batch fit mode"] [data-fitmode="global"]').click();await frame();
     check(RV.app.fitMode()==='global' && all('[data-fitmode="global"]').every(b=>b.getAttribute('aria-pressed')==='true'),'Batch global mode is not synchronized');

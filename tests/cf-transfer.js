@@ -29,6 +29,10 @@
     change(q('#sv-cf-assign'),true);await frame();
     check(model()===before && q('[data-cfel="0"]').value==='Na' && JSON.stringify(RV.fitHistory.find(run.id))===saved,'Naming checkbox changed the model, site names or saved run before transfer');
     record('CF naming is a deferred checkbox and preserves the model and archived sites');
+    // the 3D view is a picture of the sites above it: the two actions that change the phase stay in that list
+    const structureHead=q('#sv-cf-st-head');
+    if(structureHead && structureHead.querySelector('.sub')) check(!structureHead.querySelector('button'),'The 3D structure header repeats the phase actions');
+    record('the 3D structure view carries no duplicate atoms-to-phase or save-CIF buttons');
     async function copy(name){
       q('[data-sv="cf-export"]').click();await frame();check(q('#dlg').open,'Copy dialog did not open');
       change(q('#dlg [data-key="target"]'),'new');change(q('#dlg [data-key="name"]'),name);change(q('#dlg [data-key="targets"]'),'dataset:'+ds.id);change(q('#dlg [data-key="riet"]'),false);

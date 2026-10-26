@@ -1364,9 +1364,15 @@ function gaussianVarianceGuards(model, only) {
             if (separated) seen[type] = true;
             var prefix = separated ? 'inst.' : P.prefix,
                 defaults = separated ? instrumentProfileParams(type) : (PROFILE_PARAMS[type] || PROFILE_PARAMS.simple_pvoigt),
-                gp = type === 'simple_pvoigt' ? 1 : 0,
-                sets = type === 'split_pvoigt' ? [['U_L', 'V_L', 'W_L'], ['U_R', 'V_R', 'W_R']]
-                     : type === 'tch_aniso' ? [['U', 'V', 'W']] : [['GU', 'GV', 'GW']];
+                // The coefficient NAMES follow the owner, not the shape: a separated profile is the instrument's
+                // U, V, W whatever its type (profileParams writes inst.U ... from instrumentProfileParams), while a
+                // phase with its own profile names the simple pseudo-Voigt GU, GV, GW and the TCH U, V, W. Reading
+                // inst.GU here found nothing and silently reported a variance of zero for every separated
+                // 'gsas_cw' phase -- the one case the diagnostic exists for.
+                gp = !separated && type === 'simple_pvoigt' ? 1 : 0,
+                sets = type === 'split_pvoigt' ? [separated ? ['U_L', 'V_L', 'W_L'] : ['GU_L', 'GV_L', 'GW_L'],
+                                                  separated ? ['U_R', 'V_R', 'W_R'] : ['GU_R', 'GV_R', 'GW_R']]
+                     : (separated || type === 'tch_aniso') ? [['U', 'V', 'W']] : [['GU', 'GV', 'GW']];
             sets.forEach(function (names) {
                 guards.push({ d: d, prefix: prefix, names: names, defaults: defaults, gp: gp, lo: lo, hi: hi,
                               separated: separated, label: separated ? 'Instrument' : 'Phase ' + P.def.key,

@@ -24,6 +24,7 @@
     const sv=RV.solve.state;
     check(sv.ints && !sv.ints.stale,'No WPPF intensities after the fit');
     check(q('#sv-fo-status') && q('[data-fo="run"]'),'The Fourier map block is missing from Structure');
+    check(!q('[data-fo="run"]').disabled,'Compute the map is disabled although the atoms and the WPPF intensities are there');
     record('the Fourier map block is part of Commands → Structure');
 
     // difference map: a peak where the missing Cl is
@@ -47,10 +48,16 @@
     check(RV.fourier.state.result.res.dmin>=1.2 && RV.fourier.state.result.res.peaks.length>=1,'Observed map failed');
     record('observed map at a chosen resolution');
 
-    // no atoms: refused with a reason
+    // no atoms: refused with a reason, and the button says so before it is pressed
     const empty=St.makePhase({name:'Empty',sg:St.resolveSG(225),cell:{a:5}});St.addPhase(empty);sv.phaseKey=empty.key;RV.fourier.run();await frame();
     check(/no atoms|Choose a phase|not ready/.test(q('#sv-fo-status').textContent),'An empty phase was not refused: '+q('#sv-fo-status').textContent);
-    record('a phase without atoms is refused with a message');
+    check(q('[data-fo="run"]').disabled && /no atoms/.test(q('[data-fo="run"]').title),'Compute the map is enabled for a phase without atoms');
+    record('a phase without atoms is refused with a message, and the button is disabled with the same reason');
+    // a phase with atoms but no intensities (a dataset that was not fitted by WPPF) keeps it disabled
+    sv.phaseKey=ph.key;sv.dsId=null;RV.fourier.sync();
+    check(q('[data-fo="run"]').disabled,'Compute the map is enabled without a chosen dataset');
+    sv.dsId=ds.id;RV.fourier.sync();await frame();
+    record('the button follows the phase, the dataset and the intensities');
 
     check(!errors.length,'Browser errors: '+errors.join('; '));record('no browser errors');
     window.browserTestResult={ok:true,results};

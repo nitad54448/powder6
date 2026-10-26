@@ -421,6 +421,18 @@ RV.results = (function () {
     return L.join('\n')+'\n';
   }
   function contentVolume(cell) {return cell ? cellVolume(cell) : NaN;}
+  /* One phase as a structure CIF, from the values of one dataset: its cell, space group and atomic model, with
+     the standard uncertainties of the last Rietveld fit. Results → Save CIF writes every selected phase; this
+     writes the one whose parameter group the button belongs to, so a user can keep his own structure when the
+     fit holds several phases. */
+  function savePhaseCif(ph, ds) {
+    if (!ph) return;
+    var list = (ds ? [ds] : St.selected()).filter(function (d) { return St.hasPhase(d, ph); });
+    if (!list.length) { ui.toast('No selected dataset holds ' + ph.name + ' right now.', 'warn'); return; }
+    var kind = ph.method === 'rietveld' && S.calculation === 'rietveld' ? 'fitted values' : 'current values, not fitted';
+    ui.download('structure_' + String(ph.name).replace(/[^\w.-]+/g, '_') + '_' + ui.fileStamp() + '.cif', cifText(list, false, ph.key), 'chemical/x-cif');
+    ui.toast('Saved ' + ph.name + ' (' + kind + ') as a CIF: cell, space group, symmetry operations and atoms.', 'ok');
+  }
   function save(kind) {
     if(RV.fitHistory && !RV.fitHistory.viewing()){var checkpoint=RV.layout?RV.layout.record():RV.fitHistory.latest(S.calculation);if(!checkpoint){ui.toast('Select a completed fit before exporting results.','info');return;}return RV.fitHistory.withResult(checkpoint,function(){save(kind);});}
     var list = St.selected();
@@ -443,5 +455,5 @@ RV.results = (function () {
     ['stats', 'selection', 'params', 'phaseStyle', 'phases', 'phaseSel', 'datasets', 'data', 'tables', 'calculation', 'extraction','fitHistory'].forEach(function (ev) { RV.bus.on(ev, refresh); });
     RV.bus.on('tab', function (t) { if (t === 'solve' && dirty) render(); });
   }
-  return { init: init, render: render, fill: fill, save: save, constraintsText: constraintsText, reportText: reportText, globalSummaries: globalSummaries, globalReportText: globalReportText, reflText: reflText, weights: weights, reflOf: reflOf, statsOf: statsOf, cifText:cifText };
+  return { init: init, render: render, fill: fill, save: save, savePhaseCif: savePhaseCif, constraintsText: constraintsText, reportText: reportText, globalSummaries: globalSummaries, globalReportText: globalReportText, reflText: reflText, weights: weights, reflOf: reflOf, statsOf: statsOf, cifText:cifText };
 })();

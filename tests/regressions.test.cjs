@@ -225,6 +225,24 @@ test('the shipped peak-shape start values have a non-negative Gaussian variance'
 
 
 
+test('the variance diagnostic reads the instrument coefficients of every resolution type', () => {
+  // A separated profile is the instrument's U, V, W whatever its type: profileParams writes inst.U ... from
+  // instrumentProfileParams. Reading inst.GU there found nothing and reported a variance of zero for every
+  // dataset whose resolutionType is 'gsas_cw' -- which a browser fixture caught, not this suite.
+  for (const type of ['tch_aniso', 'gsas_cw', 'simple_pvoigt', 'split_pvoigt']) {
+    const a = model(); a.ds.inst.resolutionType = type;
+    const job = a.state.problemFor([a.ds]); job.vars = [];
+    const names = type === 'split_pvoigt' ? ['U_L', 'V_L', 'W_L'] : ['U', 'V', 'W'];
+    const values = type === 'split_pvoigt' ? [4, -43, 18.7] : [3.96361, -43.01288, 18.71003];
+    names.forEach((n, i) => { job.values[0]['inst.' + n] = values[i]; });
+    const result = a.core.refine(job, { evaluateOnly: true });
+    assert.equal(result.ok, true, result.msg);
+    const text = (result.fitWarnings[0] || []).join('\n');
+    assert.match(text, new RegExp('Instrument Gaussian variance \\(' + names.join(', ') + '\\) is negative'), type + ': ' + text);
+  }
+});
+
+
 test('an inactive refined variable cannot silently pass the covariance quality flag', () => {
   const a=model();a.ds.inst.resolutionType='simple_pvoigt';
   const job=a.state.problemFor([a.ds]);job.vars=[{d:0,name:'bkg0'},{d:0,name:'inst.HL'}];

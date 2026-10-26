@@ -1427,8 +1427,10 @@ RV.solve = (function () {
       head.innerHTML = '<p class="hint">' + (k === 'cf' ? 'No structure yet: run charge flipping and tick sites with an element.' : 'No structure yet: run the Wyckoff search.') + '</p>';
       if (typeof WyckoffReport !== 'undefined' && WyckoffReport.dispose) WyckoffReport.dispose(host); host.innerHTML = ''; return;
     }
-    head.innerHTML = '<span class="sub">' + esc(st.label) + ', ' + esc(st.spaceGroup.symbol) + ', ' + plural(st.sites.length, 'site') + '</span><span class="tool-gap"></span>' +
-      '<button type="button" class="primary" data-sv="' + k + '-export">Atoms to the phase…</button><button type="button" data-sv="' + k + '-cif">Save CIF…</button>';
+    // The 3D view is a picture of the sites listed above it, and the two actions that change the phase
+    // (Atoms to the phase…, Save CIF…) stay with that list: repeating them here put the same two buttons
+    // on screen twice, one of them over the canvas.
+    head.innerHTML = '<span class="sub">' + esc(st.label) + ', ' + esc(st.spaceGroup.symbol) + ', ' + plural(st.sites.length, 'site') + '</span>';
     if (typeof WyckoffReport === 'undefined') return;
     if (!(RV.acc && RV.acc.isShown(host)) || !RV.app || RV.app.resultTab()!=='structure-results' || RV.layout.structureKind()!==k) { if (WyckoffReport.dispose) WyckoffReport.dispose(host); host.innerHTML = ''; return; }
     if (RV.rietveldStructure) RV.rietveldStructure.dispose();
@@ -1447,13 +1449,14 @@ RV.solve = (function () {
     if (k === 'cf-struct' || k === 'wppf-cf') renderStruct('cf');
     if (k === 'wy-struct' || k === 'wppf-wy') renderStruct('wy');
     if (k === 'cf-density' || k === 'wppf-cf') { renderDensityMap(); if (SV.cf && SV.cf.best) spark($('#sv-cf-spark'), SV.cf.best.rHistory); }
+    if (k === 'wppf-fo' && RV.fourier) RV.fourier.sync();
   }
   // ---------------------------------------------------------------- events
   function onClick(e) {
     var resultKind=e.target.closest('#structure-result-cf')?'cf':e.target.closest('#structure-result-wy')?'wy':null;
     if(resultKind && solutionSelection[resultKind] && !inspectingSolution)return withSolution(resultKind,function(){onClick(e);});
     var t = e.target, b;
-    if ((b = t.closest('[data-svph]'))) { SV.phaseKey = b.getAttribute('data-svph'); pickDefaults(); renderBar(); renderInt(); renderDensity(); return; }
+    if ((b = t.closest('[data-svph]'))) { SV.phaseKey = b.getAttribute('data-svph'); pickDefaults(); renderBar(); renderInt(); renderDensity(); if (RV.fourier) RV.fourier.sync(); return; }
     if ((b = t.closest('[data-sgset]'))) { var p = b.getAttribute('data-sgset').split('|'); useSetting(+p[0], p.slice(1).join('|')); return; }
     if (!(b = t.closest('[data-sv]'))) return;
     switch (b.getAttribute('data-sv')) {
@@ -1489,7 +1492,7 @@ RV.solve = (function () {
       else if(key==='sites')o.densitySites=t.checked;
       saveOpts();renderDensityMap();return;
     }
-    if (t.id === 'sv-ds') { SV.dsId = +t.value || null; pickDefaults();renderBar();renderInt();renderDensity();return; }
+    if (t.id === 'sv-ds') { SV.dsId = +t.value || null; pickDefaults();renderBar();renderInt();renderDensity();if(RV.fourier)RV.fourier.sync();return; }
     if ((k = t.getAttribute('data-opt'))) {
       if (k === 'sgtN') { var issue=sgtCountIssue();t.setCustomValidity(issue);if(issue)t.setAttribute('aria-invalid','true');else t.removeAttribute('aria-invalid');syncAble();if(issue){ui.toast(issue,'warn');return;}SV.opts.sgtN=Number(t.value);SV.opts.sgtAuto=false; }
       else { SV.opts[k] = t.value.trim(); syncShared(t); }
