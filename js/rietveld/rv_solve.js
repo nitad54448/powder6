@@ -195,7 +195,7 @@ RV.solve = (function () {
 
   // ---------------------------------------------------------------- distance constraints (powder5.html, unchanged rules)
   // the rule language is shared with the Rietveld restraints (js/distance_rules.js); here A and B are elements
-  var SHAPE_NAMES = Object.keys(WL.geometries), SHAPE_LIST = DistanceRules.shapeList(WL.geometries);
+  var SHAPE_LIST = DistanceRules.shapeList(WL.geometries);
   function parseConstraints(text) { return DistanceRules.parse(text, WL.geometries); }
   function describeConstraint(w) {
     var A = capEl(w.a), B = capEl(w.b), hasMin = Number.isFinite(w.dmin), hasMax = Number.isFinite(w.dmax), d = function (v) { return v.toFixed(2); };

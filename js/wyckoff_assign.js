@@ -1245,15 +1245,13 @@ function weightedAssign(ids, numParticles, minPer, weights) {
  * 512 particles, a floor of 24 and 21 assignments, eight particles remain to
  * distribute and the weighting does nothing. Halving that keeps a real surplus,
  * at the cost of more waves.
+ *
+ * That is the count of assignments one wave holds; allocateWaves() splits a list by it.
  */
-function allocateParticles(nAssign, numParticles, minPer = 24, weights = null) {
-    return allocateWaves(Array.from({ length: nAssign }, (_, k) => k), numParticles, minPer, weights);
-}
-/** Assignments per wave for this budget. */
 function assignmentsPerWave(numParticles, minPer = 24, weighted = true) {
     return Math.max(1, Math.floor(numParticles / (minPer * (weighted ? 2 : 1))));
 }
-/** allocateParticles over the given assignment ids, in their order. */
+/** allocateWaves over the given assignment ids, in their order. */
 function allocateWaves(list, numParticles, minPer = 24, weights = null) {
     const perWave = assignmentsPerWave(numParticles, minPer, !!weights);
     const waves = [];
@@ -1328,36 +1326,6 @@ function parseFormula(formula, Z = 1) {
     return out;
 }
 
-/**
- * Plausible Z values from the cell volume.
- *
- * A RANGE, not a number. The familiar 18 A^3 per non-hydrogen atom is an
- * organic-chemistry rule; dense inorganics run far tighter - PbSO4 sits near
- * 13 A^3 per atom, so the 18 rule alone returns Z=3 for a structure whose Z is
- * 4. Spanning 11 to 22 A^3 covers oxides, sulfates and intermetallics without
- * pretending to a precision the estimate does not have.
- *
- * Returns { min, max, likely } with `likely` the midpoint, and the caller is
- * expected to offer all of them: enumerating assignments for two or three Z is
- * cheap, and a wrong Z is otherwise a silent, total failure.
- */
-function suggestZ(cellVolume, atomsPerFormula, symOpCount) {
-    if (!cellVolume || !atomsPerFormula) return null;
-    const lo = Math.max(1, Math.floor(cellVolume / (22 * atomsPerFormula)));
-    const hi = Math.max(1, Math.ceil(cellVolume / (11 * atomsPerFormula)));
-    const all = [];
-    for (let z = lo; z <= hi; z++) {
-        // Z is very often the group order or a divisor of it, because the
-        // asymmetric unit usually holds a whole number of formula units.
-        const divides = !symOpCount || symOpCount % z === 0 || z % symOpCount === 0;
-        all.push({ Z: z, favoured: divides });
-    }
-    const fav = all.filter(a => a.favoured).map(a => a.Z);
-    return { min: lo, max: hi, candidates: all.map(a => a.Z), favoured: fav,
-             likely: fav.length ? fav[Math.floor(fav.length / 2)]
-                                : Math.round((lo + hi) / 2) };
-}
-
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { SHARKO_WYCKOFF_ASSIGN_VERSION,
         WY_MAX_SITES, WY_MAX_ELEM, WY_MAX_OPS, WY_MAX_RULES, WY_MAX_COORD_SLOTS,
@@ -1365,8 +1333,8 @@ if (typeof module !== 'undefined' && module.exports) {
         siteStabilizer, siteHasInversion, coordinationCompatible,
         enumerateAssignments, rankAssignments, buildAssignmentTables,
         normalizerPermutations, dedupeEquivalentAssignments,
-        projectSites, allocateParticles, allocateWaves, assignmentsPerWave, weightedAssign, pruneAssignments,
+        projectSites, allocateWaves, assignmentsPerWave, weightedAssign, pruneAssignments,
         buildRestraintTables, packSymOps,
-        parseFormula, suggestZ
+        parseFormula
     };
 }

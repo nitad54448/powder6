@@ -41,20 +41,16 @@ const CT_DEFAULTS = Object.freeze({
     // the strings. Rounding has boundaries: two images at 0.4994999 and
     // 0.4995001 are 2e-7 apart and round to "0.499" and "0.500", so they did
     // NOT deduplicate. The distance loops hid it (a 0 A contact is skipped by
-    // the d < 1e-4 guard) but structureFactors() did not - it sums over
-    // inCell, so a missed duplicate contributes to F twice and every R factor
-    // computed from that structure is wrong. Comparing with a tolerance,
+    // the d < 1e-4 guard), but the distance to a missed duplicate is then
+    // measured from the wrong image. Comparing with a tolerance,
     // modulo one lattice translation, has no boundary to fall off.
     dedupeTolFrac: 1e-4,
     contactCutoffA: 3.6,        // neighbour list radius
     maxNeighbours: 12,
-    qualityCutoffA: 3.2,        // radius the bond-valence sum runs over
     // First coordination shell as a multiple of the SHORTEST contact. A flat
     // radius counts whatever lies beyond the real polyhedron: at 3.2 A a
     // sulfate sulfur came back nine-coordinate with a mean bond of 2.7 A.
     shellFactor: 1.35,
-    // Brese & O'Keeffe universal bond-valence softness parameter.
-    bondValenceB: 0.37,
     // Ceiling on how many shells of neighbouring cells will be enumerated.
     // ctShellRange() derives the real number from the cell and the cutoff; this
     // only stops a degenerate cell (a near-zero axis from a failed refinement)
@@ -183,8 +179,8 @@ function expandForContacts(sites, symOps, range = 1) {
     // DEDUPLICATION BY DISTANCE, NOT BY ROUNDED STRING.
     //
     // Images of a site on a special position coincide, and keeping both would
-    // report a 0 A contact with itself - and, worse, would double that atom's
-    // contribution in structureFactors(), which sums over inCell. The old key
+    // report a 0 A contact with itself - and, worse, would count that atom
+    // twice wherever the in-cell list is summed. The old key
     // was `x.toFixed(3)`, which fails whenever two coincident images straddle a
     // rounding boundary: 0.4994999 and 0.4995001 are 2e-7 apart and hash apart.
     //
@@ -426,177 +422,8 @@ function contactSummary(sites, symOps, orth, windows = [], options = {}) {
              violations: checks.reduce((n, c) => n + (c.violations || 0), 0) };
 }
 
-/* ------------------------------------------------------------------
-   Structure quality
-   ------------------------------------------------------------------ */
-
-/**
- * Bond-valence parameters R0 for cation-oxygen pairs, in Angstrom, with the
- * universal b = 0.37. From Brese & O'Keeffe (1991).
- *
- * PARTIAL AND INDICATIVE. Only oxygen anions, only common cations, and the
- * values are quoted from the literature rather than derived here - treat a
- * bond-valence sum as a strong hint that a site is right or wrong, not as a
- * measurement. Pairs not listed report nothing rather than guessing, because a
- * plausible-looking valence computed from a wrong R0 is worse than none.
- */
-const BV_R0_OXYGEN = {
-    'NA:1': 1.803, 'K:1': 2.132, 'MG:2': 1.693, 'CA:2': 1.967, 'SR:2': 2.118, 'BA:2': 2.285,
-    'AL:3': 1.651, 'SI:4': 1.624, 'P:5': 1.617, 'S:6': 1.624, 'B:3': 1.371, 'C:4': 1.390,
-    'TI:4': 1.815, 'V:5': 1.803, 'CR:3': 1.724, 'MN:2': 1.790, 'FE:2': 1.734, 'FE:3': 1.759,
-    'CO:2': 1.692, 'NI:2': 1.654, 'CU:2': 1.679, 'ZN:2': 1.704, 'Y:3': 2.019, 'ZR:4': 1.928,
-    'NB:5': 1.911, 'MO:6': 1.907, 'W:6': 1.921, 'LA:3': 2.172, 'PB:2': 2.112, 'BI:3': 2.094
-};
-const BV_B = CT_DEFAULTS.bondValenceB;
-
-/**
- * Coordination, bond-length regularity and bond valence for one site.
- *
- * Three quantities, and the middle one is the most useful because it costs
- * nothing to compute and assumes nothing at all:
- *
- *   coordination - neighbours of the anion element within `cutoff`.
- *   spread       - the standard deviation of those bond lengths. A real
- *                  sulfate has four S-O bonds within about 0.02 A of each
- *                  other; a wrong model that happens to correlate well almost
- *                  never does. No parameters, no tables, no assumptions about
- *                  oxidation state - just the observation that coordination
- *                  polyhedra are regular.
- *   valence      - the bond-valence sum, if R0 is known for the pair. Reported
- *                  against the oxidation state that fits best, since the state
- *                  that makes the sum come out near its own charge is itself
- *                  evidence the site is right.
- */
-function siteQuality(siteIdx, sites, symOps, orth, options = {}) {
-    const anion = (options.anion || 'O').toUpperCase();
-    const cutoff = options.cutoff ?? CT_DEFAULTS.qualityCutoffA;
-    // A missing site is a caller error, but it used to surface as
-    // "cannot read property element of undefined" from inside a reporting
-    // routine, which says nothing about where the bad index came from.
-    const site = sites && sites[siteIdx];
-    if (!site) {
-        return { element: null, coordination: 0, mean: null, spread: null,
-                 valence: null, shellCut: null,
-                 note: `no site at index ${siteIdx} (${(sites || []).length} site(s))` };
-    }
-    const el = String(site.element).toUpperCase();
-
-   
-    const all = contactsForSite(siteIdx, sites, symOps, orth, { cutoff, max: 200 })
-                    .filter(n => String(n.element).toUpperCase() === anion);
-    if (!all.length) return { element: el, coordination: 0, mean: null, spread: null,
-                              valence: null, shellCut: null };
-
-    // The first coordination shell, not everything inside a fixed radius.
-    //
-    // A flat 3.2 A cut-off counts the four oxygens of a sulfate AND whatever
-    // happens to lie beyond them, so a sulfur came back with a coordination of
-    // nine and a mean bond length of 2.7 A - neither of which describes a
-    // sulfate. Cutting at 1.35 times the SHORTEST contact adapts to the site
-    // instead: it keeps four oxygens around a sulfur at 1.48 A and eight or
-    // nine around lead at 2.6 A, which is what those coordinations are.
-    //
-    // Bond valence still sums over everything out to the full radius, because
-    // the exponential makes distant neighbours contribute almost nothing and
-    // truncating the sum at the first shell would bias every site low.
-    const SHELL_FACTOR = options.shellFactor ?? CT_DEFAULTS.shellFactor;
-    const dsAll = all.map(n => n.d);
-    const shellCut = dsAll[0] * SHELL_FACTOR;
-    const ds = dsAll.filter(d => d <= shellCut);
-    const mean = ds.reduce((a, b) => a + b, 0) / ds.length;
-    const spread = Math.sqrt(ds.reduce((a, d) => a + (d - mean) * (d - mean), 0) / ds.length);
-
-    // Bond valence over the states this element has parameters for; the best
-    // match is the one whose sum lands nearest its own formal charge.
-    let best = null;
-    const dsBV = dsAll;
-    for (const key of Object.keys(BV_R0_OXYGEN)) {
-        const [sym, st] = key.split(':');
-        if (sym !== el) continue;
-        const R0 = BV_R0_OXYGEN[key], state = parseInt(st, 10);
-        const sum = dsBV.reduce((a, d) => a + Math.exp((R0 - d) / BV_B), 0);
-        const dev = Math.abs(sum - state);
-        if (!best || dev < best.deviation) best = { state, sum, deviation: dev };
-    }
-
-    return { element: el, coordination: ds.length, mean, spread, shellCut,
-             shortest: ds[0], longest: ds[ds.length - 1],
-             beyondShell: dsAll.length - ds.length, valence: best };
-}
-
-/**
- * Crystallographic residual on structure factors.
- *
- *     R = sum| |Fo| - k|Fc| | / sum|Fo|,   k from least squares
- *
- * Worth having next to the correlation because it is the number every
- * crystallographer reads, and because it weights differently: the correlation
- * is dominated by the strong reflections, while R_F counts a weak reflection
- * predicted strongly as heavily as the reverse. Two models a hundredth apart in
- * CC are often several percent apart in R.
- *
- * @param rows  [{h,k,l,Fo2,mult,d}] as prepared by normaliseObservations
- * @param opts.formFactor  (element, s) -> f; falls back to Z via opts.zOf
- */
-/**
- * |Fc| for every row, from the symmetry-expanded structure.
- *
- * Split out of structureRFactor because the R factor is not the only thing
- * that wants these: comparing candidates on a powder pattern has to sum
- * |Fc|^2 over the reflections that overlap into one measured line, which
- * needs the individual values and not a residual computed from them.
- *
- * @returns {{Fo: Float64Array, Fc: Float64Array}} both on the |F| scale,
- *          UNSCALED - the scale factor belongs to whatever residual is being
- *          formed, since it depends on how the terms are grouped and weighted.
- */
-function structureFactors(sites, symOps, rows, opts = {}) {
-    const ff = opts.formFactor || null;
-    const zOf = opts.zOf || (() => 1);
-    const B = opts.overallB || 0;
-    const { inCell } = expandForContacts(sites, symOps, 0);
-
-    const Fo = new Float64Array(rows.length), Fc = new Float64Array(rows.length);
-    // The form factor is a function of s alone, so it is evaluated once per
-    // (element, reflection) rather than once per atom: with 24 atoms of 3
-    // elements that is an eightfold saving on the inner loop, which matters
-    // now that this runs for every candidate rather than only the selected one.
-    const elems = [...new Set(inCell.map(a => a.element))];
-    const fOf = new Map();
-    for (let i = 0; i < rows.length; i++) {
-        const r = rows[i];
-        const s = 1 / r.d, dw = B > 0 ? Math.exp(-B * s * s / 4) : 1;
-        for (const e of elems) {
-            let f = ff ? ff(e, s) : null;
-            if (!Number.isFinite(f)) f = zOf(e);
-            fOf.set(e, f * dw);
-        }
-        let re = 0, im = 0;
-        for (const a of inCell) {
-            const f = fOf.get(a.element);
-            const p = 2 * Math.PI * (r.h * a.x + r.k * a.y + r.l * a.z);
-            re += f * Math.cos(p); im += f * Math.sin(p);
-        }
-        Fc[i] = Math.sqrt(re * re + im * im);
-        Fo[i] = Math.sqrt(Math.max(0, r.Fo2));
-    }
-    return { Fo, Fc };
-}
-
-function structureRFactor(sites, symOps, rows, opts = {}) {
-    const { Fo, Fc } = structureFactors(sites, symOps, rows, opts);
-    let sFoFc = 0, sFc2 = 0;
-    for (let i = 0; i < rows.length; i++) { sFoFc += Fo[i] * Fc[i]; sFc2 += Fc[i] * Fc[i]; }
-    if (!(sFc2 > 0)) return null;
-    const k = sFoFc / sFc2;
-    let num = 0, den = 0;
-    for (let i = 0; i < rows.length; i++) { num += Math.abs(Fo[i] - k * Fc[i]); den += Fo[i]; }
-    return den > 0 ? num / den : null;
-}
-
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { SHARKO_CONTACTS_VERSION, CT_DEFAULTS, expandForContacts, contactsForSite,
-                       contactSummary, cartDistance, siteQuality, structureFactors, structureRFactor,
-                       ctCellWidths, ctShellRange, ctPairBox,
-                       BV_R0_OXYGEN };
+                       contactSummary, cartDistance,
+                       ctCellWidths, ctShellRange, ctPairBox };
 }

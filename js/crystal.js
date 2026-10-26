@@ -8,13 +8,13 @@
 //  --------------------
 //  Before this module the same geometry was implemented four times:
 //
-//    powder5.html          updateHklPositions  (general triclinic metric)
+//    powder5.html          its HKL-position update  (general triclinic metric)
 //    charge_flipping_worker.js  metricTensor + cellVolume + fracDistance
 //    density3d.js          cellBasis + fracToCart
 //
 //  and the MONOCLINIC UNIQUE AXIS was handled inconsistently across them:
 //  powder5.html keyed off MONOCLINIC_ANGLE_FOR_AXIS, the workers spoke only of
-//  beta, and updateHklPositions quietly did the right thing for all three axes
+//  beta, and powder5's HKL update quietly did the right thing for all three axes
 //  by using the general triclinic metric. That last point is worth stating
 //  plainly, because it is easy to misread the code and "fix" it into being
 //  wrong: for monoclinic, the unique axis is carried IMPLICITLY by whichever
@@ -58,17 +58,6 @@ const DEG2RAD = Math.PI / 180;
  * @type {{a: string, b: string, c: string}}
  */
 const MONOCLINIC_ANGLE_FOR_AXIS = { a: 'alpha', b: 'beta', c: 'gamma' };
-
-/**
- * The two angles that are constrained to 90 for a given monoclinic unique
- * axis. Useful for enforcing the constraint on a parameter set.
- * @type {{a: string[], b: string[], c: string[]}}
- */
-const MONOCLINIC_FIXED_ANGLES_FOR_AXIS = {
-    a: ['beta', 'gamma'],
-    b: ['alpha', 'gamma'],
-    c: ['alpha', 'beta']
-};
 
 /**
  * Normalises a parameter object into a full {a,b,c,alpha,beta,gamma} cell,
@@ -360,207 +349,6 @@ function dSpacing(cell, h, k, l) {
     return (isFinite(q) && q > 1e-12) ? 1 / Math.sqrt(q) : null;
 }
 
-/**
- * An evaluator for 1/d^2, plus a flag saying whether the l loop in an HKL
- * generator may break early.
- * @typedef {object} InvDsqEvaluator
- * @property {function(number, number, number): number} f  (h,k,l) -> 1/d^2.
- * @property {boolean} lSeparable True when 1/d^2 has no h*l or k*l cross term,
- *           so 1/d^2 is monotonic in |l| at fixed h,k and a generator can stop
- *           at the first l that falls outside the 2-theta range.
- */
-
-/**
- * Builds a closure evaluating 1/d^2 for a whole crystal system.
- *
- * This exists alongside buildInvDsq because an HKL generator wants one
- * hoisted closure and a monotonicity flag, whereas updateHklPositions wants
- * the raw coefficients. Both are built from the SAME metric here, which is
- * the point: a copy of this used to live in powder5.html carrying a comment
- * promising it used "exactly the same metric as updateHklPositions() so that
- * generation and the downstream 2-theta filter can never disagree". That
- * promise was maintained by hand across two files. Now it is structural.
- *
- * Returns null for a degenerate cell or an unknown system.
- *
- * @param {string} system Crystal system, lower case.
- * @param {object} params Lattice parameters; a is required.
- * @returns {InvDsqEvaluator|null}
- */
-function buildInvDsqEvaluator(system, params) {
-    const { a, b, c } = params;
-    if (!(a > 0)) return null;
-    const a_sq = a * a;
-
-    switch (system) {
-        case 'cubic':
-            return { f: (h, k, l) => (h * h + k * k + l * l) / a_sq, lSeparable: true };
-
-        case 'tetragonal': {
-            const c_sq = (c > 0) ? c * c : a_sq;
-            return { f: (h, k, l) => (h * h + k * k) / a_sq + (l * l) / c_sq, lSeparable: true };
-        }
-
-        case 'orthorhombic': {
-            const b_sq = (b > 0) ? b * b : a_sq;
-            const c_sq = (c > 0) ? c * c : a_sq;
-            return {
-                f: (h, k, l) => (h * h) / a_sq + (k * k) / b_sq + (l * l) / c_sq,
-                lSeparable: true
-            };
-        }
-
-        case 'hexagonal':
-        case 'trigonal':
-        case 'rhombohedral': {
-            const c_sq = (c > 0) ? c * c : a_sq;
-            return {
-                f: (h, k, l) => 4 * (h * h + h * k + k * k) / (3 * a_sq) + (l * l) / c_sq,
-                lSeparable: true
-            };
-        }
-
-        // Monoclinic is not special-cased: the general metric reduces to the
-        // monoclinic closed form exactly once the two fixed angles are 90, and
-        // it does so for unique axis a, b and c alike.
-        case 'monoclinic':
-        case 'triclinic': {
-            const form = buildInvDsq({
-                a,
-                b: (b > 0) ? b : a,
-                c: (c > 0) ? c : a,
-                alpha: params.alpha,
-                beta: params.beta,
-                gamma: params.gamma
-            });
-            if (!form) return null;
-            const { aa, bb, cc, ab, bc, ac } = form;
-            return {
-                f: (h, k, l) => h * h * aa + k * k * bb + l * l * cc
-                              + h * k * ab + k * l * bc + h * l * ac,
-                lSeparable: false
-            };
-        }
-
-        default:
-            return null;
-    }
-}
-
-// ===========================================================================
-//  4. Peak positions
-// ===========================================================================
-
-/**
- * Recomputes `tth` (degrees) and `d` (angstrom) in place for every reflection
- * in a list, from the current cell parameters.
- *
- * Reflections whose indices are missing, whose cell is degenerate, or whose
- * Bragg condition cannot be satisfied at this wavelength get tth = d = null.
- * Callers everywhere treat null as "skip this reflection".
- *
- * The closed-form branches for the high-symmetry systems are kept rather than
- * routed through buildInvDsq because this runs once per LM iteration over
- * every reflection, and they avoid ~20 trig calls per call.
- *
- * @param {Array<object|null>} hklList Reflections carrying h_orig/k_orig/l_orig.
- * @param {object} params Must carry a, lambda; b/c/angles as the system needs.
- * @param {string} system Crystal system, lower case.
- * @returns {void}
- */
-function updateHklPositions(hklList, params, system) {
-    if (!hklList || hklList.length === 0) return;
-    const clearAll = () => hklList.forEach(peak => {
-        if (peak) { peak.tth = null; peak.d = null; }
-    });
-
-    if (!params) { clearAll(); return; }
-    const { a, b, c, lambda } = params;
-    if (!lambda || lambda <= 0 || !a || a <= 0) { clearAll(); return; }
-
-    const lambda_sq_over_4 = (lambda * lambda) / 4.0;
-    const a_sq = a * a;
-
-    let b_sq, c_sq;
-    /** @type {InvDsqForm|null} */
-    let form = null;
-
-    if (system === 'triclinic' || system === 'monoclinic') {
-        form = buildInvDsq({
-            a,
-            b: (b > 0) ? b : a,
-            c: (c > 0) ? c : a,
-            alpha: params.alpha,
-            beta: params.beta,
-            gamma: params.gamma
-        });
-        if (!form) { clearAll(); return; }
-    } else if (system === 'tetragonal' || system === 'hexagonal'
-            || system === 'rhombohedral' || system === 'trigonal') {
-        c_sq = (c && c > 0) ? (c * c) : a_sq;
-    } else if (system === 'orthorhombic') {
-        b_sq = (b && b > 0) ? (b * b) : a_sq;
-        c_sq = (c && c > 0) ? (c * c) : a_sq;
-    }
-
-    hklList.forEach(peak => {
-        if (!peak || peak.h_orig === undefined
-                  || peak.k_orig === undefined
-                  || peak.l_orig === undefined) {
-            if (peak) { peak.tth = null; peak.d = null; }
-            return;
-        }
-        const h = peak.h_orig, k = peak.k_orig, l = peak.l_orig;
-        const h2 = h * h, k2 = k * k, l2 = l * l;
-
-        let inv_d_sq = 0;
-        try {
-            switch (system) {
-                case 'cubic':
-                    inv_d_sq = (h2 + k2 + l2) / a_sq;
-                    break;
-                case 'tetragonal':
-                    inv_d_sq = (h2 + k2) / a_sq + l2 / c_sq;
-                    break;
-                case 'orthorhombic':
-                    inv_d_sq = h2 / a_sq + k2 / b_sq + l2 / c_sq;
-                    break;
-                case 'hexagonal':
-                case 'rhombohedral':
-                case 'trigonal':
-                    if (a_sq <= 0 || c_sq <= 0) throw new Error('Invalid lattice param');
-                    inv_d_sq = 4 * (h2 + h * k + k2) / (3 * a_sq) + l2 / c_sq;
-                    break;
-                case 'monoclinic':
-                case 'triclinic':
-                    if (!form) throw new Error('Invalid lattice param');
-                    inv_d_sq = invDsq(form, h, k, l);
-                    break;
-                default:
-                    throw new Error(`Unknown system: ${system}`);
-            }
-
-            if (!isFinite(inv_d_sq) || inv_d_sq <= 1e-12) {
-                peak.tth = null;
-                peak.d = null;
-            } else {
-                const sinThetaSq = lambda_sq_over_4 * inv_d_sq;
-                if (sinThetaSq <= 1 && sinThetaSq > 0) {
-                    const thetaRad = Math.asin(Math.sqrt(sinThetaSq));
-                    peak.tth = 2 * thetaRad / DEG2RAD;
-                    peak.d = 1 / Math.sqrt(inv_d_sq);
-                } else {
-                    peak.tth = null;
-                    peak.d = null;
-                }
-            }
-        } catch (error) {
-            peak.tth = null;
-            peak.d = null;
-        }
-    });
-}
-
 // ---------------------------------------------------------------------------
 //  LORENTZ-POLARISATION
 //
@@ -701,10 +489,10 @@ function sharkoLpStrict(tthDeg, pol) {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         DEG2RAD,
-        MONOCLINIC_ANGLE_FOR_AXIS, MONOCLINIC_FIXED_ANGLES_FOR_AXIS,
+        MONOCLINIC_ANGLE_FOR_AXIS,
         normaliseCell,
         metricTensor, fracDistance, cellVolume, cellBasis, fracToCart,
-        buildInvDsq, invDsq, buildInvDsqEvaluator, dSpacing, updateHklPositions,
+        buildInvDsq, invDsq, dSpacing,
         SHARKO_POLARIZATION_DEFAULTS, sharkoPolarizationK, sharkoLorentzFactor,
         sharkoPolarizationFactor, sharkoLorentzPolarization, sharkoLp, sharkoLpStrict
     };

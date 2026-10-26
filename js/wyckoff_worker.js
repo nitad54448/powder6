@@ -22,10 +22,9 @@
 //                 the old 'cf-*' ones.
 // ---------------------------------------------------------------------------
 
-// NOTE ON LOAD ORDER. crystal.js must come before symmetry_utils.js: the
-// duplicate sharkoLorentzPolarization() that symmetry_utils.js used to carry
-// has been removed, and it now uses crystal.js's. Loading it first only costs
-// a console warning, but the order below is the supported one.
+// LOAD ORDER. crystal.js is loaded before symmetry_utils.js because this worker's own Lp helpers and the
+// observation builders use crystal.js. symmetry_utils.js itself now depends on nothing: its duplicate
+// sharkoLorentzPolarization and the FFT/Patterson/space-group sections were removed in 2.42.9.
 if (typeof importScripts === 'function') {
     importScripts('wyckoff_limits.js', 'constants.js', 'profile.js', 'crystal.js',
                   'symmetry_utils.js', 'observations.js', 'wyckoff_assign.js',

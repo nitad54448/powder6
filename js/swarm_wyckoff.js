@@ -2062,10 +2062,10 @@ async function runWyckoffSearch(o) {
 
                 for (let i = 0; i < numParticles; i++) {
                     const base = i * coordsPerParticle;
-                    for (let k = 0; k < coordsPerParticle; k++) {
-                        if (k === 0) quenchPropose(i, base, sd);
-                        // site-wise or collective perturbation written by quenchPropose
-                    }
+                    // One proposal per particle: quenchPropose writes the whole coordinate block (a single
+                    // movable site 75 % of the time, every movable site otherwise), so there was never a
+                    // second thing to do per coordinate.
+                    quenchPropose(i, base, sd);
                     projectSites(proposals, i, assignOf[i], T);
                 }
 

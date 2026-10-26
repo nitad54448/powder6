@@ -1,4 +1,3 @@
-const LP_DEG2RAD = Math.PI / 180;
 const POLARIZATION_DEFAULTS = { mode: 'lab', monoTth: 0, polFrac: 0.95 };
 
 function normalizePolarization(pol) {
@@ -18,30 +17,16 @@ function normalizePolarization(pol) {
 }
 
 // ---------------------------------------------------------------------------
-//  EVERY Lp IN THIS PROGRAM COMES FROM crystal.js.
+//  THE PAGE'S Lp COMES FROM crystal.js.
 //
-//  These are named wrappers over sharko* and nothing else -- no arithmetic
-//  lives in this file. The formula existed in one place already; what did not
-//  was the DEGENERATE-ANGLE POLICY. lorentzPolarization() here returned NaN at
-//  a 2-theta of zero or 180, while a function of the same name in each of the
-//  two workers delegated to sharkoLp() and returned 1. One name, two answers,
-//  decided by which file the caller happened to be in.
-//
-//  Both policies were correct for their own callers, so neither was removed:
-//  they are now sharkoLp (lenient, for reducing a pattern) and sharkoLpStrict
-//  (NaN, for a report or an export that must not invent a correction), and the
-//  page takes the strict one, which is what it has always used.
+//  Two policies live there: sharkoLp (lenient: 1 at a degenerate angle, for
+//  reducing a pattern) and sharkoLpStrict (NaN, for a report or an export that
+//  must not invent a correction). The page takes the strict one, below, and the
+//  solution paths take cfLorentzPolarization(), which turns "not finite" into 1
+//  so that one bad angle cannot drop a reflection. One name with two answers,
+//  decided by which file the caller happened to be in, is what this file exists
+//  to prevent.
 // ---------------------------------------------------------------------------
-
-/** Lorentz factor alone. NaN where the geometry is degenerate. */
-function lorentzFactor(tthDeg) {
-    return sharkoLorentzFactor(tthDeg);
-}
-
-/** Polarisation factor alone, from a descriptor. */
-function polarizationFactor(tthDeg, pol) {
-    return sharkoPolarizationFactor(tthDeg, normalizePolarization(pol).K);
-}
 
 /**
  * Lp for the page: reporting, exports and structure-factor conversion.
@@ -62,15 +47,6 @@ function polarizationDescription(pol) {
     return P.monoTth > 0
         ? `Lab X-ray tube with monochromator, 2th_M = ${P.monoTth.toFixed(2)} deg`
         : 'Lab X-ray tube, no monochromator (unpolarised beam)';
-}
-
-function polarizationFormulaLines(pol) {
-    const P = normalizePolarization(pol);
-    return [
-        'Lp(2th) = L(2th) * P(2th)',
-        '  L(2th) = 1 / ( sin^2(th) * cos(th) )',
-        `  P(2th) = ( 1 + K * cos^2(2th) ) / ( 1 + K ),   K = ${P.K.toFixed(6)}`
-    ];
 }
 
 /**
@@ -195,5 +171,5 @@ function frenchWilsonCorrect(list, symops, pol) {
     }
 
     for (const r of list) { delete r._w; delete r._E; delete r._sE; delete r._q; }
-    return { applied: true, corrected, negatives, weak: corrected };
+    return { applied: true, corrected, negatives };
 }
