@@ -1,5 +1,13 @@
 # Code reviews
 
+## 26 October 2026 - profile fitting review (implemented in 2.45.1)
+
+All 17 findings from the follow-up review are addressed: linked global Jacobians; integrated-area covariance; global extraction scope; uniaxial zero starts; negative Stephens variance; moving-cell reflection coverage; HKL-based saved errors; independent doublet positions; area-normalized doublet weights; actual FWHM; feasible boundary steps; feasible GPU best candidates and metadata; conditional-error labels; site-symmetry coordinate errors; profile/geometry reuse; the missing GPU fixture; and the one-iteration Le Bail budget.
+
+Validation: 215/215 Node tests; 12 browser pages (WebGPU PT, WPPF intensities, solve fixes, constraints, restraints, history/stop, UI consistency, workspace, Fourier, project save, UI interactions and pattern-only); all application-script syntax checks and git diff --check passed. The GPU suite includes live replica feasibility, all three fit workers, validation fallback and device loss.
+
+The independent numerical regressions live at the end of tests/regressions.test.cjs. The GPU suite now reads the bundled space-group database and reaches its previously blocked integration checks. Stephens validity is checked over all modelled directions plus additional probes, rather than claimed as a proof over the entire continuous sphere. Existing calculations should be refitted before using corrected profiles or intensity uncertainties.
+
 ## 26 October 2026 — saving, project format, rules, reproducibility (implemented in 2.42.0)
 
 Scope: the whole repository at the level of automated evidence (syntax, every Node suite, every browser page) plus a reading of the state/project, distance-rule and search-launch paths. Verified before the fixes: `node --check` on every script, 155/155 Node tests, 26 of 27 browser pages, no undefined module member or DOM id, WGSL injection markers intact.

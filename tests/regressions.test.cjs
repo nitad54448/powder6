@@ -1550,7 +1550,7 @@ test('a Le Bail fit keeps to Maximum iterations for both of its stages together'
     const job = a.state.jobFor(ds); job.maxIter = maxIter; job.tol = 1e-30;
     const r = a.core.refine(job);
     assert.equal(r.ok, true, r.msg);
-    assert.ok(r.iter <= Math.max(2, maxIter), 'maxIter ' + maxIter + ' ran ' + r.iter);
+    assert.ok(r.iter <= maxIter, 'maxIter ' + maxIter + ' ran ' + r.iter);
   }
 });
 
@@ -2026,3 +2026,155 @@ test('simulation uses the selected anomalous factors in every starting method an
     if(reference)assert.deepEqual(Array.from(on.y),reference,method+': simulation must not depend on the active fit method');else reference=Array.from(on.y);
     a.state.insertDatasets([on],{estimate:false});a.state.commitProject(a.state.prepareProject(JSON.parse(a.state.projectJSON([]))));
     assert.deepEqual(plain(a.S.datasets[0].sim.anomalousData),plain(on.sim.anomalousData)); } }); test('fit history checkpoints preserve phase restraints, report them in withResult, and prune or rename parameter links on structural edits',()=>{ const a=model(),H=a.context.RV.fitHistory,ph=a.S.phases[0]; a.state.addAtomTo(ph,{label:'O1',type:'O',x:.25,y:.25,z:.25,occ:1,B:.5},a.state.cellOf(ph,ph.v)); a.state.phaseChanged(ph); ph.restraints=a.context.AtomRestraints.normalize({text:'Si1 O1 - 1.55/1.65',weight:2,sigmaD:.02,sigmaA:3}); const ticket=H.begin([a.ds],false),job=a.state.jobFor(a.ds),res=a.context.RVCore.refine(job,{maxIter:1}); a.state.applyResult([a.ds],res,job,false); const rec=H.complete(ticket,[a.ds],false); assert.equal(H.changed(rec),false); H.withResult(rec,()=>{assert.match(a.context.RV.results.constraintsText([a.ds]),/## Restraints[\s\S]*Si1 O1 - 1\.55\/1\.65/);}); ph.restraints=a.context.AtomRestraints.normalize({text:''}); assert.equal(H.changed(rec),true); H.restore(rec.id); assert.match(a.S.phases[0].restraints.text,/Si1 O1 - 1\.55\/1\.65/); const p0=a.S.phases[0],d0=a.S.datasets[0]; a.S.parameterLinks=[{id:'l1',source:{datasetId:d0.id,name:'p1.Si1.B'},target:{datasetId:d0.id,name:'p1.O1.B'},factor:1,offset:0}]; a.state.renameAtom(p0,'O1','O2'); assert.equal(a.S.parameterLinks[0].target.name,'p1.O2.B'); a.state.removeAtom(p0,'O2'); assert.equal(a.S.parameterLinks.length,0); }); test('Fourier map negative-peak interpolation and oblique minimum-image distance, and coord_refine step count',()=>{ Object.assign(globalThis,require('../js/observations.js'),require('../js/wyckoff_assign.js')); const FM=require('../js/fourier_map.js'),CR=require('../js/coord_refine.js'); const cell={a:6,b:6,c:6,alpha:90,beta:90,gamma:90},ops=[{r:[1,0,0,0,1,0,0,0,1],t:[0,0,0]}],ff=()=>6; const full=[{label:'C1',pos:[.1,.2,.3],occ:1,B:.5,ff},{label:'C2',pos:[.62,.4,.5],occ:1,B:.5,ff}]; const hkl=FM.sphere(cell,1.2),F=FM.calcF(full,ops,hkl,ff,'xray'); const refl=hkl.map((h,i)=>({h:h[0],k:h[1],l:h[2],m:1,lp:1,area:F.re[i]*F.re[i]+F.im[i]*F.im[i],inRange:true})); const extra=[{label:'C1',pos:[.1,.2,.3],occ:1,B:.5,ff},{label:'C2',pos:[.62,.4,.5],occ:1,B:.5,ff},{label:'C3',pos:[.338,.25,.25],occ:1,B:.5,ff}]; const diff=FM.build({cell,ops,atoms:extra,radiation:'xray',formFactor:ff,refl,type:'diff',dmin:1.2,minSigma:3}); const hole=diff.peaks.find(p=>p.sign===-1); assert.ok(hole,'expected negative difference peak at the spurious atom'); assert.ok(Math.abs(hole.x-.338)<.015,'parabolic interpolation should shift negative peak toward 0.338, got '+hole.x); const obCell={a:5,b:5,c:6,alpha:90,beta:90,gamma:150},obHkl=FM.sphere(obCell,1.5),obF=FM.calcF([{label:'A',pos:[0,0,0],occ:1,B:.5,ff}],ops,obHkl,ff,'xray'); const obMap=FM.build({cell:obCell,ops,atoms:[{label:'A',pos:[0,0,0],occ:1,B:.5,ff}],radiation:'xray',formFactor:ff,refl:obHkl.map((h,i)=>({h:h[0],k:h[1],l:h[2],m:1,lp:1,area:obF.re[i]*obF.re[i]+obF.im[i]*obF.im[i],inRange:true})),type:'obs',dmin:1.5,minSigma:2}); assert.ok(obMap.peaks[0].distance<.05); const obsRows=refl.map((r,i)=>({h:r.h,k:r.k,l:r.l,Fo2:r.area,mult:1,d:1+i*.01})),sites=[{element:'C',zn:6,x:.12,y:.2,z:.3,w:{letter:'a',multiplicity:1}}]; const cr0=CR.refineCoordinatesAgainstWppf({sites,symOps:ops,obsRows,maxIter:0}); assert.equal(cr0.iterations,0); const cr1=CR.refineCoordinatesAgainstWppf({sites,symOps:ops,obsRows,maxIter:2,tolStep:0,tolChi:0}); assert.ok(cr1.iterations<=2,'iterations must not exceed maxIter, got '+cr1.iterations); });
+
+
+// Numerical review regressions: reference optima, full covariance transforms,
+// reflection identity, and the actual application extraction boundary.
+function singlePeakReview() {
+  const a=app();a.S.calculation='wppf';
+  const ph=a.state.makePhase({name:'single peak',sg:a.state.resolveSG(221),cell:{a:2},profileType:'simple_pvoigt',separatedProfile:false,atoms:[]});a.state.addPhase(ph);
+  const ds=a.state.makeDataset({name:'peak',tth:Array.from({length:2001},(_,i)=>40+.005*i),y:Array(2001).fill(1),inst:{bkgN:1,lambda2:0,ratio:0}});
+  a.S.datasets.push(ds);a.state.selectIds([ds.id]);
+  Object.assign(ds.p,{'p1.GU':0,'p1.GV':0,'p1.GW':80,'p1.GP':0,'p1.LX':10,'p1.eta':.5,bkg0:1});
+  Object.keys(ds.fit).forEach(n=>ds.fit[n]=n==='p1.GW');
+  const job=a.state.jobFor(ds),m=new a.core.Model(job),p=m.evalPhase(0,0,job.values[0]),col=p.cols.find(Boolean);
+  assert.equal(p.cols.filter(Boolean).length,1);
+  ds.y=new Float64Array(ds.y);for(let i=0;i<col.values.length;i++)ds.y[col.start+i]+=10000*col.values[i];
+  ds.weights=Float64Array.from(ds.y,y=>1/y);for(let i=0;i<ds.y.length;i++)ds.y[i]+=.1*Math.sin(i);
+  a.state.invalidate(ds);return {...a,ds};
+}
+
+test('cross-dataset links minimize both datasets and count their target derivatives',()=>{
+  const a=app(),tth=Float64Array.from({length:100},(_,i)=>10+i*.1);
+  const dataset=(id,y)=>({id,tth,y:new Float64Array(100).fill(y),w:new Float64Array(100).fill(1),lambda1:1.54,ratio:0,bkgType:'cheb',bkgN:1,phases:[]});
+  const job={phases:[],datasets:[dataset(1,10),dataset(2,20)],values:[{bkg0:10},{bkg0:10}],vars:[{name:'bkg0',d:0}],parameterLinks:[{source:{datasetId:1,name:'bkg0'},target:{datasetId:2,name:'bkg0'},factor:1,offset:0}],maxIter:30};
+  const r=a.core.refine(job);assert.equal(r.ok,true,r.msg);
+  assert.ok(Math.abs(r.values[0].bkg0-15)<1e-6);assert.equal(r.values[1].bkg0,r.values[0].bkg0);
+  assert.ok(Math.abs(r.chi2-5000)<1e-6);assert.equal(r.stats[1].nPar,1);
+  assert.ok(Math.abs(r.esd[0].bkg0-Math.sqrt((5000/199)/200))<1e-6);
+  // A different target name must not also move the source's local column there.
+  job.values=[{bkg0:10,bkg1:0},{bkg0:20,bkg1:0}];job.datasets[1].bkgN=2;
+  job.parameterLinks[0].target.name='bkg1';
+  const different=a.core.refine(job);assert.equal(different.ok,true,different.msg);
+  assert.ok(Math.abs(different.values[0].bkg0-10/(1+101/297))<1e-5);
+});
+
+test('WPPF area errors and precision match the full height-width covariance transform',()=>{
+  const a=singlePeakReview(),job=a.state.jobFor(a.ds),r=a.core.refine(job,{evaluateOnly:true,precision:{dataset:0,phase:0,maxRefl:600}});
+  assert.equal(r.ok,true,r.msg);const m=new a.core.Model(job),ev=m.evalDataset(0,job.values[0]),ph=ev.phases[0],H=ph.height[0],K=ph.K[0],eps=.001;
+  const plus=m.evalPhase(0,0,{...job.values[0],'p1.GW':80+eps},{heights:ph.height}),minus=m.evalPhase(0,0,{...job.values[0],'p1.GW':80-eps},{heights:ph.height});
+  const kp=(plus.K[0]-minus.K[0])/(2*eps),A=new Float64Array(4),D=job.datasets[0];
+  for(let i=0;i<D.y.length;i++){const dh=ph.y[i]/H,dw=(plus.y[i]-minus.y[i])/(2*eps);A[0]+=D.w[i]*dh*dh;A[1]+=D.w[i]*dh*dw;A[3]+=D.w[i]*dw*dw;}A[2]=A[1];
+  const inv=a.core.invSPD(A,2),variance=K*K*inv[0]+(H*kp)**2*inv[3]+2*K*H*kp*inv[1],expected=Math.sqrt(r.chi2red*variance);
+  assert.ok(Math.abs(r.intensities[0][0].sigma[0]/expected-1)<2e-6);
+  assert.ok(Math.abs(r.precision.Q[0]/(K*K/variance)-1)<2e-6);
+});
+
+test('global extraction keeps the complete fitted scope, sharing, precision and cached joint covariance',async()=>{
+  const a=singlePeakReview(),ds=a.ds,other=a.state.makeDataset({name:'second',tth:Array.from(ds.tth),y:Array.from(ds.y),weights:Array.from(ds.weights),inst:a.state.instCopy(ds.inst)});
+  a.S.datasets.push(other);other.p={...ds.p};other.fit={...ds.fit};
+  const job=a.state.problemFor([ds,other]);job.vars=[{name:'p1.GW',d:-1}];job.limits={'p1.GW':[-Infinity,Infinity]};
+  const fitted=a.core.refine(job,{evaluateOnly:true});assert.equal(fitted.ok,true,fitted.msg);a.state.applyResult([ds,other],fitted,job,true);
+  a.context.RV.workspace={dataset:()=>null,phase:()=>null};
+  let calls=0;a.context.RV.pool.run=jobs=>{calls++;assert.equal(jobs[0].datasets.length,2);assert.equal(jobs[0].vars[0].d,-1);return {promise:Promise.resolve([a.core.refine(jobs[0],{evaluateOnly:true,precision:jobs[0].precision})]),stopped:()=>false};};
+  const first=await a.context.RV.cmd.extract(ds,{phase:0,maxRefl:600}),second=await a.context.RV.cmd.extract(other,{phase:0,maxRefl:600});
+  assert.equal(first.ok,true,first.msg);assert.equal(first.globalUncertainties,true);assert.equal(calls,1);
+  assert.ok(Math.abs(first.intensities[0][0].sigma[0]/fitted.intensities[0][0].sigma[0]-1)<1e-10);
+  assert.ok(first.precision.n>0 && second.precision.n>0);
+  const saved=JSON.parse(a.state.projectJSON([]));assert.ok(JSON.stringify(saved).includes('refinementVars'));
+  const b=app();b.state.commitProject(b.state.prepareProject(saved));b.context.RV.workspace={dataset:()=>null,phase:()=>null};
+  b.context.RV.pool.run=jobs=>({promise:Promise.resolve([b.core.refine(jobs[0],{evaluateOnly:true,precision:jobs[0].precision})]),stopped:()=>false});
+  const restored=await b.context.RV.cmd.extract(b.S.datasets[0],{phase:0,maxRefl:600});assert.equal(restored.ok,true,restored.msg);
+  assert.ok(Math.abs(restored.intensities[0][0].sigma[0]/first.intensities[0][0].sigma[0]-1)<1e-10);
+});
+
+test('uniaxial zero starts refine both free components without changing fixed or evaluated values',()=>{
+  const a=model(),job=a.state.problemFor([a.ds]),D=job.datasets[0];D.phases=['p1'];
+  Object.assign(D,{tth:Float64Array.from({length:3001},(_,i)=>10+.025*i),y:new Float64Array(3001).fill(100),w:new Float64Array(3001).fill(1),minFwhm:.02});
+  job.phases[0].broadening.strain='uniaxial';Object.assign(job.values[0],{'p1.strain':0,'p1.strainAxial':0});
+  const truth=structuredClone(job);Object.assign(truth.values[0],{'p1.strain':500,'p1.strainAxial':1000});D.y=a.core.evaluate(truth).ycalc;
+  job.vars=['p1.strain','p1.strainAxial'].map(name=>({name,d:0}));job.maxIter=60;
+  const evaluated=a.core.refine(job,{evaluateOnly:true});assert.equal(evaluated.values[0]['p1.strain'],0);
+  const r=a.core.refine(job);assert.equal(r.ok,true,r.msg);assert.ok(r.iter>0);
+  assert.ok(Math.abs(r.values[0]['p1.strain']-500)<.1,r.values[0]['p1.strain']);assert.ok(Math.abs(r.values[0]['p1.strainAxial']-1000)<.1);
+  assert.match(r.fitWarnings[0].join(' '),/zero components started/);
+});
+
+test('Stephens diagnostics expose negative combined variance despite nonzero measurable derivatives',()=>{
+  const a=model(),job=a.state.problemFor([a.ds]);job.phases[0].broadening.strain='stephens';job.datasets[0].phases=['p1'];
+  Object.assign(job.values[0],{'p1.S400':1e6,'p1.S220':-8e5});job.vars=['p1.S400','p1.S220'].map(name=>({name,d:0}));
+  const r=a.core.refine(job,{evaluateOnly:true});assert.equal(r.ok,true,r.msg);assert.equal(r.covarianceOK,false);assert.match(r.fitWarnings[0].join(' '),/Invalid Stephens strain variance/);
+  const valid=structuredClone(job);Object.assign(valid.values[0],{'p1.S400':1e6,'p1.S220':0});valid.datasets[0].y=a.core.evaluate(job).ycalc;valid.maxIter=10;
+  const fitted=a.core.refine(valid);assert.equal(fitted.ok,true,fitted.msg);
+  const m=new a.core.Model({...valid,values:fitted.values}),guards=a.core.profileVarianceGuards(m).filter(g=>g.kind==='stephens');
+  assert.ok(guards.every(g=>a.core.guardVarianceMinimum(fitted.values[g.d],g).value>=0));
+});
+
+test('LM geometry refresh includes entering reflections and all tails admitted by the window',()=>{
+  const a=model(),job=a.state.problemFor([a.ds]);const D=job.datasets[0];
+  Object.assign(D,{tth:Float64Array.from({length:3001},(_,i)=>10+.05*i),y:new Float64Array(3001).fill(100),w:new Float64Array(3001).fill(1),minFwhm:.02});
+  const m=new a.core.Model(job),v={...job.values[0],'p1.a':5.15},trial=m.evalDataset(0,v),fresh=a.core.evaluate({...job,values:[v]});
+  assert.ok(trial.phases[0].geo.hkl.some(r=>r.h===5&&r.k===3&&r.l===3));
+  assert.deepEqual(Array.from(trial.y),Array.from(fresh.ycalc));
+  const shorter=a.core.reflectionDmin({...D,lambda1:1.54,lambda2:1.0,ratio:.5},v);assert.ok(shorter<1);
+  // A broad reflection centered beyond the old +3 degree enumeration margin
+  // must remain available if its tail reaches the measured range.
+  const short={...D,tth:Float64Array.from({length:1001},(_,i)=>10+.05*i)};
+  const dm=a.core.reflectionDmin(short,v),angle=360/Math.PI*Math.asin(short.lambda1/(2*dm));assert.ok(angle>=70);
+});
+
+test('saved intensity uncertainties and covariance pairs follow HKLs across a peak crossing',()=>{
+  const a=app(),table={hkl:['0,1,0','1,0,0'],area:[20,10],sigma:[2,1],obs:[20,10],bound:[0,1],group:[-1,4],cov:[null,[[0,.5]]],uncertainty:'marginal'};
+  const mapped=a.core.reindexIntensities(table,[{h:1,k:0,l:0},{h:0,k:1,l:0}]);
+  assert.deepEqual(Array.from(mapped.sigma),[1,2]);assert.deepEqual(plain(mapped.cov),[null,[[0,.5]]]);assert.equal(mapped.bound[0],1);
+  assert.equal(a.core.reindexIntensities({sigma:[1,2]},[{h:1,k:0,l:0}]),null,'legacy unknown identities do not supply guessed errors');
+  const fixture=singlePeakReview(),job=fixture.state.jobFor(fixture.ds),r=fixture.core.refine(job,{evaluateOnly:true});fixture.state.applyResult([fixture.ds],r,job,false);
+  fixture.ds.ints[0].uncertainty='conditional';const refl=fixture.context.RV.results.reflOf(fixture.ds,0).filter(r=>r.inRange);assert.ok(refl.every(r=>!r.marginal));assert.match(fixture.context.RV.results.reflText([fixture.ds]),/uncertainty/);assert.match(fixture.context.RV.results.reflText([fixture.ds]),/conditional/);
+});
+
+test('each doublet line has its own sample correction and width-independent radiation weight',()=>{
+  const a=app();a.run('var pReview={profileType:"tch_aniso",U:2,V:-2,W:5,X:1,Y:0,lambda:1.540598,lambda2:1.544426,ratio:.5,zeroShift:.12,sampleDisp:2,sampleTransp:-.003,minFwhm:.001};');
+  const r=a.run('(()=>{const t=150,d=pReview.lambda/(2*Math.sin(t*Math.PI/360)),bragg2=360/Math.PI*Math.asin(pReview.lambda2/(2*d)),axis=Float64Array.from({length:4001},(_,i)=>140+.005*i),c=buildPeakContributions(axis,[{tth:t,d,h_orig:1,k_orig:0,l_orig:0}],pReview);return {x2:c[1].prep.x0,expected:bragg2+calculatePeakShift(bragg2,{profileType:"simple_pvoigt",shft:2,trns:-.003})+.12,ratio:c[1].weight*preparedProfileArea(c[1].prep)/preparedProfileArea(c[0].prep)};})()');
+  assert.ok(Math.abs(r.x2-r.expected)<1e-12);assert.ok(Math.abs(r.ratio-.5)<1e-12);
+  a.run('pReview.polK=.83;');const corrected=a.run('(()=>{const axis=Float64Array.from({length:4001},(_,i)=>140+.005*i),c=buildPeakContributions(axis,[{tth:150,d:1,h_orig:1,k_orig:0,l_orig:0}],pReview);return c[1].weight*preparedProfileArea(c[1].prep)/preparedProfileArea(c[0].prep)/(sharkoLp(c[1].prep.x0,{K:.83})/sharkoLp(c[0].prep.x0,{K:.83}));})()');
+  assert.ok(Math.abs(corrected-.5)<1e-12);
+});
+
+test('FWHM measures simple, split and asymmetric shapes while preserving the truncation radius',()=>{
+  const a=app();for(const type of ['simple_pvoigt','split_pvoigt','tch_aniso']){
+    a.context.reviewType=type;const r=a.run('(()=>{const G=Math.pow(.1/GSAS_GAUSSIAN_TO_DEG,2),L=.1*Math.cos(Math.PI/6)/GSAS_LORENTZIAN_TO_DEG,p=prepareVoigt(60,60,{h_orig:1,k_orig:0,l_orig:0,d:1},{profileType:reviewType,GU:0,GV:0,GW:G,LX:L,eta:.5,GU_L:0,GV_L:0,GW_L:G,LX_L:L,GU_R:0,GV_R:0,GW_R:4*G,LX_R:2*L,eta_split:.5,U:0,V:0,W:G,X:L,SL:.02,HL:0,minFwhm:.001});const radius=p.max_d;let lo=0,hi=radius;for(let j=0;j<55;j++){let d=(lo+hi)/2;if(evalVoigt(60+d,p)>.5*evalVoigt(60,p))lo=d;else hi=d;}const right=(lo+hi)/2;lo=0;hi=radius;for(let j=0;j<55;j++){let d=(lo+hi)/2;if(evalVoigt(60-d,p)>.5*evalVoigt(60,p))lo=d;else hi=d;}return {width:p.fwhm_total,measured:right+(lo+hi)/2,radius,sameRadius:p.max_d};})()');
+    assert.ok(Math.abs(r.width-r.measured)<1e-10,type);assert.equal(r.radius,r.sameRadius);if(type==='simple_pvoigt')assert.ok(Math.abs(r.width-.1)<.0001);
+  }
+});
+
+test('variance-boundary steps leave independent coordinates free to improve',()=>{
+  const a=model(),job=a.state.problemFor([a.ds]),D=job.datasets[0];D.phases=['p1'];
+  Object.assign(D,{tth:Float64Array.from({length:3001},(_,i)=>10+.025*i),y:new Float64Array(3001).fill(100),w:new Float64Array(3001).fill(1),minFwhm:.02});
+  Object.assign(job.values[0],{'inst.U':2,'inst.V':-2,'inst.W':.5});const truth=structuredClone(job);Object.assign(truth.values[0],{'inst.W':-1,zero:.003});D.y=a.core.evaluate(truth).ycalc;
+  job.vars=['inst.W','zero'].map(name=>({name,d:0}));job.maxIter=60;
+  const both=a.core.refine(job,{linearStart:false}),fixed=a.core.refine({...job,vars:[{name:'zero',d:0}]},{linearStart:false});
+  assert.equal(both.ok,true,both.msg);assert.ok(both.chi2<=fixed.chi2+1e-5,JSON.stringify({both:both.chi2,fixed:fixed.chi2}));assert.ok(both.values[0]['inst.W']>=.5);
+});
+
+test('GPU rejected infeasible candidates do not appear as retained best costs',async()=>{
+  const a=singlePeakReview(),job=a.state.jobFor(a.ds);job.algorithm='pt';job.maxIter=1;job.vars=[{name:'p1.GW',d:0}];job.pt={chains:2,sweeps:10,maxTemp:5,seed:17};
+  const r=await a.core.refineAsync(job,{linearStart:false,ptBackend:ctx=>{
+    const bad=Float64Array.from(ctx.x);bad[0]=-100;assert.equal(ctx.feasible(bad),false);
+    return {x:bad,stopped:true,pt:{backend:'test',sweeps:10,initialChi2:ctx.setup.initialCost,bestChi2:0}};
+  }});assert.equal(r.ok,true,r.msg);assert.equal(r.values[0]['p1.GW'],80);assert.ok(Math.abs(r.pt.bestChi2-r.pt.initialChi2)<1e-12);
+});
+
+test('site-symmetry dependent coordinates carry their correlated ESD into CIF export',()=>{
+  const a=app();a.S.calculation='rietveld';const ph=a.state.makePhase({name:'Si',sg:a.state.resolveSG(221),cell:{a:5},atoms:[{label:'Si1',type:'Si',x:.2,y:.2,z:.2,B:.5,occ:1}]});a.state.addPhase(ph);
+  const ds=a.state.makeDataset({name:'site',tth:Array.from({length:2001},(_,i)=>10+.05*i),y:Array(2001).fill(100),inst:{bkgN:1,lambda2:0,ratio:0}});a.S.datasets.push(ds);
+  const job=a.state.problemFor([ds]);job.vars=[{name:'p1.Si1.x',d:0}];const r=a.core.refine(job,{evaluateOnly:true});assert.equal(r.ok,true,r.msg);
+  assert.ok(r.esd[0]['p1.Si1.x']>0);assert.equal(r.esd[0]['p1.Si1.y'],r.esd[0]['p1.Si1.x']);assert.equal(r.esd[0]['p1.Si1.z'],r.esd[0]['p1.Si1.x']);
+  a.state.applyResult([ds],r,job,false);assert.match(a.context.RV.results.cifText([ds],false),/0\.2000[0-9]*\(\d+\).*0\.2000[0-9]*\(\d+\).*0\.2000[0-9]*\(\d+\)/);
+});
+
+test('isotropic profiles reuse preparations and avoid Cartesian reciprocal vectors',()=>{
+  const a=model(),job=a.state.problemFor([a.ds]),m=new a.core.Model(job);
+  a.run('var prepCount=0,vectorCount=0,oldPrep=prepareVoigt,oldVector=gsasReciprocalVector;prepareVoigt=function(){prepCount++;return oldPrep.apply(this,arguments);};gsasReciprocalVector=function(){vectorCount++;return oldVector.apply(this,arguments);};');
+  const ev=m.evalDataset(0,job.values[0]),count=ev.phases.reduce((sum,p)=>sum+p.geo.hkl.filter(r=>Number.isFinite(r.tth)).length,0);
+  assert.equal(a.run('vectorCount'),0);assert.equal(a.run('prepCount'),count);
+});

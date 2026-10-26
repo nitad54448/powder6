@@ -91,7 +91,7 @@
  * @property {number} eta         Lorentzian AREA fraction.
  * @property {number} max_d       Truncation half-width, degrees.
  * @property {number} pedestal    Profile value at max_d, subtracted off.
- * @property {number} fwhm_total  Convoluted FWHM, degrees.
+ * @property {number} fwhm_total  Actual pedestal-subtracted FWHM, degrees (computed lazily).
  * @property {number} analyticArea Exact area of the UNTRUNCATED symmetric shape
  *                                 (getPseudoVoigtArea adds the asymmetry).
  * @property {number} Cg          4*ln2, the Gaussian exponent coefficient.
@@ -365,13 +365,29 @@ function gsasReciprocalVector(cell, h) {
     const bc=cross(v,c), ca=cross(c,a), ab=cross(a,v), vol=a[0]*bc[0]+a[1]*bc[1]+a[2]*bc[2];
     return [0,1,2].map(i=>(h[0]*bc[i]+h[1]*ca[i]+h[2]*ab[i])/vol);
 }
+function gsasStephensVariance(h, params) {
+    const value=n=>Number.isFinite(params[n])?params[n]:0;
+        const [x,y,z]=h, x2=x*x,y2=y*y,z2=z*z;let sum=0;
+        if (params.system==='cubic') sum=value('S400')*(x2*x2+y2*y2+z2*z2)+3*value('S220')*(x2*y2+x2*z2+y2*z2);
+        else if(params.system==='tetragonal') sum=value('S400')*(x2*x2+y2*y2)+value('S004')*z2*z2+3*value('S220')*x2*y2+3*value('S202')*(x2+y2)*z2;
+        else if(/hexagonal|trigonal|rhombohedral/.test(params.system)){const xy=x2+x*y+y2;sum=value('S400')*xy*xy+value('S004')*z2*z2+3*value('S202')*xy*z2;}
+        else gsasStrainKeys(params.system,params.uniqueAxis).forEach(key=>{const ex=key.slice(1).split('').map(Number);const w=ex.includes(4)?1:ex.includes(3)?2:ex.includes(0)?3:4;sum+=w*value(key)*Math.pow(x,ex[0])*Math.pow(y,ex[1])*Math.pow(z,ex[2]);});
+        if(params.stephensBasis){
+            const monomials=GSAS_QUARTIC.map(key=>{const e=key.split('').map(Number);return Math.pow(x,e[0])*Math.pow(y,e[1])*Math.pow(z,e[2]);});
+            sum=params.stephensBasis.reduce((total,term)=>total+value(term.name)*term.coeff.reduce((a,c,i)=>a+c*monomials[i],0),0);
+        }
+    return sum;
+}
+
 function gsasCwComponents(tth, hkl, params) {
     const theta=tth*Math.PI/360, tan=Math.tan(theta), cos=Math.max(1e-9,Math.cos(theta));
     const reference = !hkl;
     hkl=hkl || {h_orig:1,k_orig:0,l_orig:0,d:(params.lambda || 1.540598)/(2*Math.max(1e-9,Math.sin(theta)))};
     const b=reference?{size:'isotropic',strain:'isotropic'}:params.broadening || {}, h=[hkl.h_orig ?? hkl.h ?? 0,hkl.k_orig ?? hkl.k ?? 0,hkl.l_orig ?? hkl.l ?? 0];
     const value=(n,d=0)=>Number.isFinite(params[n])?params[n]:d;
-    const q=gsasReciprocalVector(params.cell,h), norm=Math.hypot(...q), n=q.map(v=>v/(norm||1));
+    // Isotropic size/strain and Stephens broadening do not use a Cartesian direction.
+    const directional=b.size==='uniaxial' || b.size==='ellipsoid' || b.strain==='uniaxial';
+    const q=directional?gsasReciprocalVector(params.cell,h):null, norm=q?Math.hypot(...q):0, n=q?q.map(v=>v/(norm||1)):null;
     const angle=(axis)=>{const a=gsasReciprocalVector(params.cell,axis||[0,0,1]);return Math.min(1,Math.max(0,Math.pow(n.reduce((s,v,i)=>s+v*a[i],0)/(Math.hypot(...a)||1),2)));};
     let invSize=1/Math.max(0.001,value('size',1)), strain=Math.max(0,value('strain'));
     if (b.size==='uniaxial') {
@@ -389,17 +405,9 @@ function gsasCwComponents(tth, hkl, params) {
     }
     if (b.strain==='uniaxial') {
         const c2=angle(b.strainAxis),i=Math.max(0,value('strain')),a=Math.max(0,value('strainAxial'));
-        strain=i*a/Math.max(1e-30,Math.sqrt(i*i*c2+a*a*(1-c2)));
+        strain=c2<=1e-14?i:c2>=1-1e-14?a:i*a/Math.max(1e-30,Math.sqrt(i*i*c2+a*a*(1-c2)));
     } else if (b.strain==='stephens') {
-        const [x,y,z]=h, x2=x*x,y2=y*y,z2=z*z;let sum=0;
-        if (params.system==='cubic') sum=value('S400')*(x2*x2+y2*y2+z2*z2)+3*value('S220')*(x2*y2+x2*z2+y2*z2);
-        else if(params.system==='tetragonal') sum=value('S400')*(x2*x2+y2*y2)+value('S004')*z2*z2+3*value('S220')*x2*y2+3*value('S202')*(x2+y2)*z2;
-        else if(/hexagonal|trigonal|rhombohedral/.test(params.system)){const xy=x2+x*y+y2;sum=value('S400')*xy*xy+value('S004')*z2*z2+3*value('S202')*xy*z2;}
-        else gsasStrainKeys(params.system,params.uniqueAxis).forEach(key=>{const ex=key.slice(1).split('').map(Number);const w=ex.includes(4)?1:ex.includes(3)?2:ex.includes(0)?3:4;sum+=w*value(key)*Math.pow(x,ex[0])*Math.pow(y,ex[1])*Math.pow(z,ex[2]);});
-        if(params.stephensBasis){
-            const monomials=GSAS_QUARTIC.map(key=>{const e=key.split('').map(Number);return Math.pow(x,e[0])*Math.pow(y,e[1])*Math.pow(z,e[2]);});
-            sum=params.stephensBasis.reduce((total,term)=>total+value(term.name)*term.coeff.reduce((a,c,i)=>a+c*monomials[i],0),0);
-        }
+        const sum=gsasStephensVariance(h,params);
         // S coefficients are quartic reciprocal-metric variance in ppm² Å⁻⁴.
         strain=(hkl.d*hkl.d)*Math.sqrt(Math.max(0,sum));
     }
@@ -676,7 +684,7 @@ prep = { type: 2, x0, asym_param, H_G_L, H_L_L, H_G_R, H_L_R,
     //
     // Asymmetry broadens one flank by up to 1/(1-0.95) ... in practice the
     // clamp limits it to ~2x, so widen the window when asymmetry is active.
-    prep.fwhm_total = Math.max(1e-6, fwhm_total);
+    prep.window_fwhm = Math.max(1e-6, fwhm_total);
     // Window scaled by Lorentzian content: 8 FWHM for a pure Gaussian up to
     // CALCULATION_WINDOW_MULTIPLIER_L for a pure Lorentzian, capped in degrees
     // so a pathologically broad peak cannot make the window span the pattern.
@@ -684,7 +692,7 @@ prep = { type: 2, x0, asym_param, H_G_L, H_L_L, H_G_R, H_L_R,
     const windowMult = CALCULATION_WINDOW_MULTIPLIER_G
                      + (CALCULATION_WINDOW_MULTIPLIER_L - CALCULATION_WINDOW_MULTIPLIER_G) * etaWin;
     const truncationRadius = Math.min(PROFILE_WINDOW_MAX_DEG,
-        windowMult * Math.max(0.01, prep.fwhm_total) * (asym_param !== 0 ? 2.0 : 1.0));
+        windowMult * Math.max(0.01, prep.window_fwhm) * (asym_param !== 0 ? 2.0 : 1.0));
 
     // Pedestal: the profile value at the truncation radius. Subtracting it
     // (clamped at zero) is what makes the profile reach zero continuously at
@@ -701,6 +709,11 @@ prep = { type: 2, x0, asym_param, H_G_L, H_L_L, H_G_R, H_L_R,
     prep.pedestal = Math.max(evalVoigt(x0 + truncationRadius, prep),
                              evalVoigt(x0 - truncationRadius, prep));
     prep.max_d = truncationRadius;
+    // Measure the actual shape only when a diagnostic asks for it. The window
+    // heuristic is independent, so this correction does not change truncation.
+    Object.defineProperty(prep,'fwhm_total',{configurable:true,get:function(){
+        const width=preparedProfileFwhm(prep);Object.defineProperty(prep,'fwhm_total',{value:width,enumerable:false});return width;
+    }});
     return prep;
 }
 
@@ -787,7 +800,7 @@ function asymmetryAreaCorrection(prep) {
     if (!prep || !prep.asym_param || !(prep.max_d > 0) || prep.type !== 3) return 0;
     const asym = Object.assign({}, prep, { x0: 0, max_d: Infinity, pedestal: 0 });
     const sym = Object.assign({}, asym, { asym_param: 0 });
-    const a = prep.asym_param, H = prep.fwhm, w = Math.max(1e-6, prep.fwhm_total);
+    const a = prep.asym_param, H = prep.fwhm, w = Math.max(1e-6, prep.window_fwhm || prep.fwhm_total);
     const clamp = 0.95 / Math.abs(a), D = Math.max(prep.max_d, Math.min(clamp, 4096 * w));
     const panel = (lo, hi, side) => {
         const m = 0.5 * (lo + hi), h = 0.5 * (hi - lo);
@@ -829,6 +842,21 @@ function asymmetryAreaCorrection(prep) {
  * @param {ProfileParams} params
  * @returns {number} Area in degrees 2-theta per unit height; 1.0 on failure.
  */
+function preparedProfileFwhm(prep) {
+    const half=0.5*evalVoigt(prep.x0,prep);if(!(half>0))return NaN;
+    let total=0;
+    for(const side of [-1,1]){let lo=0,hi=prep.max_d;
+        for(let i=0;i<40;i++){const mid=0.5*(lo+hi);if(evalVoigt(prep.x0+side*mid,prep)>half)lo=mid;else hi=mid;}
+        total+=0.5*(lo+hi);
+    }return total;
+}
+
+function preparedProfileArea(prep) {
+    if(!prep)return NaN;
+    if(!(prep.integratedArea>0))prep.integratedArea=prep.analyticArea+asymmetryAreaCorrection(prep);
+    return prep.integratedArea;
+}
+
 function getPseudoVoigtArea(tth_peak, hkl, params) {
     const GAUSS_AREA_CONST = PV_GAUSS_AREA;
     const LORENTZ_AREA_CONST = PV_LORENTZ_AREA;
@@ -841,7 +869,7 @@ function getPseudoVoigtArea(tth_peak, hkl, params) {
     // kept only as a fallback if prepareVoigt is unavailable.
     try {
         const prep = prepareVoigt(tth_peak, tth_peak, hkl, params);
-        const area = prep ? prep.analyticArea + asymmetryAreaCorrection(prep) : NaN;
+        const area = preparedProfileArea(prep);
         if (isFinite(area) && area > 0) return area;
     } catch (e) { /* fall through to the analytic switch */ }
 
@@ -996,6 +1024,8 @@ function buildPeakContributions(tthAxis, hklList, params) {
                         && Math.abs(lambda1 - lambda2) > 1e-6;
     const lambdaRatio = doubletEnabled ? (lambda2 / lambda1) : 1.0;
 
+    const reference = new Array(hklList.length);
+    const shifted = t => t + calculatePeakShift(t,{profileType:"simple_pvoigt",shft:params.sampleDisp || 0,trns:params.sampleTransp || 0});
     const push = (peakIndex, weight, prep, centre) => {
         if (!prep || !Number.isFinite(prep.max_d)) return;
         const lo = centre - prep.max_d;
@@ -1005,7 +1035,7 @@ function buildPeakContributions(tthAxis, hklList, params) {
         let stop = start;
         while (stop < n && tthAxis[stop] <= hi) stop++;
         if (stop <= start) return;
-        out.push({ peakIndex, weight, prep, start, stop });
+        out.push({ peakIndex, weight, prep, start, stop, area1:preparedProfileArea(reference[peakIndex] || prep) });
     };
 
     // TWO PASSES, all Ka1 then all Ka2, NOT interleaved per reflection.
@@ -1021,21 +1051,28 @@ function buildPeakContributions(tthAxis, hklList, params) {
     for (let j = 0; j < hklList.length; j++) {
         const peak = hklList[j];
         if (!hasRenderablePosition(peak)) continue;
-        const basePos1 = peak.tth + zeroShift;
+        const bragg = Number.isFinite(peak.braggTth)?peak.braggTth:peak.tth;
+        const basePos1 = shifted(bragg) + zeroShift;
         const peakPos1 = basePos1 + calculatePeakShift(basePos1, params);
-        push(j, 1.0, prepareVoigt(basePos1, peakPos1, peak, params), peakPos1);
+        reference[j]=prepareVoigt(basePos1, peakPos1, peak, params);
+        push(j, 1.0, reference[j], peakPos1);
     }
 
     if (doubletEnabled) {
         for (let j = 0; j < hklList.length; j++) {
             const peak = hklList[j];
             if (!hasRenderablePosition(peak)) continue;
-            const sinTheta2 = Math.sin(peak.tth * deg2rad / 2.0) * lambdaRatio;
+            const sinTheta2 = Math.sin((Number.isFinite(peak.braggTth)?peak.braggTth:peak.tth) * deg2rad / 2.0) * lambdaRatio;
             if (Math.abs(sinTheta2) >= 1) continue;
             const tth2 = 2 * Math.asin(sinTheta2) / deg2rad;
-            const basePos2 = tth2 + zeroShift;
+            const basePos2 = shifted(tth2) + zeroShift;
             const peakPos2 = basePos2 + calculatePeakShift(basePos2, params);
-            push(j, ratio21, prepareVoigt(basePos2, peakPos2, peak, params), peakPos2);
+            const prep2=prepareVoigt(basePos2, peakPos2, peak, params), prep1=reference[j];
+            // The radiation weight is an area/source ratio, independent of width.
+            const lpRatio=Number.isFinite(params.polK) && typeof sharkoLp==='function'
+                ? sharkoLp(basePos2,{K:params.polK})/sharkoLp(prep1.x0,{K:params.polK}):1;
+            const weight=ratio21*preparedProfileArea(prep1)/preparedProfileArea(prep2)*lpRatio;
+            push(j, weight, prep2, peakPos2);
         }
     }
     return out;
@@ -1134,7 +1171,7 @@ if (typeof module !== 'undefined' && module.exports) {
         sharkoErfc, calculatePeakShift,
         gaussianFromSigmaSq, lorentzianFromGamma, softFloor, applyFwhmFloor,
         calculateProfileWidths, getPeakFWHM, getPseudoVoigtArea, asymmetryAreaCorrection,
-        prepareVoigt, evalVoigt,
+        prepareVoigt, evalVoigt, preparedProfileArea, preparedProfileFwhm, gsasStephensVariance,
         hasRenderablePosition, hasRenderableIntensity,
         buildPeakContributions, accumulatePattern, intensityDerivativeColumn,
         calculatePatternCPU

@@ -32,6 +32,12 @@
             }
             return 'p(c,' + u(ids.get(key)) + ')';
         }
+        function range(d,name,fallback){
+            const link=ctx.constraints && ctx.constraints.links.find(l=>l.d===d && l.name===name);
+            if(link){let lo=link.offset,hi=link.offset;for(const [j,c] of link.terms){lo+=c*(c>0?ctx.info[j].lo:ctx.info[j].hi);hi+=c*(c>0?ctx.info[j].hi:ctx.info[j].lo);}return [lo,hi];}
+            const slot=slots[d].get(name),value=Number.isFinite(problem.values[d][name])?problem.values[d][name]:fallback;
+            return slot==null?[value,value]:[ctx.info[slot].lo,ctx.info[slot].hi];
+        }
         function metricCode(P, d) {
             const pre = P.prefix, get = (n, fallback) => param(d, pre + n, fallback);
             let a = get('a', 5), b = get('b', 5), c = get('c', 5), al = '90.0', be = al, ga = al;
@@ -60,7 +66,7 @@
                 code += `let nh = normalize(g.cart*h); var invSize = 1.0/max(0.001,${get('size',1)}); var strain = max(0.0,${get('strain')});\n`;
                 if (broad.size === 'uniaxial') code += `let sc = angle2(g,nh,${vec(broad.sizeAxis)}); invSize=sqrt((1.0-sc)/sq(max(0.001,${get('size',1)}))+sc/sq(max(0.001,${get('sizeAxial',1)})));\n`;
                 if (broad.size === 'ellipsoid') code += `var nhp=nh; nhp=rotate(nhp,2u,-${get('rotC')}*RAD); nhp=rotate(nhp,1u,-${get('rotB')}*RAD); nhp=rotate(nhp,0u,-${get('rotA')}*RAD); invSize=length(nhp/vec3<f32>(max(0.001,${get('size',1)}),max(0.001,${get('sizeB',1)}),max(0.001,${get('sizeC',1)})));\n`;
-                if (broad.strain === 'uniaxial') code += `let ec=angle2(g,nh,${vec(broad.strainAxis)}); let ei=max(0.0,${get('strain')}); let ea=max(0.0,${get('strainAxial')}); strain=ei*ea/max(1e-30,sqrt(ei*ei*ec+ea*ea*(1.0-ec)));\n`;
+                if (broad.strain === 'uniaxial') code += `let ec=angle2(g,nh,${vec(broad.strainAxis)}); let ei=max(0.0,${get('strain')}); let ea=max(0.0,${get('strainAxial')}); strain=ei*ea/max(1e-30,sqrt(ei*ei*ec+ea*ea*(1.0-ec))); if(ec<=1e-14){strain=ei;}else if(ec>=1.0-1e-7){strain=ea;}\n`;
                 if (broad.strain === 'stephens') {
                     const basis = gsasStephensBasis(P.def.ops);
                     const terms = (basis || gsasStrainKeys(P.def.system,P.def.uniqueAxis).map(n => {
@@ -102,10 +108,10 @@
             ctx.model.phases.forEach((P,pi) => {
                 if (!D.has[pi]) return;
                 const cell = C.cellOf(P.def.system,P.def.uniqueAxis,n => problem.values[d][P.prefix+n]);
-                const lmax = Math.max(D.def.lambda1,D.def.ratio>0 ? D.def.lambda2 || 0 : 0);
-                const dmin = lmax/(2*Math.sin(Math.min(179,D.def.tth[D.n-1]+3)*Math.PI/360))*0.98;
+                const shiftLimits={};['zero','disp','transp'].forEach(n=>{shiftLimits[n]=range(d,n,0);});
+                const dmin=C.reflectionDmin(D.def,problem.values[d],shiftLimits);
                 const upper = n => {
-                    const slot=slots[d].get(P.prefix+n); return slot == null ? cell[n] : ctx.info[slot].hi;
+                    return range(d,P.prefix+n,cell[n])[1];
                 };
                 let maxes = ['a','b','c'].map(upper);
                 if (P.def.system === 'cubic') maxes = Array(3).fill(maxes[0]);
@@ -113,15 +119,15 @@
                 if (!maxes.every(n => n>0 && Number.isFinite(n))) throw new Error('PT cell limits need finite positive upper bounds for WebGPU.');
                 const box=maxes.map(n => Math.floor(n/dmin));
                 if (box.reduce((a,n)=>a*(2*n+1),1)>1000000) throw new Error('PT reflection envelope exceeds the WebGPU setup budget.');
-                const cellMoves=P.cellNames.some(n=>slots[d].has(P.prefix+n));
-                const anglesMove=P.cellNames.some(n=>!/^[abc]$/.test(n) && slots[d].has(P.prefix+n));
+                const cellMoves=P.cellNames.some(n=>{const r=range(d,P.prefix+n,cell[n]);return r[0]!==r[1];});
+                const anglesMove=P.cellNames.some(n=>{const r=range(d,P.prefix+n,cell[n]);return !/^[abc]$/.test(n) && r[0]!==r[1];});
                 const orthogonal=['alpha','beta','gamma'].every(n=>cell[n]===90);
                 const monotone=!anglesMove && (orthogonal || /hexagonal|trigonal|rhombohedral/.test(P.def.system));
                 // Only oblique variable metrics need the complete Miller-index
                 // box; prune indices impossible throughout monotone cell bounds.
                 const envelope=Object.assign({},cell,{a:maxes[0],b:maxes[1],c:maxes[2]});
                 const list=!cellMoves ? C.generateReflections(cell,P.def.ops,dmin) : monotone ? C.generateReflections(envelope,P.def.ops,dmin) : C.generateReflections(cell,P.def.ops,dmin,box);
-                const pair={index:pairs.length,d,n:D.n,start:reflectionCount,count:list.length,column:columnCount,method:P.method,ds,ratio:D.def.ratio>1e-6 && D.def.lambda2>1e-6 && Math.abs(D.def.lambda1-D.def.lambda2)>1e-6 ? D.def.ratio : 0};
+                const pair={index:pairs.length,d,pi,hkl:list.map(r=>[r.h,r.k,r.l]),n:D.n,start:reflectionCount,count:list.length,column:columnCount,method:P.method,ds,ratio:D.def.ratio>1e-6 && D.def.lambda2>1e-6 && Math.abs(D.def.lambda1-D.def.lambda2)>1e-6 ? D.def.ratio : 0};
                 reflectionCount+=list.length; columnCount+=list.length*D.n;
                 ds.pairs.push(pair); pairs.push(pair);
                 const refs=[];
@@ -162,7 +168,7 @@
                     let sint=${f(D.def.lambda1*0.5)}*sqrt(q); if(sint>=1.0){return;} let spacing=inverseSqrt(q);
                     let bragg=2.0*asin(sint)/RAD; let tth=bragg+shift(bragg,${param(d,'disp')},${param(d,'transp')}); let tc=tth+${param(d,'zero')};
                     var pk=${mk('tc','tc')}; ${struct} pk.height=height; peaks[idx]=pk;
-                    ${D.def.ratio>1e-6 && D.def.lambda2>1e-6 && Math.abs(D.def.lambda1-D.def.lambda2)>1e-6 ? `let st2=sin(tth*RAD*0.5)*${f(D.def.lambda2/D.def.lambda1)}; if(abs(st2)<1.0){let tc2=2.0*asin(st2)/RAD+${param(d,'zero')}; var pk2=${mk('tc2','tc2')}; pk2.height=height; peaks[idx+1u]=pk2;}` : ''}
+                    ${D.def.ratio>1e-6 && D.def.lambda2>1e-6 && Math.abs(D.def.lambda1-D.def.lambda2)>1e-6 ? `let st2=sin(bragg*RAD*0.5)*${f(D.def.lambda2/D.def.lambda1)}; if(abs(st2)<1.0){let bragg2=2.0*asin(st2)/RAD;let tc2=bragg2+shift(bragg2,${param(d,'disp')},${param(d,'transp')})+${param(d,'zero')}; var pk2=${mk('tc2','tc2')}; pk2.height=pk.area/pk2.area*lp(tc2,${f(D.def.polK)})/lp(tc,${f(D.def.polK)}); peaks[idx+1u]=pk2;}` : ''}
                 }`);
             });
             ds.m=ds.free.length;
@@ -176,6 +182,7 @@
             ds.factor=workCount; workCount+=ds.m*ds.m;
             ds.solution=workCount; workCount+=ds.m;
             ds.passive=workCount; workCount+=ds.m;
+            ds.passiveIndices=workCount; workCount+=ds.m;
             ds.converged=workCount++;
             datasets.push(ds);
         });
@@ -187,6 +194,19 @@
         if(ctx.constraints) ctx.constraints.links.forEach(link => {
             const expression=sum([f(link.offset),...link.terms.map(t=>product(f(t[1]),`state[c*STRIDE+NV+${u(t[0])}]`))]);
             param(link.d,link.name); linked+=`case ${u(ids.get(link.d+':'+link.name))}:{return ${expression};}\n`;
+        });
+        const profileChecks=[];
+        C.profileVarianceGuards(ctx.model).forEach((guard,gi)=>{
+            const get=n=>param(guard.d,guard.prefix+n,((guard.defaults||[]).find(p=>p[0]===n)||[n,0])[1]);
+            if(guard.kind==='stephens'){
+                C.guardVarianceMinimum(problem.values[guard.d],guard);
+                pairs.filter(p=>p.d===guard.d && p.pi===guard.pi).forEach(p=>p.hkl.forEach(h=>guard.add(h)));
+                const n=guard.names.length,off=put(guard.directions.flatMap(direction=>direction.coeff)),name='strainValid_'+gi;
+                functions.push('fn '+name+'(c:u32)->bool{let sc=array<f32,'+n+'>('+guard.names.map(get).join(',')+');for(var i=0u;i<'+u(guard.directions.length)+';i++){var v=0.0;for(var j=0u;j<'+u(n)+';j++){v+=sc[j]*dat['+u(off)+'+i*'+u(n)+'+j];}if(v<0.0){return false;}}return true;}');
+                profileChecks.push(name+'(c)');
+            }else{
+                const gp=guard.gp?get('GP'):'0.0';profileChecks.push('gaussianValid('+get(guard.names[0])+'+'+gp+','+get(guard.names[1])+','+get(guard.names[2])+'+'+gp+','+f(guard.lo)+','+f(guard.hi)+')');
+            }
         });
         const values=put(parameters.map(p=>p.value)), mapping=put(parameters.map(p=>p.slot));
         const bounds=put(ctx.info.flatMap((p,j)=>[Number.isFinite(p.lo)?p.lo:-3e38,Number.isFinite(p.hi)?p.hi:3e38,ctx.setup.scales[j]]));
@@ -200,7 +220,8 @@
         const header=`const NV:u32=${u(nv)}; const NR:u32=${u(reflectionCount)}; const NP:u32=${u(pointCount)}; const NC:u32=${u(columnCount)}; const NW:u32=${u(workCount)}; const CHAINS:u32=${u(chains)}; const STRIDE:u32=${u(3*nv+12)};
             const BOUNDS:u32=${u(bounds)}; const SEED:u32=${u(ctx.setup.seed)}; const MAX_TEMP:f32=${f(ctx.setup.maxTemp)};
             fn p(c:u32,k:u32)->f32{switch(k){${linked} default:{let slot=i32(dat[${u(mapping)}+k]); if(slot>=0){return state[c*STRIDE+NV+u32(slot)];} return dat[${u(values)}+k];}}}
-            fn valid(c:u32)->bool{return ${checks.length?checks.map(v=>'('+v+')').join(' && '):'true'};}`;
+            fn valid(c:u32)->bool{return ${checks.length?checks.map(v=>'('+v+')').join(' && '):'true'};}
+            fn profileValid(c:u32)->bool{return ${profileChecks.length?profileChecks.join(' && '):'true'};}`;
         const shader=SHADER.replace('/*GENERATED*/',header+'\n'+functions.join('\n')+'\n'+kernels(datasets,pairs)).replaceAll('id.x','linearId(id)')+'\nfn linearId(id:vec3<u32>)->u32{return id.x+id.y*4194240u;}';
         return { shader, data:new Float32Array(data), nv, chains, stride:3*nv+12, pointCount, reflectionCount,columnCount,workCount,datasets };
     }
@@ -225,7 +246,7 @@
     function kernels(datasets,pairs) {
         return `
         @compute @workgroup_size(64) fn geometry(@builtin(global_invocation_id) id:vec3<u32>){let c=id.x/NR;let r=id.x%NR;if(c>=CHAINS){return;} ${pairs.map(p=>`if(r>=${u(p.start)} && r<${u(p.start+p.count)}){phase_${p.index}(c,r);return;}`).join('')}}
-        @compute @workgroup_size(64) fn columns(@builtin(global_invocation_id) id:vec3<u32>){let c=id.x/NC;let k=id.x%NC;if(c>=CHAINS){return;} ${pairs.map(p=>`if(k>=${u(p.column)} && k<${u(p.column+p.count*p.n)}){let i=(k-${u(p.column)})%${u(p.n)};let r=${u(p.start)}+(k-${u(p.column)})/${u(p.n)};let t=dat[${u(p.ds.obs)}+3u*i];let pk=(c*NR+r)*2u;col[c*NC+k]=profile(t,peaks[pk])+${f(p.ratio)}*profile(t,peaks[pk+1u]);return;}`).join('')}}
+        @compute @workgroup_size(64) fn columns(@builtin(global_invocation_id) id:vec3<u32>){let c=id.x/NC;let k=id.x%NC;if(c>=CHAINS){return;} ${pairs.map(p=>`if(k>=${u(p.column)} && k<${u(p.column+p.count*p.n)}){let i=(k-${u(p.column)})%${u(p.n)};let r=${u(p.start)}+(k-${u(p.column)})/${u(p.n)};let t=dat[${u(p.ds.obs)}+3u*i];let pk=(c*NR+r)*2u;col[c*NC+k]=profile(t,peaks[pk])+${f(p.ratio)}*peaks[pk+1u].height*profile(t,peaks[pk+1u]);return;}`).join('')}}
         @compute @workgroup_size(64) fn targets(@builtin(global_invocation_id) id:vec3<u32>){let c=id.x/NP;let ip=id.x%NP;if(c>=CHAINS){return;}let wb=c*NW;
             ${datasets.map(d=>`if(ip>=${u(d.pointStart)} && ip<${u(d.pointStart+d.n)}){let i=ip-${u(d.pointStart)};let t=dat[${u(d.obs)}+3u*i];var fixed=background_${d.d}(c,t);${d.pairs.filter(p=>p.method==='rietveld').map(p=>`for(var r=0u;r<${u(p.count)};r++){fixed+=col[c*NC+${u(p.column)}+r*${u(d.n)}+i]*peaks[(c*NR+${u(p.start)}+r)*2u].height;}`).join('')}work[wb+${u(d.target)}+i]=dat[${u(d.obs)}+3u*i+1u]-fixed;return;}`).join('')}
         }
@@ -236,7 +257,7 @@
     }
 
     function nnlsKernels(d) {
-        const m=u(d.m), n=u(d.n), H=u(d.H), rhs=u(d.rhs), scale=u(d.scale), x=u(d.x), grad=u(d.grad), conv=u(d.converged), fd=u(d.freeData), obs=u(d.obs), target=u(d.target), name=d.d, factor=u(d.factor), solution=u(d.solution), mask=u(d.passive);
+        const m=u(d.m), n=u(d.n), H=u(d.H), rhs=u(d.rhs), scale=u(d.scale), x=u(d.x), grad=u(d.grad), conv=u(d.converged), fd=u(d.freeData), obs=u(d.obs), target=u(d.target), name=d.d, factor=u(d.factor), solution=u(d.solution), mask=u(d.passive), active=u(d.passiveIndices);
         return `
         @compute @workgroup_size(64) fn diagonal_${name}(@builtin(global_invocation_id) id:vec3<u32>){let c=id.x/${m};let j=id.x%${m};if(c>=CHAINS){return;}let b=c*NW;let off=u32(dat[${fd}+2u*j+1u]);var a=0.0;var r=0.0;for(var i=0u;i<${n};i++){let v=col[c*NC+off+i];let w=dat[${obs}+3u*i+2u];a+=w*v*v;r+=w*v*work[b+${target}+i];}let s=sqrt(max(0.0,a));work[b+${scale}+j]=s;work[b+${rhs}+j]=select(0.0,r/max(1e-30,s),s>0.0);work[b+${grad}+j]=work[b+${rhs}+j];work[b+${x}+j]=0.0;if(j==0u){work[b+${conv}]=0.0;}}
         @compute @workgroup_size(64) fn normal_${name}(@builtin(global_invocation_id) id:vec3<u32>){let c=id.x/(${m}*${m});let jk=id.x%(${m}*${m});if(c>=CHAINS){return;}let j=jk/${m};let k=jk%${m};let b=c*NW;let sj=work[b+${scale}+j];let sk=work[b+${scale}+k];var v=0.0;if(sj>0.0 && sk>0.0){let a=u32(dat[${fd}+2u*j+1u]);let z=u32(dat[${fd}+2u*k+1u]);for(var i=0u;i<${n};i++){v+=(col[c*NC+a+i]/sj)*(col[c*NC+z+i]/sk)*dat[${obs}+3u*i+2u];}}work[b+${H}+jk]=v;}
@@ -251,14 +272,20 @@
             for(var j=0u;j<${m};j++){work[b+${mask}+j]=select(0.0,1.0,work[b+${x}+j]>0.0);}
             var magnitude=1.0;for(var j=0u;j<${m};j++){magnitude=max(magnitude,abs(work[b+${rhs}+j]));}let tol=1e-5*magnitude;
             for(var iteration=0u;iteration<8u;iteration++){
-                for(var i=0u;i<${m};i++){
+                // Factor only passive columns; the remaining envelope has
+                // no active intensity in this trial.
+                var np=0u;for(var j=0u;j<${m};j++){work[b+${solution}+j]=0.0;if(work[b+${mask}+j]>0.5){work[b+${active}+np]=f32(j);np++;}}
+                for(var i=0u;i<np;i++){
+                    let ri=u32(work[b+${active}+i]);
                     for(var j=0u;j<=i;j++){
-                        var a=0.0;if(work[b+${mask}+i]>0.5 && work[b+${mask}+j]>0.5){a=work[b+${H}+i*${m}+j];for(var k=0u;k<j;k++){a-=work[b+${factor}+i*${m}+k]*work[b+${factor}+j*${m}+k];}}
-                        if(i==j){work[b+${factor}+i*${m}+j]=select(1.0,sqrt(max(1e-7,a)),work[b+${mask}+i]>0.5);}else{work[b+${factor}+i*${m}+j]=a/work[b+${factor}+j*${m}+j];}
+                        let rj=u32(work[b+${active}+j]);var a=work[b+${H}+ri*${m}+rj];
+                        for(var k=0u;k<j;k++){a-=work[b+${factor}+i*${m}+k]*work[b+${factor}+j*${m}+k];}
+                        if(i==j){work[b+${factor}+i*${m}+j]=sqrt(max(1e-7,a));}else{work[b+${factor}+i*${m}+j]=a/work[b+${factor}+j*${m}+j];}
                     }
-                    var a=select(0.0,work[b+${rhs}+i],work[b+${mask}+i]>0.5);for(var j=0u;j<i;j++){a-=work[b+${factor}+i*${m}+j]*work[b+${solution}+j];}work[b+${solution}+i]=a/work[b+${factor}+i*${m}+i];
+                    var a=work[b+${rhs}+ri];for(var j=0u;j<i;j++){a-=work[b+${factor}+i*${m}+j]*work[b+${grad}+j];}work[b+${grad}+i]=a/work[b+${factor}+i*${m}+i];
                 }
-                for(var count=0u;count<${m};count++){let i=${m}-1u-count;var a=work[b+${solution}+i];for(var j=i+1u;j<${m};j++){a-=work[b+${factor}+j*${m}+i]*work[b+${solution}+j];}work[b+${solution}+i]=a/work[b+${factor}+i*${m}+i];}
+                for(var count=0u;count<np;count++){let i=np-1u-count;var a=work[b+${grad}+i];for(var j=i+1u;j<np;j++){a-=work[b+${factor}+j*${m}+i]*work[b+${grad}+j];}work[b+${grad}+i]=a/work[b+${factor}+i*${m}+i];}
+                for(var i=0u;i<np;i++){work[b+${solution}+u32(work[b+${active}+i])]=work[b+${grad}+i];}
                 var alpha=1.0;var hit=-1;for(var j=0u;j<${m};j++){if(work[b+${mask}+j]>0.5 && work[b+${solution}+j]<=0.0){let old=work[b+${x}+j];let den=old-work[b+${solution}+j];let t=select(0.0,old/max(1e-30,den),den>0.0);if(hit<0 || t<alpha){alpha=t;hit=i32(j);}}}
                 if(hit>=0){for(var j=0u;j<${m};j++){if(work[b+${mask}+j]>0.5){let next=max(0.0,work[b+${x}+j]+alpha*(work[b+${solution}+j]-work[b+${x}+j]));work[b+${x}+j]=next;if(next==0.0 && work[b+${solution}+j]<=0.0){work[b+${mask}+j]=0.0;}}}work[b+${x}+u32(hit)]=0.0;work[b+${mask}+u32(hit)]=0.0;continue;}
                 for(var j=0u;j<${m};j++){work[b+${x}+j]=select(0.0,work[b+${solution}+j],work[b+${mask}+j]>0.5);}
@@ -300,6 +327,7 @@
     fn lorentzian(x:f32,b:f32)->f32{return positive(x,0.25*b/LCONV)*LCONV;}
     fn softFloor(x:f32,b:f32)->f32{if(!finite(x)||x<=0.0){return b;}if(x>20.0*b){return x;}return b*pow(sq(sq(x/b))+1.0,0.25);}
     fn fwhm(g:f32,l:f32)->f32{let v=pow(g,5.0)+2.69269*pow(g,4.0)*l+2.42843*pow(g,3.0)*l*l+4.47163*g*g*pow(l,3.0)+0.07842*g*pow(l,4.0)+pow(l,5.0);return max(1e-6,pow(max(0.0,v),0.2));}
+    fn gaussianValid(u:f32,v:f32,w:f32,lo:f32,hi:f32)->bool{var m=min((u*lo+v)*lo+w,(u*hi+v)*hi+w);if(u>0.0){let t=-v/(2.0*u);if(t>lo && t<hi){m=min(m,(u*t+v)*t+w);}}return m>=0.0;}
     fn mixing(eta:f32,g:f32,l:f32)->f32{let wl=eta*L0/max(1e-12,l);let wg=(1.0-eta)*G0/max(1e-12,g);return wl/(wl+wg);}
     fn raw(delta:f32,pk:Peak)->f32{var z=delta;if(pk.asym!=0.0 && abs(z)>=1e-9){z/=1.0-clamp(pk.asym*z,-0.95,0.95);}let g=select(pk.hg,pk.hgr,z>=0.0);let l=select(pk.hl,pk.hlr,z>=0.0);let c=select(pk.cl,pk.clr,z>=0.0);return c/(1.0+4.0*sq(z/l))+(1.0-c)*exp(-2.772588722239781*sq(z/g));}
     fn profile(t:f32,pk:Peak)->f32{let delta=t-pk.center;if(pk.radius<=0.0 || abs(delta)>pk.radius){return 0.0;}return max(0.0,raw(delta,pk)-pk.pedestal);}
@@ -330,11 +358,11 @@
     fn random(seed:ptr<function,u32>)->f32{var v=*seed;v^=v<<13u;v^=v>>17u;v^=v<<5u;*seed=v;return clamp((f32(v)+0.5)/4294967296.0,1e-7,0.9999999);}
     fn rng(c:u32,sweep:u32)->u32{var z=SEED^(c*747796405u+2891336453u)^(sweep*277803737u);z=(z^(z>>16u))*2246822519u;return (z^(z>>13u))|1u;}
     fn reflect(v:f32,lo:f32,hi:f32)->f32{if(lo>-2.9e38 && hi<2.9e38){let span=hi-lo;if(span<=0.0){return lo;}let r=v-lo-floor((v-lo)/(2.0*span))*(2.0*span);return lo+select(2.0*span-r,r,r<=span);}if(v<lo){return 2.0*lo-v;}if(v>hi){return 2.0*hi-v;}return v;}
-    @compute @workgroup_size(64) fn propose(@builtin(global_invocation_id) id:vec3<u32>){let c=id.x;if(c>=CHAINS){return;}let b=c*STRIDE;for(var j=0u;j<NV;j++){state[b+NV+j]=state[b+j];}let sweep=state[b+3u*NV+2u];if(sweep>=0.0){var seed=rng(c,u32(sweep));let j=min(NV-1u,u32(random(&seed)*f32(NV)));let z=sqrt(-2.0*log(random(&seed)))*cos(2.0*PI*random(&seed));let temp=pow(MAX_TEMP,f32(c)/f32(CHAINS-1u));state[b+NV+j]=reflect(state[b+j]+z*dat[BOUNDS+3u*j+2u]*sqrt(temp),dat[BOUNDS+3u*j],dat[BOUNDS+3u*j+1u]);state[b+3u*NV+8u]=log(random(&seed));}state[b+3u*NV+7u]=select(0.0,1.0,valid(c));}
+    @compute @workgroup_size(64) fn propose(@builtin(global_invocation_id) id:vec3<u32>){let c=id.x;if(c>=CHAINS){return;}let b=c*STRIDE;for(var j=0u;j<NV;j++){state[b+NV+j]=state[b+j];}let sweep=state[b+3u*NV+2u];if(sweep>=0.0){var seed=rng(c,u32(sweep));let j=min(NV-1u,u32(random(&seed)*f32(NV)));let z=sqrt(-2.0*log(random(&seed)))*cos(2.0*PI*random(&seed));let temp=pow(MAX_TEMP,f32(c)/f32(CHAINS-1u));state[b+NV+j]=reflect(state[b+j]+z*dat[BOUNDS+3u*j+2u]*sqrt(temp),dat[BOUNDS+3u*j],dat[BOUNDS+3u*j+1u]);state[b+3u*NV+8u]=log(random(&seed));}state[b+3u*NV+7u]=select(0.0,1.0,valid(c) && (sweep<0.0 || state[b+3u*NV+11u]<0.5 || profileValid(c)));}
     var<workgroup> partial:array<f32,64>;
     @compute @workgroup_size(64) fn energy(@builtin(workgroup_id) group:vec3<u32>,@builtin(local_invocation_index) lane:u32){let c=group.x;var result=0.0;for(var i=lane;i<NP;i+=64u){result+=pointEnergy(c,i);}partial[lane]=result;workgroupBarrier();for(var step=32u;step>0u;step/=2u){if(lane<step){partial[lane]+=partial[lane+step];}workgroupBarrier();}if(lane==0u){let b=c*STRIDE;var cost=partial[0];if(state[b+3u*NV+7u]<0.5 || !finite(cost)){cost=BIG;}if(state[b+3u*NV+7u]>0.5 && !solved(c)){state[b+3u*NV+9u]=1.0;cost=BIG;}state[b+3u*NV+10u]=cost;}}
-    @compute @workgroup_size(64) fn accept(@builtin(global_invocation_id) id:vec3<u32>){let c=id.x;if(c>=CHAINS){return;}let b=c*STRIDE;let sweep=state[b+3u*NV+2u];let cost=state[b+3u*NV+10u];let old=state[b+3u*NV];let temp=pow(MAX_TEMP,f32(c)/f32(CHAINS-1u));if(sweep<0.0 || (cost<BIG && (cost<=old || state[b+3u*NV+8u]<(old-cost)/(2.0*temp)))){for(var j=0u;j<NV;j++){state[b+j]=state[b+NV+j];}state[b+3u*NV]=cost;if(sweep>=0.0){state[b+3u*NV+3u]+=1.0;}if(sweep<0.0 || cost<state[b+3u*NV+1u]){for(var j=0u;j<NV;j++){state[b+2u*NV+j]=state[b+NV+j];}state[b+3u*NV+1u]=cost;}}if(sweep>=0.0){state[b+3u*NV+4u]+=1.0;}state[b+3u*NV+2u]=sweep+1.0;}
-    @compute @workgroup_size(64) fn exchange(@builtin(global_invocation_id) id:vec3<u32>){let parity=u32(state[3u*NV+2u]/f32(NV)-1.0)%2u;let c=2u*id.x+parity;if(c+1u>=CHAINS){return;}let b=c*STRIDE;let z=(c+1u)*STRIDE;let t0=pow(MAX_TEMP,f32(c)/f32(CHAINS-1u));let t1=pow(MAX_TEMP,f32(c+1u)/f32(CHAINS-1u));let a=0.5*(1.0/t0-1.0/t1)*(state[b+3u*NV]-state[z+3u*NV]);var seed=rng(c,u32(state[b+3u*NV+2u])+2147483647u);state[b+3u*NV+6u]+=1.0;if(a>=0.0 || log(random(&seed))<a){for(var j=0u;j<NV;j++){let v=state[b+j];state[b+j]=state[z+j];state[z+j]=v;}let v=state[b+3u*NV];state[b+3u*NV]=state[z+3u*NV];state[z+3u*NV]=v;state[b+3u*NV+5u]+=1.0;}}
+    @compute @workgroup_size(64) fn accept(@builtin(global_invocation_id) id:vec3<u32>){let c=id.x;if(c>=CHAINS){return;}let b=c*STRIDE;let sweep=state[b+3u*NV+2u];let cost=state[b+3u*NV+10u];let old=state[b+3u*NV];let temp=pow(MAX_TEMP,f32(c)/f32(CHAINS-1u));if(sweep<0.0 || (cost<BIG && (cost<=old || state[b+3u*NV+8u]<(old-cost)/(2.0*temp)))){for(var j=0u;j<NV;j++){state[b+j]=state[b+NV+j];}state[b+3u*NV]=cost;state[b+3u*NV+11u]=select(0.0,1.0,profileValid(c));if(sweep>=0.0){state[b+3u*NV+3u]+=1.0;}if(profileValid(c) && (sweep<0.0 || cost<state[b+3u*NV+1u])){for(var j=0u;j<NV;j++){state[b+2u*NV+j]=state[b+NV+j];}state[b+3u*NV+1u]=cost;}}if(sweep>=0.0){state[b+3u*NV+4u]+=1.0;}state[b+3u*NV+2u]=sweep+1.0;}
+    @compute @workgroup_size(64) fn exchange(@builtin(global_invocation_id) id:vec3<u32>){let parity=u32(state[3u*NV+2u]/f32(NV)-1.0)%2u;let c=2u*id.x+parity;if(c+1u>=CHAINS){return;}let b=c*STRIDE;let z=(c+1u)*STRIDE;let t0=pow(MAX_TEMP,f32(c)/f32(CHAINS-1u));let t1=pow(MAX_TEMP,f32(c+1u)/f32(CHAINS-1u));let a=0.5*(1.0/t0-1.0/t1)*(state[b+3u*NV]-state[z+3u*NV]);var seed=rng(c,u32(state[b+3u*NV+2u])+2147483647u);state[b+3u*NV+6u]+=1.0;if(a>=0.0 || log(random(&seed))<a){for(var j=0u;j<NV;j++){let v=state[b+j];state[b+j]=state[z+j];state[z+j]=v;}let v=state[b+3u*NV];state[b+3u*NV]=state[z+3u*NV];state[z+3u*NV]=v;let feasible=state[b+3u*NV+11u];state[b+3u*NV+11u]=state[z+3u*NV+11u];state[z+3u*NV+11u]=feasible;state[b+3u*NV+5u]+=1.0;}}
     `;
 
     function timeout(promise, label, ms=20000) {
@@ -387,7 +415,7 @@
             for(let c=0;c<ctx.setup.chains;c++){const cpu=ctx.cost(probes[c%probes.length]);if(!Number.isFinite(cpu))continue;const error=Math.abs(gc[c]-cpu)/Math.max(1,cpu);validationError=Math.max(validationError,error);if(!Number.isFinite(gc[c])||error>0.001)throw new Error('WebGPU PT cost disagrees with the double-precision model (relative error '+error.toPrecision(3)+').');}
             gpu.initial([ctx.x]);let state=await gpu.batch(1,true), best=Float64Array.from(ctx.x), bestCost=ctx.setup.initialCost, completed=0, stopped=false;
             const seen=new Set();
-            function inspect(){for(let c=0;c<ctx.setup.chains;c++){const b=c*gpu.plan.stride,n=ctx.x.length;if(state[b+3*n+9])throw new Error('WebGPU PT intensity solve did not converge; restarting CPU PT.');const candidate=Array.from(state.subarray(b+2*n,b+3*n)),key=candidate.join(',');if(seen.has(key))continue;seen.add(key);if(!candidate.every((v,j)=>Number.isFinite(v)&&v>=ctx.info[j].lo&&v<=ctx.info[j].hi))continue;const value=ctx.cost(candidate);if(value<bestCost){best=Float64Array.from(candidate);bestCost=value;}}}
+            function inspect(){for(let c=0;c<ctx.setup.chains;c++){const b=c*gpu.plan.stride,n=ctx.x.length;if(state[b+3*n+9])throw new Error('WebGPU PT intensity solve did not converge; restarting CPU PT.');const candidate=Array.from(state.subarray(b+2*n,b+3*n)),key=candidate.join(',');if(seen.has(key))continue;seen.add(key);if(!candidate.every((v,j)=>Number.isFinite(v)&&v>=ctx.info[j].lo&&v<=ctx.info[j].hi))continue;if(ctx.feasible && !ctx.feasible(candidate))continue;const value=ctx.cost(candidate);if(value<bestCost){best=Float64Array.from(candidate);bestCost=value;}}}
             while(completed<ctx.setup.sweeps){if(ctx.shouldStop && ctx.shouldStop()){stopped=true;break;}const count=Math.min(Math.max(1,Math.ceil(8/gpu.plan.nv)),ctx.setup.sweeps-completed);state=await gpu.batch(count,false);completed+=count;inspect();ctx.onIter({it:completed,chi2:bestCost,maxIter:ctx.maxIter,stage:'pt',backend:'webgpu'});}
             const stats={accepted:0,proposals:0,swaps:0,swapAttempts:0};for(let c=0;c<ctx.setup.chains;c++){const b=c*gpu.plan.stride+3*ctx.x.length;stats.accepted+=state[b+3];stats.proposals+=state[b+4];stats.swaps+=state[b+5];stats.swapAttempts+=state[b+6];}
             return {x:best,stopped,pt:Object.assign({backend:'webgpu',chains:ctx.setup.chains,sweeps:completed,requestedSweeps:ctx.setup.sweeps,maxTemp:ctx.setup.maxTemp,seed:ctx.setup.seed,initialChi2:ctx.setup.initialCost,bestChi2:bestCost,validationError},stats)};

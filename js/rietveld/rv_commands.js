@@ -1200,15 +1200,29 @@ RV.cmd = (function () {
   /* The statistics, uncertainties and intensities of a dataset at its current values, with the ticked parameters
      integrated out (a worker job that does not iterate). precision: { phase (index), maxRefl } adds the precision
      block of that phase's WPPF intensities. Resolves to the result of RVCore.refine, or null if stopped. */
+  var globalExtractionCache = null;
   async function extract(ds, precision) {
     if (S.busy) throw new Error('a fit is running');
-    var job = St.jobFor(ds);
+    var group=ds.stats && ds.stats.globalSummary, members=group && group.datasetIds && group.datasetIds.map(St.byId), selected=0;
+    if(members && !members.every(function(d){return d && d.stats && d.stats.globalSummary && d.stats.globalSummary.id===group.id;}))throw new Error('The complete global fit is no longer available. Refit its datasets before preparing global intensity uncertainties.');
+    var job;
+    if(members){
+      job=St.problemFor(members);selected=members.indexOf(ds);
+      job.vars=group.refinementVars?JSON.parse(JSON.stringify(group.refinementVars)):St.globalJob(members).vars;
+      job.limits=group.refinementLimits?Object.fromEntries(Object.keys(group.refinementLimits).map(function(n){var p=group.refinementLimits[n];return [n,[p[0]==null?-Infinity:p[0],p[1]==null?Infinity:p[1]]];})):St.globalJob(members).limits;
+    }else job=St.jobFor(ds);
     job.type = 'extract';
     if (precision) {
       var limit=precision.maxRefl==null?C.MAX_PRECISION_REFLECTIONS:precision.maxRefl;
       if(!Number.isSafeInteger(limit) || limit<1 || limit>C.MAX_PRECISION_REFLECTIONS)throw new Error('Number of reflections must be a whole number between 1 and '+C.MAX_PRECISION_REFLECTIONS+'.');
-      job.precision={dataset:0,phase:precision.phase,maxRefl:limit};
+      job.precision={dataset:members?-1:0,phase:precision.phase,maxRefl:limit};
     }
+    var cacheKey=members?group.id+'|'+JSON.stringify([job.values,job.vars,job.limits,job.precision,job.phases]):null;
+    function selectedResult(res){if(!res || !res.ok || !members)return res;
+      var out=Object.assign({},res);['values','esd','stats','intensities','uncertaintyIssues','fitWarnings'].forEach(function(k){out[k]=[res[k][selected]];});
+      out.precision=res.precisionByDataset && res.precisionByDataset[selected] || null;out.precisionByDataset=[];out.globalUncertainties=true;return out;
+    }
+    if(cacheKey && globalExtractionCache && globalExtractionCache.key===cacheKey && members.every(function(d,i){return d.stats===globalExtractionCache.stats[i];}))return selectedResult(globalExtractionCache.result);
     St.setBusy(true,'Extracting integrated intensities…');
     ui.progress(0, -1, 'intensities');
     var run = null;
@@ -1217,7 +1231,9 @@ RV.cmd = (function () {
       running = run = RV.pool.run([job]);
       syncButtons();
       var res = (await run.promise)[0];
-      return run.stopped() ? null : res;
+      if(run.stopped())return null;
+      if(cacheKey && res && res.ok)globalExtractionCache={key:cacheKey,stats:members.map(function(d){return d.stats;}),result:res};
+      return selectedResult(res);
     } finally {
       running = null;
       St.setBusy(false);

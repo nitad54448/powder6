@@ -1285,6 +1285,7 @@ RV.state = (function () {
       }, {n:0, chi2:0, sw:0, so:0, sa:0, nInt:0});
       var nv = Number.isFinite(res.nVar) ? res.nVar : job.vars.length, dof = Math.max(1,sum.n - nv - sum.nInt);
       overall = { id: Date.now().toString(36) + '-' + (++globalFitSerial), datasetIds: list.map(function(d){return d.id;}),
+        refinementVars:cloneCalculation(job.vars), refinementLimits:Object.fromEntries(Object.keys(job.limits || {}).map(function(n){return [n,job.limits[n].map(function(v){return Number.isFinite(v)?v:null;})];})),
         n:sum.n, nVar:nv, nInt:sum.nInt, dof:dof, chi2:sum.chi2, chi2red:sum.chi2/dof, GOF:Math.sqrt(sum.chi2/dof),
         Rp:sum.so>0 ? sum.sa/sum.so : null, Rwp:sum.sw>0 ? Math.sqrt(sum.chi2/sum.sw) : null,
         Rexp:sum.sw>0 ? Math.sqrt(dof/sum.sw) : null, sumWeightedObserved2:sum.sw,
@@ -1299,7 +1300,7 @@ RV.state = (function () {
       Object.keys(res.esd[d] || {}).forEach(function (n) { ds.esd[n] = res.esd[d][n]; });
       var st = res.stats[d], nVar = Number.isFinite(st.nPar) ? st.nPar-(st.nInt || 0) : job.vars.filter(function (vr) { return vr.d === d || (vr.d === -1 && (!vr.ds || vr.ds.indexOf(d) >= 0)); }).length, nPar = nVar + (st.nInt || 0);
       ds.ints = res.intensities ? res.intensities[d] : null;
-      ds.stats = Object.assign(shortStats(st), { ok: true, calculation:S.calculation, msg: res.msg, iter: res.iter, nVar: nVar, nInt: st.nInt || 0, chi2red: st.chi2 / Math.max(1, st.n - nPar),
+      ds.stats = Object.assign(shortStats(st), { ok: true, modelVersion:res.modelVersion, calculation:S.calculation, msg: res.msg, iter: res.iter, nVar: nVar, nInt: st.nInt || 0, chi2red: st.chi2 / Math.max(1, st.n - nPar),
                                                  constraintWarnings:res.constraintWarnings || [], uncertaintyIssues: res.uncertaintyIssues ? res.uncertaintyIssues[d] : {}, fitWarnings:res.fitWarnings ? res.fitWarnings[d] : [], covarianceOK:res.covarianceOK, global: !!global, globalSummary: overall, globalChi2red: global ? res.chi2red : null, nSets: list.length,
                                                  anomalousData:cloneCalculation(job.datasets[d].anomalousData || null), algorithm: res.algorithm || 'lm', effectiveAlgorithm: res.effectiveAlgorithm || 'lm', pt: res.pt || null, maxIter: job.maxIter, tol: job.tol, ms: res.ms, weight: S.settings.weight });
       invalidate(ds);

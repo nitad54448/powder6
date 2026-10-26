@@ -97,7 +97,7 @@ class SkylineMatrix {
  * @returns {boolean} False only if a non-finite entry was encountered, which
  *          means the matrix is corrupt rather than merely rank-deficient.
  */
-function skylineCholeskyInPlace(a, first, ptr, n, repairedOut) {
+function skylineCholeskyInPlace(a, first, ptr, n, repairedOut, strict = false) {
     for (let i = 0; i < n; i++) {
         const fi = first[i], pi = ptr[i];
         for (let j = fi; j <= i; j++) {
@@ -123,8 +123,9 @@ function skylineCholeskyInPlace(a, first, ptr, n, repairedOut) {
                 // value (normal equations square the condition number, so this
                 // is a column correlated to better than 1 - 5e-9) is a
                 // dependency and is repaired.
-                const floor = orig > 0 ? WPPF_PIVOT_REPAIR * orig : 0;
+                const floor = strict ? 0 : orig > 0 ? WPPF_PIVOT_REPAIR * orig : 0;
                 if (!(s > floor)) {
+                    if(strict)return false;
                     // MODIFIED CHOLESKY (Gill-Murray). The pivot is repaired
                     // IN PLACE and the factorisation continues, rather than
                     // restarting the whole thing with a larger global ridge.
@@ -209,6 +210,21 @@ function skylineSolveInPlace(a, first, ptr, n, x) {
  *          indices whose pivot had to be propped up: those reflections are
  *          not individually determined, only their group sum is.
  */
+/** Restart an ordinary Cholesky with a tiny relative diagonal regularizer
+ * if modified Cholesky overflows on many dependent tail columns. */
+function factorSkylineSPD(A, fac, repaired = []) {
+    fac.set(A.a);
+    if(skylineCholeskyInPlace(fac,A.first,A.ptr,A.n,repaired)){
+        let stable=true;for(let i=0;i<A.n;i++){let sum=0;for(let j=A.first[i];j<=i;j++)sum+=fac[A.ptr[i]+j-A.first[i]]**2;
+            if(!Number.isFinite(sum) || sum>2*Math.max(Math.abs(A.a[A.ptr[i]+i-A.first[i]]),1e-300)){stable=false;break;}}
+        if(stable)return {fac,repaired,ridge:0};
+    }
+    for(let ridge=1e-12;ridge<=1e-6;ridge*=100){
+        fac.set(A.a);for(let i=0;i<A.n;i++){const j=A.ptr[i]+i-A.first[i];fac[j]+=ridge*Math.max(Math.abs(A.a[j]),1e-300);}
+        if(skylineCholeskyInPlace(fac,A.first,A.ptr,A.n,null,true))return {fac,repaired,ridge};
+    }return null;
+}
+
 function solveSkylineSPD(A, b, scratchA, x) {
     const n = A.n, a0 = A.a, first = A.first, ptr = A.ptr;
     const fac = (scratchA && scratchA.length >= a0.length)
@@ -216,8 +232,7 @@ function solveSkylineSPD(A, b, scratchA, x) {
     const sol = (x && x.length >= n) ? x.subarray(0, n) : new Float64Array(n);
 
     const repaired = [];
-    fac.set(a0);
-    if (!skylineCholeskyInPlace(fac, first, ptr, n, repaired)) return null;
+    if (!factorSkylineSPD(A,fac,repaired)) return null;
     sol.set(b.subarray(0, n));
     if (!skylineSolveInPlace(fac, first, ptr, n, sol)) return null;
     return { x: sol, repaired };
@@ -501,7 +516,7 @@ function intensityEnvelope(start, stop) {
 // ---------------------------------------------------------------------------
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-        SkylineMatrix, skylineCholeskyInPlace, skylineSolveInPlace, solveSkylineSPD,
+        SkylineMatrix, skylineCholeskyInPlace, skylineSolveInPlace, solveSkylineSPD, factorSkylineSPD,
         skylineMultiply, solveNNLS: solveSkylineNNLS, intensityEnvelope
     };
 }

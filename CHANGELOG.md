@@ -2,6 +2,17 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.45.1 — 26 October 2026
+
+1. **Linked global refinement.** Include derivatives and parameter counts in every affected dataset, including cross-dataset targets with different names. Preserve the full fitted scope, sharing and limits when preparing global WPPF errors and precision; reuse the joint extraction across sources.
+2. **Intensity covariance and identity.** Hold integrated intensity in profile derivatives, including the area derivative and height/profile covariance. Retain all global nuisance directions in precision blocks. Match saved errors and covariance pairs by HKL. Conditional, bound, overlap and legacy errors are identified in reports. Site-symmetry dependent coordinates receive propagated correlated uncertainties.
+3. **Profile geometry.** Refresh reflections for each trial geometry, covering both wavelengths and the full permitted tail window. Apply sample corrections separately to each doublet line and normalize secondary heights by area and the Lorentz-polarisation ratio. Measure actual profile FWHM independently of the preserved truncation heuristic.
+4. **Physical boundaries.** Diagnose and guard combined Stephens strain variance, including modelled and additional probed reciprocal directions. Start two free zero uniaxial strain components together at up to 1 ppm, with a diagnostic. Active faces, feasible projections and feasible-gradient checks allow other parameters to improve at a variance limit. GPU proposals and retained candidates respect the physical region; metadata names the retained best cost.
+5. **Numerical stability and work.** Reuse prepared profile areas and skip unused isotropic reciprocal vectors. Equilibrate WPPF columns; if modified Cholesky becomes unstable on dependent tail columns, use a small relative regularizer and mark conditional errors. Compact GPU active-set factorization to passive intensity columns. A one-iteration Le Bail budget now runs one stage; its Settings tooltip states the total budget.
+6. **Checks and compatibility.** Add independent linked-background optima, full covariance/precision references, joint extraction, strain, reflection identity, doublet, FWHM, boundary, GPU rejection, coordinate-export and preparation-count regressions. Repair the WebGPU fixture lookup to use sg/all.json. Existing projects remain readable; refit older calculations before comparing fits or using their intensity uncertainties, because corrected doublets and newly included tails can change fitted values.
+
+Validation: 215 Node tests and 12 browser pages passed, including the complete WebGPU PT suite and a live GPU physical-variance guard check. All application JavaScript passed syntax checks; git diff --check passed.
+
 ## 2.45.0 — 26 October 2026
 
 1. **Ctrl+click respects the chosen background.** The anchor-placement handler returns without changing anything in Chebyshev mode. It no longer changes the model to a spline, edits a parameter, enables display options or creates an undo entry. The Anchors checkbox is hidden for Chebyshev backgrounds; spline editing and Ctrl+Shift exclusions continue to work.

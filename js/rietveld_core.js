@@ -105,7 +105,7 @@
 (function (root) {
 'use strict';
 
-var VERSION = '2.6';
+var VERSION = '2.7';
 var TWO_PI = 2 * Math.PI, D2R = Math.PI / 180, R2D = 180 / Math.PI;
 var METHODS = ['rietveld', 'lebail', 'wppf'];
 var METHOD_LABELS = { rietveld: 'Rietveld', lebail: 'Le Bail', wppf: 'WPPF' };
@@ -233,6 +233,17 @@ function cellOf(system, uniqueAxis, get) {
  * cutoff. GPU PT uses this complete envelope and filters it at each trial cell.
  * @returns {{h:number,k:number,l:number,m:number,eq:Int16Array}[]}
  */
+/** Reflection envelope includes the full allowed tail window and both wavelengths.
+ * Optional limits build the GPU envelope over every allowed sample correction. */
+function reflectionDmin(def, values, limits) {
+    var lambda=def.lambda1;
+    if(def.ratio>1e-6 && def.lambda2>0)lambda=Math.min(lambda,def.lambda2);
+    function magnitude(name){var lim=limits && limits[name];return lim?Math.max(Math.abs(lim[0]),Math.abs(lim[1])):Math.abs(values[name] || 0);}
+    var margin=PROFILE_WINDOW_MAX_DEG+magnitude('zero')+(magnitude('disp')*.001+magnitude('transp'))*R2D;
+    var upper=Math.min(179.999999,def.tth[def.tth.length-1]+margin+.001);
+    return lambda/(2*Math.sin(upper*D2R/2));
+}
+
 function generateReflections(cell, ops, dmin, box) {
     var f = buildInvDsq(cell);
     if (!f || !(dmin > 0)) return [];
@@ -511,7 +522,7 @@ function stepCap(c, v) {
     }
 }
 
-/** Forward-difference step, by kind. */
+/** Finite-difference increment, by kind (central where both sides are valid). */
 function fdStep(c, v) {
     var a = Math.abs(v);
     switch (c.kind) {
@@ -627,24 +638,28 @@ function Model(problem) {
         });
         return { def: d, n: n, T: T, spline: spline, bkgX: bx, trap: trap, nFit: nFit, refl: [], nnls: {}, has: has, anom: anom };
     });
-    // reflections of each phase in each dataset, from the start values, with 2 % of margin for the cell to move
-    this.datasets.forEach(function (D, di) {
-        var d = D.def, v = problem.values[di], lmax = Math.max(d.lambda1, d.ratio > 0 && d.lambda2 > 0 ? d.lambda2 : 0);
-        var tmax = Math.min(179, d.tth[D.n - 1] + 3), dmin = lmax / (2 * Math.sin(tmax * D2R / 2)) * 0.98;
-        D.refl = self.phases.map(function (P, pi) {
-            if (!D.has[pi]) return [];
-            var cell = cellOf(P.def.system, P.def.uniqueAxis, function (c) { return v[P.prefix + c]; });
-            return cell ? generateReflections(cell, P.def.ops, dmin) : [];
-        });
-    });
+    // Refresh for every trial geometry, including ordinary LM. Held Le Bail
+    // areas and returned uncertainties use HKLs, so enumeration may reorder.
+    this.datasets.forEach(function(D,di){self.refreshReflections(di,problem.values[di]);});
 }
+
+Model.prototype.refreshReflections = function(di,v) {
+    var D=this.datasets[di],self=this;
+    var key=[v.zero || 0,v.disp || 0,v.transp || 0].join(',')+';'+this.phases.map(function(P){return P.cellNames.map(function(c){return v[P.prefix+c];}).join(',');}).join(';');
+    if(D.reflectionCellKey===key)return;
+    var dmin=reflectionDmin(D.def,v);
+    D.refl=this.phases.map(function(P,pi){if(!D.has[pi])return [];
+        var cell=cellOf(P.def.system,P.def.uniqueAxis,function(c){return v[P.prefix+c];});
+        return cell?generateReflections(cell,P.def.ops,dmin):[];
+    });D.reflectionCellKey=key;
+};
 
 Model.prototype.methodOf = function (P) { return this.lbAsWppf && P.method === 'lebail' ? 'wppf' : P.method; };
 
 /** Profile parameters of phase P in dataset D, as profile.js reads them. */
 Model.prototype.profileParams = function (P, D, v) {
     var o = { profileType: P.def.profileType || 'simple_pvoigt', system: P.def.system,
-              lambda: D.def.lambda1, lambda2: D.def.lambda2 || 0, ratio: D.def.ratio || 0, zeroShift: v.zero || 0,
+              sampleDisp:v.disp || 0, sampleTransp:v.transp || 0, polK:D.def.polK, lambda: D.def.lambda1, lambda2: D.def.lambda2 || 0, ratio: D.def.ratio || 0, zeroShift: v.zero || 0,
               minFwhm: D.def.minFwhm > 0 ? D.def.minFwhm : (typeof getMinProfileFwhmDeg === 'function' ? getMinProfileFwhmDeg() : MIN_PROFILE_FWHM_DEG) };
     P.profNames.forEach(function (n) { o[n] = v[P.prefix + n]; });
     if (usesSeparatedProfile(P.def)) {
@@ -675,9 +690,13 @@ Model.prototype.geometry = function (P, D, v, pi) {
         var R = list[k], q = f ? invDsq(f, R.h, R.k, R.l) : NaN, s = Math.sqrt(q), sinT = lam * s / 2, tth = NaN;
         if (q > 0 && sinT < 1) {
             tth = 2 * Math.asin(sinT) * R2D;
+            // Keep the Bragg angle for each wavelength's own sample correction.
+        }
+        var braggTth=tth;
+        if(Number.isFinite(tth)){
             tth += calculatePeakShift(tth, shiftP);
         }
-        out[k] = { h_orig: R.h, k_orig: R.k, l_orig: R.l, h: R.h, k: R.k, l: R.l, d: 1 / s, s: s, tth: tth, intensity: 0, m: R.m };
+        out[k] = { h_orig: R.h, k_orig: R.k, l_orig: R.l, h: R.h, k: R.k, l: R.l, d: 1 / s, s: s, tth: tth, braggTth:braggTth, intensity: 0, m: R.m };
     }
     return { cell: cell, form: f, hkl: out };
 };
@@ -814,7 +833,7 @@ Model.prototype.evalPhase = function (pi, di, v, opts) {
         var R = hkl[k];
         cols[k] = null;
         if (!buckets[k].length || !Number.isFinite(R.tth)) continue;
-        var tc = R.tth + zero, a = getPseudoVoigtArea(tc, R, prof);
+        var tc = R.tth + zero, a = buckets[k][0].area1;
         if (!(a > 0)) continue;
         cols[k] = intensityDerivativeColumn(tth, buckets, k);
         K[k] = a; lp[k] = sharkoLp(tc, { K: polK });
@@ -836,7 +855,7 @@ Model.prototype.evalPhase = function (pi, di, v, opts) {
         for (k = 0; k < nr; k++) out.height[k] = cols[k] ? (opts.heights[k] || 0) : 0;
         out.fixed = true;
     } else if (opts.areas) {
-        for (k = 0; k < nr; k++) out.height[k] = cols[k] ? (opts.areas[k] || 0) / K[k] : 0;
+        for (k = 0; k < nr; k++) out.height[k] = cols[k] ? (opts.areas[Array.isArray(opts.areas) || ArrayBuffer.isView(opts.areas)?k:reflectionKey(hkl[k])] || 0) / K[k] : 0;
         out.fixed = true;
     }
     render(out, n);
@@ -993,7 +1012,8 @@ function factorSet(set, passive) {
         else for (q = f0; q < j; q++) if (!passive[q]) fac[p0 + q] = 0;
     }
     set.passive = passive;
-    set.fac = skylineCholeskyInPlace(fac, first, set.ptr, m, null) ? fac : null;
+    var factored=factorSkylineSPD({n:m,a:Float64Array.from(fac),first:first,ptr:set.ptr},fac);
+    set.fac=factored?fac:null;set.failed=!!set.failed || !factored;set.regularized=!!(factored && factored.ridge);
     return set;
 }
 
@@ -1022,9 +1042,15 @@ Model.prototype.wppf = function (di, parts, wp, target, cacheKey) {
     if (cache.nnlsN !== m) cache.nnlsReady = false;
     if (!cache.fac || cache.fac.length < set.A.a.length) cache.fac = new Float64Array(set.A.a.length);
     if (!cache.sol || cache.sol.length < m) cache.sol = new Float64Array(m);
-    var res = m ? solveSkylineNNLS(set.A, rhs, cache) : { x: new Float64Array(0), bound: [] };
-    if (!res && m) { cache.nnlsReady = false; res = solveSkylineNNLS(set.A, rhs, cache); }   // a stale warm start, retried cold
-    var x = res ? res.x : new Float64Array(m), passive = new Uint8Array(m);
+    // Tails cut by the range can have norms many orders below full peaks.
+    // Equilibrate the NNLS variables; a warm positive solution stays feasible
+    // even when these scales change at the next evaluation.
+    var scaled=new SkylineMatrix(set.first),norms=new Float64Array(m),scaledRhs=new Float64Array(m);
+    for(j=0;j<m;j++)norms[j]=Math.sqrt(set.A.get(j,j));
+    for(j=0;j<m;j++){scaledRhs[j]=rhs[j]/norms[j];for(var q=set.first[j];q<=j;q++)scaled.set(j,q,set.A.get(j,q)/(norms[j]*norms[q]));}
+    var res = m ? solveSkylineNNLS(scaled, scaledRhs, cache) : { x: new Float64Array(0), bound: [] };
+    if (!res && m) { cache.nnlsReady = false; res = solveSkylineNNLS(scaled, scaledRhs, cache); }   // a stale warm start, retried cold
+    var x = res ? Float64Array.from(res.x,function(v,j){return v/norms[j];}) : new Float64Array(m), passive = new Uint8Array(m);
     for (j = 0; j < m; j++) passive[j] = (!set.undet[j] && x[j] > 0) ? 1 : 0;
     items.forEach(function (it, jj) { parts[it.pi].height[it.k] = passive[jj] ? x[jj] : 0; parts[it.pi].free[it.k] = passive[jj]; });
     wp.forEach(function (pi) { render(parts[pi], D.n); });
@@ -1091,22 +1117,7 @@ Model.prototype.extract = function (di, parts, bkg, projectAll) {
  */
 Model.prototype.evalDataset = function (di, v, opts) {
     opts = opts || {};
-    // PT may explore outside the initial-cell envelope used for local LM.
-    // Refresh only when cell values change, so every trial has its reflections.
-    if (this.dynamicReflections) {
-        var self = this, dataset = this.datasets[di], def = dataset.def;
-        var key = this.phases.map(function (P) { return P.cellNames.map(function (c) { return v[P.prefix + c]; }).join(','); }).join(';');
-        if (dataset.reflectionCellKey !== key) {
-            var lmax = Math.max(def.lambda1, def.ratio > 0 && def.lambda2 > 0 ? def.lambda2 : 0);
-            var tmax = Math.min(179, def.tth[dataset.n - 1] + 3), dmin = lmax / (2 * Math.sin(tmax * D2R / 2)) * 0.98;
-            dataset.refl = this.phases.map(function (P, pi) {
-                if (!dataset.has[pi]) return [];
-                var cell = cellOf(P.def.system, P.def.uniqueAxis, function (c) { return v[P.prefix + c]; });
-                return cell ? generateReflections(cell, P.def.ops, dmin) : [];
-            });
-            dataset.reflectionCellKey = key;
-        }
-    }
+    this.refreshReflections(di,v);
     var bkg = this.background(di, v), parts = [], held = opts.held || null;
     for (var pi = 0; pi < this.phases.length; pi++) {
         var po = { grad: !!opts.grad };
@@ -1119,9 +1130,27 @@ Model.prototype.evalDataset = function (di, v, opts) {
 };
 
 /** The areas of the Le Bail phases of an evaluation, to hold them during the step of a cycle. */
+function reflectionKey(r) { return [r.h_orig !== undefined?r.h_orig:r.h,r.k_orig !== undefined?r.k_orig:r.k,r.l_orig !== undefined?r.l_orig:r.l].join(','); }
+
+/** Join archived intensity uncertainties to freshly enumerated HKLs. Old tables
+ * without identities cannot safely assign marginal errors after peak crossings. */
+function reindexIntensities(table, refl) {
+    if(!table || !Array.isArray(table.hkl))return null;
+    var indices=new Map();table.hkl.forEach(function(key,i){indices.set(key,i);});
+    var back=new Map(),out=Object.assign({},table,{hkl:refl.map(reflectionKey)});
+    out.hkl.forEach(function(key,i){if(indices.has(key))back.set(indices.get(key),i);});
+    ['area','sigma','obs','bound','group'].forEach(function(name){if(!table[name])return;
+        var array=name==='bound'?new Uint8Array(refl.length):name==='group'?new Int32Array(refl.length).fill(-1):new Float64Array(refl.length).fill(NaN);
+        back.forEach(function(i,old){array[i]=table[name][old];});out[name]=array;
+    });
+    out.cov=new Array(refl.length).fill(null);back.forEach(function(i,old){
+        (table.cov && table.cov[old] || []).forEach(function(pair){if(!back.has(pair[0]))return;var j=back.get(pair[0]),hi=Math.max(i,j),lo=Math.min(i,j);(out.cov[hi] || (out.cov[hi]=[])).push([lo,pair[1]]);});
+    });return out;
+}
+
 function heldAreas(ev) {
     var o = null;
-    ev.phases.forEach(function (ph, pi) { if (ph.method === 'lebail') { o = o || {}; o[pi] = Float64Array.from(ph.area); } });
+    ev.phases.forEach(function (ph, pi) { if (ph.method === 'lebail') { o = o || {}; o[pi] = Object.fromEntries(ph.geo.hkl.map(function(r,k){return [reflectionKey(r),ph.area[k]];})); } });
     return o;
 }
 
@@ -1166,7 +1195,9 @@ function project(ws, w, u, keep) {
 function heldFor(ph, kind) {
     if (ph.method === 'rietveld') return kind === 'cell' ? {} : { structure: ph.st, po: ph.po };
     if (ph.method === 'lebail') return { areas: ph.area };
-    return { heights: ph.height };
+    // Hold integrated intensity, not height: I = h K(p). This includes dK/dp
+    // and the height/profile cross terms in the marginal intensity covariance.
+    return { areas: ph.area };
 }
 
 /**
@@ -1383,8 +1414,31 @@ function gaussianVarianceGuards(model, only) {
     return guards;
 }
 
-/** The minimum of one guard's Gaussian variance, in cdeg^2, read from one dataset's values. */
+/** Build physical-variance guards and evaluate their Gaussian or Stephens minimum. */
+function profileVarianceGuards(model, only) {
+    var out=gaussianVarianceGuards(model,only);
+    model.datasets.forEach(function(D,d){if(only!==undefined && only!==d)return;
+        model.phases.forEach(function(P,pi){if(!D.has[pi] || !usesSeparatedProfile(P.def) || broadeningConfig(P.def.broadening).strain!=='stephens')return;
+            var basis=gsasStephensBasis(P.def.ops),names=sampleProfileNames(P.def.system,P.def.uniqueAxis,P.def.broadening,P.def.ops).filter(function(n){return /^S[0-9]/.test(n);});
+            var guard={kind:'stephens',d:d,prefix:P.prefix,names:names,shown:names.map(function(n){return P.prefix+n;}).join(', '),model:model,D:D,pi:pi,directions:[],seen:new Set(),template:{system:P.def.system,uniqueAxis:P.def.uniqueAxis,stephensBasis:basis}};
+            guard.add=function(h){var key=h.join(',');if(this.seen.has(key) || !h.some(function(x){return x!==0;}))return;this.seen.add(key);
+                var length=Math.hypot.apply(null,h),unit=h.map(function(x){return x/length;}),self=this;
+                this.directions.push({h:h.slice(),coeff:this.names.map(function(n){var p=Object.assign({},self.template);p[n]=1;return gsasStephensVariance(unit,p);})});
+            };
+            // Probe general directions as well as every modelled reflection, so
+            // systematic absences do not conceal an invalid strain tensor.
+            for(var h=-2;h<=2;h++)for(var k=-2;k<=2;k++)for(var l=-2;l<=2;l++)if(h>0 || h===0 && (k>0 || k===0 && l>0))guard.add([h,k,l]);
+            out.push(guard);
+        });
+    });return out;
+}
+
 function guardVarianceMinimum(vals, guard) {
+    if(guard.kind==='stephens'){
+        var list=guard.D.refl[guard.pi];if(guard.refList!==list){list.forEach(function(r){guard.add([r.h,r.k,r.l]);});guard.refList=list;}
+        var coefficients=guard.names.map(function(n){return Number.isFinite(vals[guard.prefix+n])?vals[guard.prefix+n]:0;}),worst={value:Infinity};
+        guard.directions.forEach(function(direction){var value=direction.coeff.reduce(function(sum,c,i){return sum+c*coefficients[i];},0);if(value<worst.value)worst={value:value,h:direction.h,coeff:direction.coeff};});return worst;
+    }
     var coefficient = function (name) {
         var x = vals[guard.prefix + name];
         if (Number.isFinite(x)) return x;
@@ -1540,7 +1594,7 @@ function degenerateGroups(ws) {
     var m = ws.m, gid = new Int32Array(m).fill(-1);
     if (!m) return gid;
     var fac = Float64Array.from(ws.A.a), rep = [];
-    if (!skylineCholeskyInPlace(fac, ws.first, ws.ptr, m, rep)) return gid;
+    if (!factorSkylineSPD(ws.A,fac,rep)) return gid;
     var A = ws.A, groups = [];
     rep.forEach(function (i) {
         var dii = A.get(i, i);
@@ -1580,7 +1634,7 @@ function intensityTables(ev, s2, cov, D) {
         if (ph.method === 'rietveld') return;
         var nr = ph.cols.length, t = { method: ph.method, area: Float64Array.from(ph.area), sigma: new Float64Array(nr).fill(NaN),
                                         obs: new Float64Array(nr).fill(NaN), bound: new Uint8Array(nr), group: new Int32Array(nr).fill(-1),
-                                        cov: new Array(nr).fill(null) };
+                                        cov: new Array(nr).fill(null), hkl:ph.geo.hkl.map(reflectionKey), uncertainty:ph.method==='lebail'?'partition':cov?'marginal':'conditional' };
         if (ph.method === 'lebail') {
             for (var k = 0; k < nr; k++) {
                 if (!ph.cols[k]) continue;
@@ -1602,6 +1656,7 @@ function intensityTables(ev, s2, cov, D) {
     }
     var ws = ev.ws;
     if (ws && ws.m && ws.fac) {
+        if(ws.regularized)out.forEach(function(t){if(t && t.method==='wppf')t.uncertainty='conditional';});
         var m = ws.m, Z = selectedInverse(ws.fac, ws.first, ws.ptr, m), gid = degenerateGroups(ws), sc = s2 > 0 ? s2 : 1;
         var slots = cov && cov.slots ? cov.slots : [], ns = slots.length, inv = cov ? cov.inv : null, ne = cov ? cov.ne : 0;
         var col = new Float64Array(m), vv = new Float64Array(m).fill(NaN);
@@ -1736,7 +1791,7 @@ function* refineSteps(problem, opts) {
         var model = new Model(problem), nd = model.datasets.length, vars = problem.vars || [], nv = vars.length, only = !!opts.evaluateOnly;
         // The Gaussian variances this problem evaluates, and the region in which they exist. The LM and PT
         // steps below may not leave it from a point inside it (the guard in lm()).
-        var varianceGuards = gaussianVarianceGuards(model), varianceHeld = false;
+        var varianceGuards = profileVarianceGuards(model), varianceHeld = false;
         var algorithm = problem.algorithm || 'lm', ptInfo = null, progressTotal = 0;
         if (!only && algorithm !== 'lm' && algorithm !== 'pt') throw new Error('unknown refinement algorithm: ' + algorithm);
         var values = problem.values.map(function (v) { return Object.assign({}, v); });
@@ -1757,11 +1812,24 @@ function* refineSteps(problem, opts) {
         });
         var x = new Float64Array(nv);
         vars.forEach(function (vr, j) { x[j] = only ? values[info[j].ds[0]][vr.name] : Math.min(info[j].hi,Math.max(info[j].lo,values[info[j].ds[0]][vr.name])); });
+        var initializationWarnings=model.datasets.map(function(){return [];});
         function apply(xv) {
             var out = values.map(function (v) { return Object.assign({}, v); });
             vars.forEach(function (vr, j) { info[j].ds.forEach(function (d) { out[d][vr.name] = xv[j]; }); });
             return constraints ? constraints.apply(out,xv) : out;
         }
+        // The uniaxial harmonic formula has no unique differential at (0,0).
+        // Seed both free components together; fixed values and evaluate-only
+        // jobs are untouched, and the numerical start is recorded in diagnostics.
+        if(!only)model.datasets.forEach(function(D,d){model.phases.forEach(function(P,pi){
+            if(!D.has[pi] || !usesSeparatedProfile(P.def) || broadeningConfig(P.def.broadening).strain!=='uniaxial')return;
+            var current=apply(x)[d],names=[P.prefix+'strain',P.prefix+'strainAxial'];if(!names.every(function(n){return current[n]===0;}))return;
+            var slots=names.map(function(n){return vars.findIndex(function(v,j){return v.name===n && info[j].ds.indexOf(d)>=0;});});
+            if(slots.every(function(j){return j>=0 && info[j].hi>0;})){
+                slots.forEach(function(j){x[j]=Math.min(info[j].hi,Math.max(info[j].lo,1));});
+                initializationWarnings[d].push(P.def.key+' uniaxial strain: both free zero components started together at up to 1 ppm to resolve the zero-start degeneracy.');
+            }
+        });});
         if(constraints && !constraints.valid(apply(x)))throw new Error('Constrained starting values are outside parameter limits. Edit the atomic constraints or starting values.');
         var nPts = 0;
         model.datasets.forEach(function (D) { nPts += D.nFit; });
@@ -1777,6 +1845,33 @@ function* refineSteps(problem, opts) {
                 if (!(s < Infinity)) return Infinity;
             }
             return restr ? s + restr.cost(vals) : s;
+        }
+        function profileViolation(vals){model.datasets.forEach(function(D,d){model.refreshReflections(d,vals[d]);});return varianceViolation(vals,varianceGuards);}
+        function guardGradient(guard,minimum){
+            var weights=guard.kind==='stephens'?minimum.coeff:[minimum.t*minimum.t,minimum.t,1],terms=new Float64Array(nv);
+            var named=guard.names.map(function(n,i){return [guard.prefix+n,weights[i]];});if(guard.gp)named.push([guard.prefix+'GP',minimum.t*minimum.t+1]);
+            named.forEach(function(pair){var link=constraints && constraints.links.find(function(l){return l.d===guard.d && l.name===pair[0];});
+                if(link)link.terms.forEach(function(t){terms[t[0]]+=pair[1]*t[1];});
+                else vars.forEach(function(v,j){if(v.name===pair[0] && info[j].ds.indexOf(guard.d)>=0)terms[j]+=pair[1];});
+            });return terms;
+        }
+        function projectProfileStep(candidate,A){
+            // Successive weighted projections onto the violating variance's
+            // linear half-space leave unrelated coordinates free to improve.
+            // Gaussian vertex movement is handled by recomputing its minimum.
+            for(var pass=0;pass<32;pass++){
+                var vals=apply(candidate),changed=false;
+                for(var k=0;k<varianceGuards.length;k++){
+                    var guard=varianceGuards[k],minimum=guardVarianceMinimum(vals[guard.d],guard);if(!(minimum.value<0))continue;
+                    var row=guardGradient(guard,minimum),metric=new Float64Array(nv),den=0;
+                    for(var q=0;q<nv;q++){metric[q]=A[q*nv+q]>0?1/A[q*nv+q]:0;den+=row[q]*row[q]*metric[q];}
+                    if(!(den>0))continue;
+                    var correction=(-minimum.value+1e-12*(1+Math.abs(minimum.value)))/den;
+                    for(q=0;q<nv;q++){if(!row[q])continue;var cap=stepCap(info[q].c,x[q]);candidate[q]=Math.max(info[q].lo,x[q]-cap,Math.min(info[q].hi,x[q]+cap,candidate[q]+correction*metric[q]*row[q]));}
+                    changed=true;vals=apply(candidate);
+                }
+                if(!changed)break;
+            }return candidate;
         }
         // the restraints in the normal equations: their residuals differentiated numerically against the variables
         // they depend on (cheap: no pattern is calculated), A += J'J, g -= J'rho; returns their chi^2
@@ -1820,12 +1915,14 @@ function* refineSteps(problem, opts) {
                 var D = model.datasets[d], ev = model.evalDataset(d, vals[d], { grad: true, projectAll: !!projectAll }), idx = [];
                 if (ev.failed) throw new Error(WPPF_FAILED + (nd > 1 ? ' (dataset ' + (d + 1) + ')' : ''));
                 held[d] = heldAreas(ev);
-                for (var j = 0; j < nv; j++) if (info[j].ds.indexOf(d) >= 0 && (!onlyIdx || onlyIdx.indexOf(j) >= 0)) idx.push(j);
+                var linked=constraints ? constraints.links.filter(function(l){return l.d===d;}) : [];
+                for (var j = 0; j < nv; j++) if ((!onlyIdx || onlyIdx.indexOf(j) >= 0) &&
+                    (info[j].ds.indexOf(d)>=0 || linked.some(function(l){return l.terms.some(function(t){return t[0]===j;});}))) idx.push(j);
                 var pj = keep ? {} : null;
-                var needed=idx.map(function(j2){return vars[j2].name;}), linked=constraints ? constraints.links.filter(function(l){return l.d===d && l.terms.some(function(t){return idx.indexOf(t[0])>=0;});}) : [];
+                var needed=idx.filter(function(j2){return info[j2].ds.indexOf(d)>=0;}).map(function(j2){return vars[j2].name;});
                 linked.forEach(function(l){if(needed.indexOf(l.name)<0)needed.push(l.name);});
                 var cols = model.derivatives(d, vals[d], ev, needed, pj);
-                var J = idx.map(function(j2){var col=linked.length?Float64Array.from(cols[vars[j2].name]):cols[vars[j2].name];linked.forEach(function(l){l.terms.forEach(function(t){if(t[0]===j2)for(var q=0;q<col.length;q++)col[q]+=t[1]*cols[l.name][q];});});return col;}), y = D.def.y, w = D.def.w, r = new Float64Array(D.n);
+                var J = idx.map(function(j2){var direct=info[j2].ds.indexOf(d)>=0, col=direct?Float64Array.from(cols[vars[j2].name]):new Float64Array(D.n);linked.forEach(function(l){l.terms.forEach(function(t){if(t[0]===j2)for(var q=0;q<col.length;q++)col[q]+=t[1]*cols[l.name][q];});});return col;}), y = D.def.y, w = D.def.w, r = new Float64Array(D.n);
                 for (var i = 0; i < D.n; i++) { if (!(w[i] > 0)) continue; r[i] = y[i] - ev.y[i]; f += w[i] * r[i] * r[i]; }
                 for (var a = 0; a < idx.length; a++) {
                     var Ja = J[a], ga = 0;
@@ -1861,7 +1958,7 @@ function* refineSteps(problem, opts) {
             // 0 while every Gaussian variance is non-negative over its fitted range. A fit that starts
             // outside that region is left free to move -- the diagnostics report it, and a wall would
             // trap it there -- but from inside, no step may leave it.
-            var curViolation = varianceGuards.length ? varianceViolation(startVals, varianceGuards) : 0, blocked = false;
+            var curViolation = varianceGuards.length ? profileViolation(startVals) : 0, blocked = false;
             if (algorithm === 'pt' && opts.onIter) opts.onIter({it:itTotal, chi2:f, maxIter:progressTotal, stage:stage});
             var mu = 1e-3, nu = 2, conv = 0, NE2 = null, tol = problem.tol > 0 ? problem.tol : 1e-5;
             for (it = 0; it < maxIter; it++) {
@@ -1888,10 +1985,15 @@ function* refineSteps(problem, opts) {
                 // Active coupled bounds (for sums of three or more occupancies).
                 // Solve the damped Newton step on the active constraint faces;
                 // this permits motion along a boundary rather than stopping there.
-                var coupled=constraints && constraints.links.some(function(l){return l.terms.length>1;}), activeRows=[];
+                var currentProfileValues=apply(x),profileFaces=[];
+                varianceGuards.forEach(function(guard){var minimum=guardVarianceMinimum(currentProfileValues[guard.d],guard);
+                    if(minimum.value>1e-9 || minimum.value < -1e-9)return;var gradient=guardGradient(guard,minimum),row=Float64Array.from(F,function(j,i){return -gradient[j]*scales[i];});
+                    if(row.some(function(v){return v!==0;}))profileFaces.push(row);
+                });
+                var coupled=profileFaces.length || constraints && constraints.links.some(function(l){return l.terms.length>1;}), activeRows=[];
                 if(coupled){
-                    var currentValues=apply(x), faces=[];
-                    constraints.links.forEach(function(l){
+                    var currentValues=apply(x), faces=profileFaces.slice();
+                    if(constraints)constraints.links.forEach(function(l){
                         var value=currentValues[l.d][l.name],sign=value<=l.limits[0]+1e-9?-1:value>=l.limits[1]-1e-9?1:0;
                         if(!sign)return;var row=new Float64Array(nF);
                         l.terms.forEach(function(t){var i=F.indexOf(t[0]);if(i>=0)row[i]+=sign*t[1]*scales[i];});
@@ -1913,6 +2015,14 @@ function* refineSteps(problem, opts) {
                         var hit=-1;for(var fi=0;fi<faces.length;fi++){if(activeRows.indexOf(fi)>=0 || ignored.indexOf(fi)>=0)continue;var dot=0;for(a=0;a<nF;a++)dot+=faces[fi][a]*dx[a];if(dot>1e-12){hit=fi;break;}}
                         if(hit<0)break;activeRows.push(hit);
                     }
+                }
+                if(profileFaces.length && activeRows.some(function(i){return i<profileFaces.length;})){
+                    varianceHeld=true;
+                    // Check the gradient along the active face, independent of
+                    // step damping. A tiny clipped step alone is not convergence.
+                    var feasibleGradient=Float64Array.from(bx);
+                    if(typeof multipliers!=='undefined' && multipliers && multipliers.length===activeRows.length)activeRows.forEach(function(i,k){for(var q=0;q<nF;q++)feasibleGradient[q]-=multipliers[k]*faces[i][q];});
+                    if(Math.max.apply(null,Array.from(feasibleGradient,function(v){return Math.abs(v)/noise;}))<1e-4){out='converged: feasible gradient at the profile variance limit';break;}
                 }
                 // shift limits per parameter (a relaxation of each shift, as in the classic Rietveld programs): one
                 // parameter the data hardly constrain would otherwise shrink the whole step and stall all the others
@@ -1936,19 +2046,28 @@ function* refineSteps(problem, opts) {
                 // floor pretending there is no Gaussian component there at all, and the fit has no gradient in
                 // that direction to tell it apart. A step that would cross the boundary from a point inside it
                 // is cut back to the boundary instead of being rejected, so the refinement can still run along it.
-                var xnVals = apply(xn), violation = varianceGuards.length ? varianceViolation(xnVals, varianceGuards) : 0;
+                var xnVals = apply(xn), violation = varianceGuards.length ? profileViolation(xnVals) : 0;
                 blocked = false;
                 if (curViolation === 0 && violation > 0) {
+                    xn=projectProfileStep(xn,A);xnVals=apply(xn);
+                    if(constraints && !constraints.valid(xnVals)){
+                        var fraction=1,baseValues=apply(x);constraints.links.forEach(function(l){var old=baseValues[l.d][l.name],delta=xnVals[l.d][l.name]-old;if(delta>0)fraction=Math.min(fraction,(l.limits[1]-old)/delta);else if(delta<0)fraction=Math.min(fraction,(l.limits[0]-old)/delta);});
+                        for(a=0;a<nv;a++)xn[a]=x[a]+Math.max(0,fraction)*(xn[a]-x[a]);xnVals=apply(xn);
+                    }
+                    for(a=0;a<nv;a++)step[a]=xn[a]-x[a];
+                    violation=profileViolation(xnVals);blocked=true;varianceHeld=true;
+                }
+                if(curViolation===0 && violation>0){
                     var loA = 0, hiA = 1, midA, cand, okA, bi;
                     for (bi = 0; bi < 24; bi++) {
                         midA = 0.5 * (loA + hiA); cand = Float64Array.from(x);
                         for (a = 0; a < nv; a++) cand[a] = x[a] + midA * step[a];
                         okA = false;
-                        try { okA = varianceViolation(apply(cand), varianceGuards) === 0; } catch (e) { okA = false; }
+                        try { okA = profileViolation(apply(cand)) === 0; } catch (e) { okA = false; }
                         if (okA) loA = midA; else hiA = midA;
                     }
                     for (a = 0; a < nv; a++) { xn[a] = x[a] + loA * step[a]; step[a] = xn[a] - x[a]; }
-                    xnVals = apply(xn); violation = varianceGuards.length ? varianceViolation(xnVals, varianceGuards) : 0;
+                    xnVals = apply(xn); violation = varianceGuards.length ? profileViolation(xnVals) : 0;
                     blocked = true; varianceHeld = true;
                 }
                 var pred = 0, sAs = 0;
@@ -1965,11 +2084,11 @@ function* refineSteps(problem, opts) {
                     mu *= Math.max(1 / 3, 1 - Math.pow(2 * rho - 1, 3)); nu = 2;
                     itTotal++;
                     if (opts.onIter) opts.onIter({ it: itTotal, chi2: f, maxIter: progressTotal || maxIter * nStages, stage: stage });
-                    if ((rel < tol && small) || (cycle && small)) { if (++conv >= LM_CONVERGED_REPEATS) { out = 'converged: χ² change below the tolerance'; it++; break; } } else conv = 0;
+                    if (!blocked && ((rel < tol && small) || (cycle && small))) { if (++conv >= LM_CONVERGED_REPEATS) { out = 'converged: χ² change below the tolerance'; it++; break; } } else conv = 0;
                 } else {
                     mu *= nu; nu *= 2;
                     if (mu > 1e20) {
-                        out = blocked ? 'stopped at the variance limit: no step keeps the Gaussian variance non-negative over the fitted range'
+                        out = blocked ? 'stopped at the variance limit: no improving feasible step preserves the profile variance'
                             : (grad < 1e-3 ? 'converged: projected gradient below tolerance' : 'stalled: no improving LM step; inspect correlated parameters and limits');
                         break;
                     }
@@ -2029,7 +2148,7 @@ function* refineSteps(problem, opts) {
                 return value;
             }
             var initialCost = setup.initialCost;
-            var startViolation = varianceGuards.length ? varianceViolation(apply(x), varianceGuards) : 0;
+            var startViolation = varianceGuards.length ? profileViolation(apply(x)) : 0;
             var bestCost = initialCost, best = Float64Array.from(x), replicas = [], temperatures = [];
             for (var r = 0; r < chains; r++) {
                 temperatures[r] = Math.pow(maxTemp, r / (chains - 1));
@@ -2054,7 +2173,7 @@ function* refineSteps(problem, opts) {
                         ptInfo.proposals++;
                         // The LM's rule, applied to a proposal: a replica inside the region where the profile
                         // exists may not step out of it; one that is outside is left free to come back.
-                        var candidateViolation = candidateVals && varianceGuards.length ? varianceViolation(candidateVals, varianceGuards) : 0;
+                        var candidateViolation = candidateVals && varianceGuards.length ? profileViolation(candidateVals) : 0;
                         if (candidateViolation > 0 && replica.feasible) candidateCost = Infinity;
                         if (Number.isFinite(candidateCost) &&
                             (candidateCost <= replica.cost || Math.log(random()) < (replica.cost - candidateCost) / (2 * temperatures[r]))) {
@@ -2109,7 +2228,7 @@ function* refineSteps(problem, opts) {
                 var setup = preparePT();
                 var ptModel = model;
                 var accelerated = restr ? null : yield { problem:problem, model:model, constraints:constraints, x:Float64Array.from(x), info:info, setup:setup,
-                    apply:apply, cost:function (xv) { return cost(apply(xv), null, ptModel); },
+                    apply:apply, feasible:function(xv){var vals=apply(xv);return (!constraints || constraints.valid(vals)) && profileViolation(vals)===0;}, cost:function (xv) { return cost(apply(xv), null, ptModel); },
                     shouldStop:opts.shouldStop, onIter:function (p) { if (opts.onIter) opts.onIter(p); }, maxIter:setup.sweeps+maxIt*nStages };
                 if (accelerated && accelerated.x) {
                     var candidate = accelerated.x;
@@ -2119,9 +2238,10 @@ function* refineSteps(problem, opts) {
                     // from the point that was inside.
                     var candidateVals = apply(candidate), checked = cost(candidateVals, null);
                     if (!Number.isFinite(checked)) throw new Error('Non-finite WebGPU PT result');
-                    var candidateViolation = varianceGuards.length ? varianceViolation(candidateVals, varianceGuards) : 0;
-                    if (checked <= setup.initialCost && candidateViolation === 0) x = Float64Array.from(candidate);
-                    ptInfo = accelerated.pt; ptInfo.bestChi2 = Math.min(checked, setup.initialCost);
+                    var candidateViolation = varianceGuards.length ? profileViolation(candidateVals) : 0;
+                    var retained=checked <= setup.initialCost && candidateViolation === 0;
+                    if (retained) x = Float64Array.from(candidate);
+                    ptInfo = accelerated.pt; ptInfo.bestChi2 = retained?checked:setup.initialCost;
                     itTotal += ptInfo.sweeps; progressTotal = setup.sweeps + maxIt * nStages;
                     continueFit = !accelerated.stopped;
                 } else {
@@ -2141,8 +2261,8 @@ function* refineSteps(problem, opts) {
             }
             msg = continueFit ? lm('vp', hasLB ? Math.max(1, Math.ceil(maxIt / 2)) : maxIt) : 'stopped';
             model.lbAsWppf = false;
-            if (hasLB && msg !== 'stopped') {
-                var m2 = lm('lebail', Math.max(1, maxIt - lmUsed));
+            if (hasLB && msg !== 'stopped' && lmUsed < maxIt) {
+                var m2 = lm('lebail', maxIt - lmUsed);
                 msg = m2 === 'iteration limit reached' && /^converged/.test(msg) ? 'Le Bail cycles: iteration limit reached' : m2;
             }
         }
@@ -2165,10 +2285,11 @@ function* refineSteps(problem, opts) {
             if (inv) for (a = 0; a < ne; a++) { var vv = chi2red * inv[a * ne + a]; if (vv >= 0) esdX[idxE[a]] = Math.sqrt(vv); }
         }
         var outVals = apply(x), esd = model.datasets.map(function () { return {}; }), uncertaintyIssues = model.datasets.map(function(){return {};});
-        var fitWarnings=model.datasets.map(function(_,d){return instrumentProfileWarnings(model,d,outVals[d]);}), dependentIssues={};
+        var fitWarnings=model.datasets.map(function(_,d){return initializationWarnings[d].concat(instrumentProfileWarnings(model,d,outVals[d]),varianceGuards.filter(function(g){return g.d===d && g.kind==='stephens';}).flatMap(function(g){var m=guardVarianceMinimum(outVals[d],g);return m.value < -1e-9?['Invalid Stephens strain variance ('+g.shown+') is negative along '+m.h.join(' ')+': '+m.value.toPrecision(5)+'. The width clamp hides an invalid strain tensor; constrain the combined variance, rather than the signs of individual cross coefficients.']:[];}));}), dependentIssues={};
         // The fit stopped at the edge of the region rather than at the data: name the polynomial and where,
         // but only when it really ends there -- the guard also cuts a step that merely passes through.
         if (varianceHeld) model.datasets.forEach(function (D, d) {
+            varianceGuards.filter(function(g){return g.d===d && g.kind==='stephens';}).forEach(function(g){var m=guardVarianceMinimum(outVals[d],g);if(Math.abs(m.value)<=1e-8)fitWarnings[d].push('The refinement reached the Stephens strain variance limit ('+g.shown+') along '+m.h.join(' ')+'. Ordinary interior Gaussian uncertainties do not describe this active boundary.');});
             var worst = null;
             gaussianVarianceGuards(model, d).forEach(function (g) {
                 var m = guardVarianceMinimum(outVals[d], g);
@@ -2211,20 +2332,42 @@ function* refineSteps(problem, opts) {
             if(classify(l.name).kind==='atom' && /^[xyz]$/.test(classify(l.name).comp) && e>=0.5)e=NaN;
             esd[l.d][l.name]=e;if(!Number.isFinite(e))uncertaintyIssues[l.d][l.name]='Dependent uncertainty unavailable: singular, bounded or ill-conditioned independent variables';
         });
+        // A site coordinate r_i = r0_i + sum_f basis[f][i] u_f carries
+        // the covariance of all its free coordinates, even when it is not a variable.
+        model.datasets.forEach(function(D,d){model.phases.forEach(function(P,pi){
+            if(!D.has[pi] || P.method!=='rietveld')return;
+            (P.def.atoms || []).forEach(function(at){var site=at.site,pre=P.prefix+at.label+'.';
+                ['x','y','z'].forEach(function(c,i){if(site.free.indexOf(i)>=0)return;
+                    var terms=new Float64Array(nv),moving=false,available=true;
+                    site.free.forEach(function(fc){var coefficient=site.basis[fc][i];if(!coefficient)return;
+                        var name=pre+'xyz'[fc],link=constraints && constraints.links.find(function(l){return l.d===d && l.name===name;});
+                        if(link)link.terms.forEach(function(t){terms[t[0]]+=coefficient*t[1];});
+                        else vars.forEach(function(v,jj){if(v.name===name && info[jj].ds.indexOf(d)>=0)terms[jj]+=coefficient;});
+                    });
+                    var variance=0;for(var a=0;a<nv;a++){if(!terms[a])continue;moving=true;var ia=idxE.indexOf(a);if(ia<0 || !inv){available=false;continue;}
+                        for(var b=0;b<nv;b++){if(!terms[b])continue;var ib=idxE.indexOf(b);if(ib<0)available=false;else variance+=terms[a]*terms[b]*inv[ia*ne+ib]*chi2red;}}
+                    if(moving){var e=available?Math.sqrt(Math.max(0,variance)):NaN;esd[d][pre+c]=e;
+                        if(!Number.isFinite(e) || e>=.5){esd[d][pre+c]=NaN;uncertaintyIssues[d][pre+c]='Site-symmetry dependent uncertainty unavailable: bounded, singular or poorly determined free coordinates';}}
+                });
+            });
+        });});
         var posE = {};
         idxE.forEach(function (jj, e) { posE[jj] = e; });
-        var precision = null;
+        var precision = null, precisionByDataset = [];
+        var linearCovarianceOK=fin.evs.every(function(ev){return !(ev.ws && ev.ws.regularized);});
+        var jointCovarianceOK=(!nv || !!inv && !inactive.length) && linearCovarianceOK && !(profileViolation(outVals)>1e-9);
+        if(!linearCovarianceOK)fitWarnings.forEach(function(w,d){if(fin.evs[d].ws && fin.evs[d].ws.regularized)w.push('Intensity columns are nearly dependent at the fitted range boundary. A small relative regularizer stabilized the solve; intensity uncertainties are conditional. Inspect overlapping and truncated reflections.');});
         var stats = [], intensities = [];
         model.datasets.forEach(function (D, d) {
             var ev = fin.evs[d], nPar = intensityCount(ev);
-            for (var j2 = 0; j2 < nv; j2++) if (info[j2].ds.indexOf(d) >= 0) nPar++;
+            for (var j2 = 0; j2 < nv; j2++) if (info[j2].ds.indexOf(d) >= 0 || constraints && constraints.links.some(function(l){return l.d===d && l.terms.some(function(t){return t[0]===j2;});})) nPar++;
             var st = datasetStats(D, ev, nPar);
             st.phases.forEach(function (p) { delete p.Iobs; });
             st.nInt = intensityCount(ev); st.nPar = nPar;
             stats.push(st);
             var slots = [];
-            if (inv && ev.ws) fin.projs[d].idx.forEach(function (jj) {
-                var p = fin.projs[d].p, pr = p[vars[jj].name];
+            if (inv && ev.ws) idxE.forEach(function (jj) {
+                var p = fin.projs[d].p, pr = p[vars[jj].name] && info[jj].ds.indexOf(d)>=0 ? p[vars[jj].name] : {z:new Float64Array(ev.ws.m),b:new Float64Array(ev.ws.m)};
                 if (!pr || posE[jj] == null) return;
                 // the column of a variable carries the columns of the names linked to it (normal), and so do its projections
                 var z = pr.z, b = pr.b;
@@ -2239,15 +2382,17 @@ function* refineSteps(problem, opts) {
                 });
                 slots.push({ e: posE[jj], z: z, b: b });
             });
-            var cov = inv ? { inv: inv, ne: ne, S: Ms, slots: slots } : null;
+            var cov = jointCovarianceOK ? (inv ? { inv: inv, ne: ne, S: Ms, slots: slots } : {inv:null,ne:0,S:null,slots:[]}) : null;
             intensities.push(intensityTables(ev, chi2red, cov, D));
-            if (opts.precision && opts.precision.dataset === d) {
-                precision = precisionBlock(ev, opts.precision.phase, opts.precision.maxRefl, cov);
-                if (precision) precision.s2 = chi2red;
+            if (opts.precision && (opts.precision.dataset === d || opts.precision.dataset === -1)) {
+                var block = precisionBlock(ev, opts.precision.phase, opts.precision.maxRefl, cov);
+                if (block) block.s2 = chi2red;
+                precisionByDataset[d]=block;
+                if(opts.precision.dataset===d)precision=block;
             }
         });
         return { ok: true, algorithm: only ? 'evaluate' : algorithm, effectiveAlgorithm: only ? 'evaluate' : algorithm === 'pt' ? 'pt+lm' : 'lm', pt: ptInfo, msg: msg, iter: it, chi2: fin.f, chi2red: chi2red, dof: dof, restraints: restr ? { n: nRes, chi2: restr.cost(outVals), details: restr.details(outVals), cpuOnly: algorithm === 'pt' } : null, nPts: nPts, nVar: nv, nInt: nInt,
-                 constraintWarnings:constraints ? constraints.warnings : [], constraintNames:constraints ? constraints.names : [], values: outVals, esd: esd, covarianceOK:!nv || !!inv && !inactive.length, uncertaintyIssues:uncertaintyIssues, fitWarnings:fitWarnings, stats: stats, intensities: intensities, precision: precision, ms: Date.now() - t0 };
+                 constraintWarnings:constraints ? constraints.warnings : [], constraintNames:constraints ? constraints.names : [], values: outVals, esd: esd, modelVersion:VERSION, covarianceOK:jointCovarianceOK, uncertaintyIssues:uncertaintyIssues, fitWarnings:fitWarnings, stats: stats, intensities: intensities, precision: precision, precisionByDataset:precisionByDataset, ms: Date.now() - t0 };
     } catch (e) {
         if (opts.rethrow) throw e;
         return { ok: false, msg: String((e && e.message) || e), ms: Date.now() - t0 };
@@ -2307,10 +2452,10 @@ function evaluate(problem, di) {
 
 root.RVCore = {
     VERSION: VERSION, METHODS: METHODS, METHOD_LABELS: METHOD_LABELS, expandOps: expandOps, cosets: cosets, laueRotations: laueRotations, isAllowed: isAllowed,
-    cellParams: cellParams, cellOf: cellOf, generateReflections: generateReflections, siteSymmetry: siteSymmetry,
+    cellParams: cellParams, cellOf: cellOf, generateReflections: generateReflections, reflectionDmin:reflectionDmin, siteSymmetry: siteSymmetry,
     sitePosition: sitePosition, formFactor: formFactor, parseAnomalous: parseAnomalous, profileParamsFor: profileParamsFor, INSTRUMENT_PROFILE: INSTRUMENT_PROFILE, INSTRUMENT_PROFILE_TYPES:INSTRUMENT_PROFILE_TYPES, ALL_INSTRUMENT_PROFILE: ALL_INSTRUMENT_PROFILE, instrumentProfileParams: instrumentProfileParams, usesSeparatedProfile: usesSeparatedProfile, SAMPLE_PROFILE: SAMPLE_PROFILE, broadeningConfig: broadeningConfig, sampleProfileNames: sampleProfileNames, PROFILE_PARAMS: PROFILE_PARAMS, PROFILE_LABELS: PROFILE_LABELS,
     classify: classify, defaultLimits: defaultLimits, methodAllows: methodAllows, Model: Model, refine: refine, refineAsync:refineAsync, evaluate: evaluate,
-    datasetStats: datasetStats, solveSPD: solveSPD, invSPD: invSPD, normalDependence:normalDependence, fracText: fracText, splineValues: splineValues, MAX_PRECISION_REFLECTIONS:MAX_PRECISION_REFLECTIONS,
-    selectedInverse: selectedInverse
+    datasetStats: datasetStats, solveSPD: solveSPD, invSPD: invSPD, normalDependence:normalDependence, profileVarianceGuards:profileVarianceGuards, guardVarianceMinimum:guardVarianceMinimum, varianceViolation:varianceViolation, fracText: fracText, splineValues: splineValues, MAX_PRECISION_REFLECTIONS:MAX_PRECISION_REFLECTIONS,
+    reflectionKey:reflectionKey, reindexIntensities:reindexIntensities, selectedInverse: selectedInverse
 };
 })(typeof self !== 'undefined' ? self : (typeof window !== 'undefined' ? window : globalThis));

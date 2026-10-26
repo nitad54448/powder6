@@ -1,6 +1,6 @@
 # Powder 6
 
-Version **2.45.0**, 26 October 2026. See [corrections](CHANGELOG.md).
+Version **2.45.1**, 26 October 2026. See [corrections](CHANGELOG.md).
 
 Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by **Rietveld**, **Le Bail** or **WPPF**, fitted individually or in one global fit, with **structure solution** from the extracted intensities. Everything runs locally; nothing is uploaded.
 
@@ -78,6 +78,8 @@ Supporting files loaded locally. Without them the program still starts, but lose
 | `lib/moyo/moyo_wasm.js` and `lib/moyo/moyo_wasm_bg.wasm` | Find higher symmetry cannot run; the powder-intensity Test remains available |
 | `absorption.json` | automatic elemental attenuation estimates are unavailable; restore the file beside index.html and reload |
 | `scatters/anomalous_chantler.json` | enabled anomalous scattering cannot be calculated; restore the file or disable the correction for comparison |
+
+Profile fitting corrections in 2.45.1 include cross-dataset link derivatives, integrated-intensity covariance, joint extraction after global fits, independent doublet positions and radiation weights, reflection coverage and HKL identity, strain validity and constrained convergence. Refit older calculations before comparing residuals or using their intensity uncertainties: corrected doublet profiles and newly included peak tails can change fitted values. Existing files and retained historical results remain readable. See [corrections](CHANGELOG.md).
 
 ## Typical workflow
 

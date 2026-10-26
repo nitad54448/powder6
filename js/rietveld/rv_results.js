@@ -77,11 +77,13 @@ RV.results = (function () {
   function reflOf(ds, pi) {
     var c = St.calcFor(ds), ph = S.phases[pi];
     if (!c || !c.phases[pi]) return [];
-    var t = ds.ints && ds.ints[pi] && ph && ph.method !== 'rietveld' ? ds.ints[pi] : null;
+    var t = ph && ph.method !== 'rietveld' ? C.reindexIntensities(ds.ints && ds.ints[pi],c.phases[pi].refl) : null;
     return c.phases[pi].refl.map(function (r, k) {
       var o = Object.assign({}, r);
-      if (t && k < t.sigma.length) { o.sigma = t.sigma[k]; o.marginal = ph.method === 'wppf'; }
-      o.I = ph && ph.method === 'lebail' ? r.Iext : r.Icalc;
+      if (t && k < t.sigma.length) { o.sigma = t.sigma[k]; o.marginal = t.uncertainty==='marginal' && !t.bound[k] && t.group[k]<0; o.uncertainty=t.bound[k]?'conditional at bound':t.group[k]>=0?'conditional overlap':t.uncertainty; }
+      o.I = ph && ph.method === 'lebail' ? (t?t.obs[k]:r.Iext) : t?t.area[k]:r.Icalc;
+      if(t){o.bound=!!t.bound[k];o.group=t.group[k];}
+      if(!t && ph && ph.method==='wppf')o.uncertainty='conditional current values';
       o.F2obs = o.I > 0 && r.m > 0 && r.lp > 0 ? o.I / (r.m * r.lp) : NaN;
       return o;
     });
@@ -125,7 +127,7 @@ RV.results = (function () {
   }
   function reflHTML(ph, ds) {
       var pi = S.phases.indexOf(ph), refl = reflOf(ds, pi).filter(function (r) { return r.inRange; }), rv = ph.method === 'rietveld';
-      var fresh = !rv && ds.ints && ds.ints[pi];
+      var fresh = !rv && refl.length && refl.every(function(r){return r.uncertainty && r.uncertainty!=='conditional current values';}), marginal=fresh && refl.some(function(r){return r.marginal;});
       var title = (rv ? 'Reflections' : 'Intensities') + ' of ' + ph.name + ' · in ' + ds.name + ', ' + plural(refl.length, 'reflection') + (rv ? '' : ', ' + C.METHOD_LABELS[ph.method]);
       var html = (refl.length ? '<div class="table-wrap"><table class="grid compact refl"><thead><tr><th>h</th><th>k</th><th>l</th><th>m</th><th>d /Å</th><th>2θ /°</th>' +
           (rv ? '<th>|F|²</th><th>I calc</th><th>I obs</th>' : '<th>I</th><th>σ(I)</th><th title="I / (m Lp), on the scale of |F|²">I/(m·Lp)</th><th></th>') + '</tr></thead><tbody>' +
@@ -137,7 +139,7 @@ RV.results = (function () {
           }).join('') + '</tbody></table></div>' + (refl.length > MAX_ROWS ? '<p class="hint">The first ' + MAX_ROWS + ' are shown; Save reflections writes them all.</p>' : '') : '<p class="hint">' + esc(ds.calcErr || 'No reflection in the fitted range.') + '</p>') +
         (rv ? '<p class="hint">I obs is the observed intensity shared out among the reflections in proportion to the calculated ones (Rietveld), the basis of R<sub>Bragg</sub>.</p>'
             : '<p class="hint">I is the integrated Kα1 intensity of the reflection (the convention of the Rietveld model: I = S·m·Lp·P·|F|²). ' +
-              (ph.method === 'wppf' ? 'σ(I) ' + (fresh ? 'from the last fit, with the cell, profile and background integrated out (the full Pawley normal matrix). ' : 'conditional on the current values (fit for the full uncertainties). ') + '“at 0”: held at zero by the non-negativity. '
+              (ph.method === 'wppf' ? 'σ(I) ' + (marginal ? 'from the last fit, with the refined cell, profile and background integrated out. Errors of bound or exactly coincident intensities are conditional. ' : fresh ? 'conditional: joint covariance was unavailable, or the intensity is bounded or exactly coincident. ' : 'conditional on the current values (fit for the full uncertainties; legacy tables without HKL identities cannot safely supply saved errors). ') + '“at 0”: held at zero by the non-negativity. '
                                     : 'σ(I) propagates the counting statistics through the partition. ') +
               '“overlap”: exactly coincident with another reflection; only their sum is determined.</p>');
     return { title: title, html: html, n: refl.length };
@@ -331,11 +333,11 @@ RV.results = (function () {
   // Reports include every reflection in the fitted range, without the UI's 500-row limit.
   function reflectionRows(ds,pi) {
     var ph=S.phases[pi], rv=ph.method==='rietveld';
-    var rows=[line(rv ? ['h','k','l','m','d','2theta','F2','Icalc','Iobs'] : ['h','k','l','m','d','2theta','I','sigma','I/(m*Lp)','flag'])];
+    var rows=[line(rv ? ['h','k','l','m','d','2theta','F2','Icalc','Iobs'] : ['h','k','l','m','d','2theta','I','sigma','I/(m*Lp)','flag','uncertainty'])];
     reflOf(ds,pi).forEach(function(r){
       if(!r.inRange)return;
       rows.push(line(rv ? [r.h,r.k,r.l,r.m,r.d.toFixed(6),r.tth.toFixed(5),ui.fmt(r.F2,8),ui.fmt(r.Icalc,8),ui.fmt(r.Iobs,8)]
-        : [r.h,r.k,r.l,r.m,r.d.toFixed(6),r.tth.toFixed(5),ui.fmt(r.I,8),ui.fmt(r.sigma,6),ui.fmt(r.F2obs,8),[r.group>=0?'overlap':'',r.bound?'zero':''].filter(Boolean).join(';')]));
+        : [r.h,r.k,r.l,r.m,r.d.toFixed(6),r.tth.toFixed(5),ui.fmt(r.I,8),ui.fmt(r.sigma,6),ui.fmt(r.F2obs,8),[r.group>=0?'overlap':'',r.bound?'zero':''].filter(Boolean).join(';'),r.uncertainty || (ph.method==='lebail'?'partition':'conditional current values')]));
     });
     return rows;
   }

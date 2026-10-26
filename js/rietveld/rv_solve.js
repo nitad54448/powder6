@@ -368,11 +368,11 @@ RV.solve = (function () {
                sigma: T.sigma[k], bound: !!T.bound[k], group: T.group[k], cov: T.cov ? T.cov[k] : null, inRange: r.inRange, fwhm:reflectionWidth({profile:profile},r) };
     });
     var det = refl.filter(function (r) { return r.inRange && Number.isFinite(r.sigma); });
-    var nv = (St.jobFor(ds).vars || []).length, st = res.stats[0], cell = St.cellOf(ph, ds.p), got = symopsFor(ph.sg);
+    var nv = res.nVar, st = res.stats[0], cell = St.cellOf(ph, ds.p), got = symopsFor(ph.sg);
     SV.ints = {
       stamp: ui.stamp(), phaseKey: ph.key, phaseName: ph.name, dsId: ds.id, dsName: ds.name, sg: Object.assign({}, ph.sg), ops: ph.ops, wyckoff: ph.wyckoff,
       cell: cell, lambda: ds.inst.lambda1, radiation: ds.inst.radiation, pol: polOf(ds.inst), inst: St.instCopy(ds.inst),
-      covarianceOK:res.covarianceOK, profile: profile, refl: refl, det: det, pre: res.precision, s2: res.chi2red, nVar: nv, Rwp: st.Rwp, chi2: res.chi2red,
+      modelVersion:res.modelVersion, covarianceOK:res.covarianceOK, profile: profile, refl: refl, det: det, pre: res.precision, s2: res.chi2red, nVar: nv, Rwp: st.Rwp, chi2: res.chi2red,
       symops: got.error ? null : got.symops, symErr: got.error || '', stale: false
     };
     ds.ints = res.intensities[0];
@@ -380,8 +380,8 @@ RV.solve = (function () {
     RV.bus.emit('stats');
     var n0 = det.filter(function (r) { return r.bound; }).length, strong = det.filter(function (r) { return r.sigma > 0 && r.area > 3 * r.sigma; }).length;
     if(!options.quiet) ui.toast('Extracted ' + plural(det.length, 'intensity') + ' of ' + ph.name + ' in ' + ds.name + ': ' + strong + ' above 3σ, ' + n0 + ' held at zero; σ ' +
-             (nv ? 'with the ' + plural(nv, 'ticked parameter') + ' integrated out' : 'conditional (nothing ticked)') + '.', 'ok');
-    if(res.covarianceOK===false)ui.toast('Nonlinear covariance is ill-conditioned. Intensity uncertainties are conditional on the current parameters; reduce correlated fit variables.','warn');
+             (res.covarianceOK===false?'conditional (joint covariance unavailable)':nv ? 'with the ' + plural(nv, 'refined parameter') + ' integrated out'+(res.globalUncertainties?' across the complete global fit':'') : 'conditional (nothing ticked)') + '.', 'ok');
+    if(res.covarianceOK===false)ui.toast('Joint covariance is ill-conditioned. Intensity uncertainties are conditional; inspect correlated parameters and overlapping or truncated reflections.','warn');
     render(); return true;
   }
   async function autoExtract(list) {

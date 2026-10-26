@@ -710,7 +710,7 @@ RV.panels = (function () {
       { key: 'ptChains', label: 'PT replicas', type: 'int', pt: true, hint: '2 to 16 replicas within each fit worker.' },
       { key: 'ptMaxTemp', label: 'PT highest temperature', type: 'num', pt: true, hint: 'Geometric temperature ladder from 1 to this value (greater than 1).' },
       { key: 'ptSeed', label: 'PT random seed', type: 'int', pt: true, hint: 'Repeat proposals with the same seed, backend and starting values. CPU and GPU searches use different random streams; floating-point behavior can vary between GPUs.' },
-      { key: 'maxIter', label: 'Maximum iterations', type: 'int', hint: 'LM iterations per stage, 1 to 10000. PT sweeps are additional.' },
+      { key: 'maxIter', label: 'Maximum iterations', type: 'int', hint: 'LM iteration budget for the complete fit, 1 to 10000. PT sweeps are additional.' },
       { key: 'tol', label: 'Stop when χ² changes less than', type: 'num', hint: 'Relative change, twice in a row.' },
       { key: 'weight', label: 'Weight of each point', type: 'select', options: [['poisson', 'File weights or 1/σ² (counts if no σ supplied)'], ['unit', '1 (no weighting)']] }] },
     { legend: 'Background', fields: [

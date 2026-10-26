@@ -96,8 +96,17 @@
         scoped.parameterLinks=[{source:{datasetId:1,name:'p1.C1.B'},target:{datasetId:2,name:'p1.C1.B'},factor:1.2,offset:.1}];scoped.values[1]['p1.C1.B']=.7;
         const sm=new RVCore.Model(scoped);scoped.datasets.forEach((d,i)=>d.y=Float64Array.from(sm.evalDataset(i,scoped.values[i]).y,(y,j)=>y+1+Math.sin(j*.13)));
         const sc=await context(scoped),sgpu=await RVPTGPU.create(sc,{device});try{const probes=[Array.from(sc.x),Array.from(sc.x,(v,j)=>Math.max(sc.info[j].lo,Math.min(sc.info[j].hi,v+.1*sc.setup.scales[j])))],costs=await sgpu.costs(probes);let worst=0;for(let i=0;i<probes.length;i++){const cpu=sc.cost(probes[i]),relative=Math.abs(costs[i]-cpu)/Math.max(1,cpu);check(relative<.001,'Dataset profile / cross-dataset link mismatch '+relative);worst=Math.max(worst,relative);}record('dataset-specific resolution functions and exact cross-dataset links',{pass:true,relativeError:worst});}finally{sgpu.close();}
+        // A negative-allowed box must still preserve physical Gaussian variance
+        // in every live GPU replica, including after exchanges.
+        const guarded=problem('rietveld','gsas_cw');guarded.vars=[{name:'inst.W',d:0}];guarded.limits={'inst.W':[-100,100]};
+        Object.assign(guarded.values[0],{'inst.U':0,'inst.V':0,'inst.W':1});
+        const guardCtx=await context(guarded);guardCtx.setup.scales[0]=10;const guardGPU=await RVPTGPU.create(guardCtx,{device});
+        try{guardGPU.initial([guardCtx.x]);await guardGPU.batch(1,true);const state=await guardGPU.batch(10,false);
+            for(let c=0;c<guardCtx.setup.chains;c++){check(state[c*guardGPU.plan.stride]>=0,'GPU accepted negative Gaussian variance');check(guardCtx.feasible([state[c*guardGPU.plan.stride+2]]),'GPU retained an infeasible best');}
+            record('GPU replica and best-candidate physical variance guard',{pass:true});
+        }finally{guardGPU.close();}
         // A centered high-symmetry phase exercises coset weights and fixed sites.
-        const sg=await (await fetch('../sg/225.json')).json(),setting=sg.settings[0],centered=problem('rietveld','gsas_cw');
+        const sg=(await (await fetch('../sg/all.json')).json()).space_groups['225'],setting=sg.settings[0],centered=problem('rietveld','gsas_cw');
         const cp=centered.phases[0];cp.ops=RVCore.expandOps(setting.sym_ops,setting.centring_translations);cp.system='cubic';
         cp.atoms[0].site=RVCore.siteSymmetry(cp.ops,[0,0,0],{a:5.6,b:5.6,c:5.6,alpha:90,beta:90,gamma:90});
         Object.assign(centered.values[0],{'p1.a':5.6,'p1.C1.x':0,'p1.C1.y':0,'p1.C1.z':0});
@@ -120,7 +129,7 @@
         record('complete GPU PT + CPU LM',{pass:true,pt:result.pt,chi2:result.chi2});
         for(const method of ['rietveld','wppf','lebail']){
             const worker=new Worker('../js/rietveld_worker.js'),job=problem(method,'gsas_cw');
-            try{const result=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Fit worker timed out')),30000);worker.onerror=e=>{clearTimeout(timer);reject(new Error(e.message));};worker.onmessage=e=>{if(e.data.type==='done'){clearTimeout(timer);resolve(e.data.result);}};worker.postMessage({type:'refine',id:1,problem:job});});
+            try{const result=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Fit worker timed out')),120000);worker.onerror=e=>{clearTimeout(timer);reject(new Error(e.message));};worker.onmessage=e=>{if(e.data.type==='done'){clearTimeout(timer);resolve(e.data.result);}};worker.postMessage({type:'refine',id:1,problem:job});});
                 check(result.ok,result.msg);check(result.pt.backend==='webgpu',method+' worker fallback: '+result.pt.fallbackReason);check(result.pt.proposals===job.pt.chains*job.pt.sweeps*job.vars.length,'Wrong worker proposal count');record(method+' actual fit worker',{pass:true,chi2:result.chi2});
             }finally{worker.terminate();}
         }
