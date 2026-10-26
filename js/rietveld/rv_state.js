@@ -535,6 +535,16 @@ RV.state = (function () {
     for (var i = 0; i < ds.tth.length; i++) if (ds.tth[i] >= lo && ds.tth[i] <= hi) out.push(ds.y[i]);
     return out;
   }
+// The MEDIAN step, not (last - first) / (n - 1). The mean is only the real step on a gap-free, uniformly
+// stepped axis: excluded regions are removed from the data, so the span stays while n falls and the mean
+// rises -- excluding a third of a pattern raised the derived minimum FWHM by half and clamped peaks the
+// data could resolve, quietly. The median ignores the few large differences a gap contributes, and it is
+// also right for the variable-step axes some formats carry. On a uniform axis the two agree.
+  // The MEDIAN step, not (last - first) / (n - 1). The mean is only the real step on a gap-free, uniformly
+  // stepped axis: excluded regions are removed from the data, so the span stays while n falls and the mean
+  // rises -- excluding a third of a pattern raised the derived minimum FWHM by half and clamped peaks the
+  // data could resolve, quietly. The median ignores the few large differences a gap contributes, and it is
+  // also right for the variable-step axes some formats carry. On a uniform axis the two agree.
   function medianStep(t) {
     var d = [];
     for (var i = 1; i < t.length; i++) if (t[i] > t[i - 1]) d.push(t[i] - t[i - 1]);

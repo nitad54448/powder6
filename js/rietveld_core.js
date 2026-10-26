@@ -110,25 +110,15 @@ var TWO_PI = 2 * Math.PI, D2R = Math.PI / 180, R2D = 180 / Math.PI;
 var METHODS = ['rietveld', 'lebail', 'wppf'];
 var METHOD_LABELS = { rietveld: 'Rietveld', lebail: 'Le Bail', wppf: 'WPPF' };
 
-// the Le Bail and WPPF constants of constants.js (a top-level `const` is visible by name, not as a property of the
-// global object), with powder5's values if the file is absent
-function constant(name, fallback) {
-    switch (name) {
-        case 'LEBAIL_FLAT_SEED': return typeof LEBAIL_FLAT_SEED !== 'undefined' ? LEBAIL_FLAT_SEED : fallback;
-        case 'LEBAIL_MAX_PASSES': return typeof LEBAIL_MAX_PASSES !== 'undefined' ? LEBAIL_MAX_PASSES : fallback;
-        case 'LEBAIL_PASSES_PER_ITER': return typeof LEBAIL_PASSES_PER_ITER !== 'undefined' ? LEBAIL_PASSES_PER_ITER : fallback;
-        case 'LEBAIL_PASS_TOL': return typeof LEBAIL_PASS_TOL !== 'undefined' ? LEBAIL_PASS_TOL : fallback;
-        case 'LEBAIL_REVIVAL_FRACTION': return typeof LEBAIL_REVIVAL_FRACTION !== 'undefined' ? LEBAIL_REVIVAL_FRACTION : fallback;
-        case 'WPPF_DEGENERACY_CORRELATION': return typeof WPPF_DEGENERACY_CORRELATION !== 'undefined' ? WPPF_DEGENERACY_CORRELATION : fallback;
-        default: return fallback;
-    }
-}
+// The Le Bail and WPPF constants of constants.js. That file is loaded before this one by every entry point
+// (the page, the fit worker, the Node suites' vm context), and its top-level `const`s are global lexical
+// bindings, so the names are read directly -- no guarded fallback that can drift from the real value.
 var LB = {
-    seed: constant('LEBAIL_FLAT_SEED', 100), maxPasses: constant('LEBAIL_MAX_PASSES', 24),
-    minPasses: constant('LEBAIL_PASSES_PER_ITER', 6), tol: constant('LEBAIL_PASS_TOL', 1e-4),
-    revival: constant('LEBAIL_REVIVAL_FRACTION', 1e-5)
+    seed: LEBAIL_FLAT_SEED, maxPasses: LEBAIL_MAX_PASSES,
+    minPasses: LEBAIL_PASSES_PER_ITER, tol: LEBAIL_PASS_TOL,
+    revival: LEBAIL_REVIVAL_FRACTION
 };
-var DEGENERACY = constant('WPPF_DEGENERACY_CORRELATION', 0.9999);
+var DEGENERACY = WPPF_DEGENERACY_CORRELATION;
 
 // ---------------------------------------------------------------------------
 //  SYMMETRY
@@ -515,8 +505,8 @@ function fdStep(c, v) {
         case 'disp': return 1e-2;
         case 'transp': return 1e-6;
         case 'po': return 1e-4;
-        case 'bga': return Math.max(1e-4 * a, 1e-3);
-        default: return Math.max(1e-4 * a, 1e-5);
+        case 'bga': return Math.max(FD_BASE_FRACTION * a, 1e-3);
+        default: return Math.max(FD_BASE_FRACTION * a, 1e-5);
     }
 }
 
@@ -1829,7 +1819,7 @@ function* refineSteps(problem, opts) {
                     mu *= Math.max(1 / 3, 1 - Math.pow(2 * rho - 1, 3)); nu = 2;
                     itTotal++;
                     if (opts.onIter) opts.onIter({ it: itTotal, chi2: f, maxIter: progressTotal || maxIter * nStages, stage: stage });
-                    if ((rel < tol && small) || (cycle && small)) { if (++conv >= 2) { out = 'converged: χ² change below the tolerance'; it++; break; } } else conv = 0;
+                    if ((rel < tol && small) || (cycle && small)) { if (++conv >= LM_CONVERGED_REPEATS) { out = 'converged: χ² change below the tolerance'; it++; break; } } else conv = 0;
                 } else {
                     mu *= nu; nu *= 2;
                     if (mu > 1e20) { out = grad < 1e-3 ? 'converged: projected gradient below tolerance' : 'stalled: no improving LM step; inspect correlated parameters and limits'; break; }
@@ -1848,8 +1838,8 @@ function* refineSteps(problem, opts) {
             if (ptSetup) return ptSetup;
             var config = problem.pt || {};
             var sweeps = config.sweeps == null ? 50 : config.sweeps;
-            var chains = config.chains == null ? 6 : config.chains;
-            var maxTemp = config.maxTemp == null ? 100 : config.maxTemp;
+            var chains = config.chains == null ? PT_NUM_REPLICAS : config.chains;
+            var maxTemp = config.maxTemp == null ? PT_MAX_TEMP : config.maxTemp;
             var seed = config.seed == null ? 12345 : config.seed;
             if (!Number.isInteger(sweeps) || sweeps < 10 || sweeps > 100000 ||
                 !Number.isInteger(chains) || chains < 2 || chains > 16 ||

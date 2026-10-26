@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.42.5 — 26 October 2026
+
+1. **The tuning constants now say what the code does.** `constants.js` carried a block of LM, PT, finite-difference and Le Bail switches that nothing read, so changing `PT_NUM_REPLICAS`, `PT_MAX_TEMP`, `LM_TRUST_INITIAL`, `LM_COST_TOL`, `FD_MAX_PROBE_FRACTION` or `WPPF_VARPRO_EXACT_JACOBIAN` had no effect — and several documented values contradicted the code: 8 replicas against 6, `PT_MAX_TEMP` 1.0 (a value the validator rejects) against 100, a 0.05/1.6 trust region against Marquardt's `mu = 1e-3`, `nu = 2`. The values the fit uses are the constants now, and `rietveld_core.js` reads them: `PT_NUM_REPLICAS` (6), `PT_MAX_TEMP` (100), `LM_CONVERGED_REPEATS` (2, replacing the literal `2`) and `FD_BASE_FRACTION` (1e-4, replacing four literal copies in `fdStep`). The switches with no code behind them are gone, with their comments, so the file no longer advertises a ladder, a refresh interval or a trust region that do not exist.
+2. **One copy of each default.** `rietveld_core.js` no longer carries guarded copies of the Le Bail and WPPF constants (`constant(name, fallback)`), and `rv_solve.js` no longer carries a second `CF_DEFAULTS`: both read `constants.js`, which every entry point loads first. `CF_DEFAULTS` is exported for the Node suites and its dead `gridSize` is removed. `setMinProfileFwhmFromAxis()` is gone — nothing called it, and the floor that acts in a fit is the dataset's own two median steps (`rv_state.js` `datasetDef.minFwhm`); `medianStep()` now carries the reason it is the median and not the mean, which was the only place that reasoning lived.
+3. **Tests.** All 176 Node tests pass; the numbers the fit sees are unchanged (the constants and the literals they replaced agree).
+
 ## 2.42.4 — 26 October 2026
 
 1. **History keeps phase restraints and anomalous tables.** Calculation checkpoints now store each phase’s geometric restraints (`rv_fit_history.js`, `phaseDoc`), so exported text and PDF reports include `## Restraints` when inspecting a saved run, **Set** / **Use as start** restores them, and editing restraints marks the working setup as changed since the run. History sections that carry both key–value pairs and a table (`Anomalous scattering`) now render and export the per-element `f′`/`f″` table instead of stopping after the key–value list.

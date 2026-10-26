@@ -15,7 +15,7 @@
 RV.solve = (function () {
   'use strict';
   var S = RV.state.S, St = RV.state, ui = RV.ui, esc = ui.esc, C = RVCore;
-  var CFD = typeof CF_DEFAULTS !== 'undefined' ? CF_DEFAULTS : { thresholdSigma: 1.1, maxIterations: 1000, randomStarts: 3, peakMerge: 0.9, symLambda: 0.5, overlapTolTth: 0.05, weakFraction: 0.15, weakGrouping: 'cluster' };
+  var CFD = CF_DEFAULTS;
   var WL = WY_LIMITS, WD = WL.defaults, RHO_MIN = WL.rhoAbsolute[0], RHO_MAX = WL.rhoAbsolute[1], AMU_A3 = 1.66053906660;   // g/cm3 of 1 u per A^3
   function $(s) { return document.querySelector(s); }
   function plural(n, w) { return n + ' ' + (n === 1 ? w : /y$/.test(w) ? w.slice(0, -1) + 'ies' : w + 's'); }

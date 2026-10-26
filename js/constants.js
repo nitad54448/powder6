@@ -83,14 +83,12 @@ const CALCULATION_WINDOW_MULTIPLIER_L = 25.0;
  */
 const PROFILE_WINDOW_MAX_DEG = 10.0;
 
-/** Legacy alias, retained for older call sites. @type {number} */
-const CALCULATION_WINDOW_MULTIPLIER = CALCULATION_WINDOW_MULTIPLIER_G;
-
 // ===========================================================================
 //  2. Minimum resolvable profile FWHM
 // ===========================================================================
-//  Set from the real data step (setMinProfileFwhmFromAxis) as soon as the
-//  pattern is known.
+//  The floor in force before any data arrives. Every fit job carries its own
+//  value instead, derived from that dataset's own step (rv_state.js
+//  datasetDef.minFwhm = two data steps).
 //
 //  A peak narrower than a couple of data steps is not measurable, and letting
 //  the refiner go there is exactly how a fit with a bad cell "improves" Rwp:
@@ -99,62 +97,15 @@ const CALCULATION_WINDOW_MULTIPLIER = CALCULATION_WINDOW_MULTIPLIER_G;
 // ---------------------------------------------------------------------------
 
 /**
- * Minimum resolvable profile FWHM, degrees 2-theta. Mutable: overwritten by
- * setMinProfileFwhmFromAxis once the real axis is known. The 1e-3 seed is a
- * placeholder for the case where a profile is evaluated before any data is
- * loaded (tooltips, defaults), not a physically meaningful value.
+ * Minimum resolvable profile FWHM, degrees 2-theta, used where no dataset is
+ * involved (tooltips, defaults): the floor that acts in a fit is the one the
+ * job carries, two median data steps of its own dataset (rv_state.js
+ * medianStep(), datasetDef.minFwhm). The 1e-3 seed is a placeholder for the
+ * case where a profile is evaluated before any data is loaded, not a
+ * physically meaningful value.
  * @type {number}
  */
 let MIN_PROFILE_FWHM_DEG = 1e-3;
-
-/**
- * Sets MIN_PROFILE_FWHM_DEG from the measured step of a 2-theta axis.
- *
- * WHY 2 x step: Nyquist. A peak whose FWHM equals one step is sampled once and
- * carries no shape information at all; two steps is the coarsest FWHM at which
- * the profile has any width the data can constrain.
- * WHY the 1e-4 clamp: guards against a degenerate or single-point axis
- * producing a zero or absurdly small floor, which would re-open the collapse
- * the floor exists to prevent.
- *
- * WHY THE MEDIAN STEP AND NOT THE MEAN. This used to be
- * (last - first) / (n - 1), which is the mean step and is only the real step
- * on a gap-free, uniformly-stepped axis. Excluded regions break both
- * assumptions: the points inside them are removed from workingData, so the
- * span stays the same while n falls, and the mean step rises with it.
- * Excluding a third of a pattern would have raised this floor by half and
- * clamped peaks the data can perfectly well resolve -- quietly, since a floor
- * only shows up as a refinement that will not narrow a peak. The median is
- * unaffected by the handful of large differences a gap contributes, and it is
- * also the right answer for the variable-step axes some file formats carry,
- * which the mean was already getting wrong before exclusion existed.
- *
- * On a uniform gap-free axis the median and the mean are the same number, so
- * nothing changes for the ordinary case.
- *
- * @param {ArrayLike<number>} tthAxis Ascending 2-theta axis, degrees.
- * @returns {void}
- */
-function setMinProfileFwhmFromAxis(tthAxis) {
-    if (!tthAxis || tthAxis.length < 3) return;
-
-    const n = tthAxis.length;
-    const diffs = new Float64Array(n - 1);
-    let m = 0;
-    for (let i = 1; i < n; i++) {
-        const d = tthAxis[i] - tthAxis[i - 1];
-        // Non-positive differences mean an unsorted or duplicated axis. They
-        // are not a step and averaging them in would drag the floor down.
-        if (isFinite(d) && d > 0) diffs[m++] = d;
-    }
-    if (m === 0) return;
-
-    const used = diffs.subarray(0, m).slice().sort();   // typed sort is numeric
-    const step = (m % 2) ? used[(m - 1) >> 1]
-                         : 0.5 * (used[m / 2 - 1] + used[m / 2]);
-
-    if (isFinite(step) && step > 0) MIN_PROFILE_FWHM_DEG = Math.max(1e-4, 2 * step);
-}
 
 /** @returns {number} The current minimum resolvable FWHM, degrees 2-theta. */
 function getMinProfileFwhmDeg() { return MIN_PROFILE_FWHM_DEG; }
@@ -399,27 +350,22 @@ const LEBAIL_MAX_PASSES = 24;
 const LEBAIL_PASS_TOL = 1e-4;
 
 /**
- * Restart each re-extraction from flat intensities?
+ * Flat seed height the partition restarts from.
  *
- * MUST stay true. A single pass does not settle, so the intensities carry
- * HISTORY: the cost at a given set of parameters depends on how the fit
- * arrived there. That makes the Le Bail objective path-dependent, and a
- * path-dependent objective cannot be minimised meaningfully -- the
- * decomposition keeps adapting to cover mispositioned peaks, so the cost can
- * fall while the cell drifts away. Measured on a synthetic cubic pattern, the
+ * The extraction restarts from flat on EVERY evaluation (extract() calls
+ * leBail() with seed = r === 0), not once per fit. A single pass does not
+ * settle, so reusing the previous intensities would carry HISTORY: the cost at
+ * a given set of parameters would depend on how the fit arrived there, and the
+ * decomposition would adapt to cover mispositioned peaks -- the cost falls
+ * while the cell drifts away. Measured on a synthetic cubic pattern, the
  * SETTLED objective is emphatic (Rwp 9.4% at the true cell against 91.3% at
  * the aliased cell+zero-point minimum), but with one pass per iteration the
- * refiner slid into the aliased minimum anyway and reported 81%.
+ * refiner slid into the aliased minimum and reported 81%. Restarting from flat
+ * makes the extraction a deterministic function of the parameters, which is
+ * what the outer monotonicity guard needs in order to mean anything. PT
+ * inherits that for free: its cost() re-extracts at every proposed move, so
+ * there is no separate refresh interval to tune.
  *
- * Restarting from flat makes the extraction a deterministic function of the
- * parameters, which is what the outer monotonicity guard needs in order to
- * mean anything.
- * @type {boolean}
- */
-const LEBAIL_RESET_EACH_ITER = true;
-
-/**
- * Flat seed height used when LEBAIL_RESET_EACH_ITER restarts the partition.
  * WHY 100 and why the exact value does not matter: the first decomposition
  * pass computes f_j = I_j*phi_j / SUM_k I_k*phi_k, which is invariant under a
  * common scaling of every I_j. Starting all reflections EQUAL is the whole
@@ -430,40 +376,23 @@ const LEBAIL_RESET_EACH_ITER = true;
  */
 const LEBAIL_FLAT_SEED = 100.0;
 
-/**
- * How often PT re-extracts the Le Bail intensities, in iterations.
- *
- * BUG FIX. Holding the intensities fixed for a whole LM iteration is correct
- * (see the long note in refineParametersLM), but that argument does NOT carry
- * over to a Monte Carlo run of thousands of moves. Intensities frozen at the
- * INITIAL parameters are the decomposition of the observed profile against the
- * starting cell, so the objective's minimum sits exactly where the search
- * started -- which makes a global search over the cell unable to find anything
- * else, the one job PT exists to do. Re-extract periodically, per replica, at
- * that replica's own parameters.
- *
- * WHY 40: a full re-extraction is LEBAIL_PASSES_PER_ITER pattern evaluations
- * per replica, against one evaluation per proposed move. At 40 the refresh
- * costs ~15% of the run, and the objective is stale for at most 40 moves --
- * short compared with the ~10^2-10^3 moves a replica needs to travel anywhere
- * interesting in cell space.
- * @type {number}
- */
-const LEBAIL_PT_REFRESH_INTERVAL = 40;
-
 // ===========================================================================
 //  7. Levenberg-Marquardt tuning
 // ===========================================================================
-//  Finite differences. The escalation ladder is BOUNDED: an older version
-//  multiplied the probe by 100 up to five times (1e8 x the base step). A width
-//  parameter sitting in a numerical dead zone could be driven to a nonsensical
-//  value, the pattern then changed wildly, `responded` flipped true, and the
-//  resulting secant -- across eight orders of magnitude -- was accepted as a
-//  derivative.
+//  Finite differences, one probe per parameter kind (fdStep in
+//  rietveld_core.js). There is no escalation ladder any more: an older version
+//  multiplied the probe by 100 up to five times (1e8 x the base step), and a
+//  width parameter sitting in a numerical dead zone could be driven to a
+//  nonsensical value, the pattern then changed wildly, `responded` flipped
+//  true, and the resulting secant -- across eight orders of magnitude -- was
+//  accepted as a derivative.
 // ---------------------------------------------------------------------------
 
 /**
- * First finite-difference probe, as a fraction of the parameter's scale.
+ * Base finite-difference probe, as a fraction of the parameter's scale. It
+ * acts on the kinds whose step is proportional to the value (the generic
+ * default and the background anchors); cell edges use 1e-6 of the edge, and
+ * angles, zero, displacement and orientation a fixed step in their own units.
  * WHY 1e-4: for a one-sided difference the total error is
  * O(h * f'') + O(eps_eff / h), minimised at h ~ sqrt(eps_eff). The cost here
  * is a SUM over ~10^3-10^4 points, so its effective relative noise is nearer
@@ -477,173 +406,37 @@ const LEBAIL_PT_REFRESH_INTERVAL = 40;
 const FD_BASE_FRACTION = 1e-4;
 
 /**
- * Hard cap on the escalated probe, as a fraction of the parameter's own
- * magnitude.
- * WHY 2%: large enough to escape a numerical dead zone, small enough that the
- * secant is still a derivative. Above a few percent the profile response to a
- * cell edge or a width is visibly non-linear, and the "derivative" that comes
- * back is a chord across curvature -- which is what produced the eight-orders-
- * of-magnitude garbage the ladder cap exists to prevent.
- * @type {number}
- */
-const FD_MAX_PROBE_FRACTION = 0.02;
-
-/**
- * Maximum probe escalations before the column is declared empty.
- * WHY 4: the ladder multiplies by 100 each time, so from FD_BASE_FRACTION 1e-4
- * four steps already reach FD_MAX_PROBE_FRACTION. More attempts cannot go
- * anywhere the cap allows.
- * @type {number}
- */
-const FD_MAX_ATTEMPTS = 4;
-
-/**
- * Relative tolerance below which a Jacobian column counts as empty, i.e. the
- * parameter is not determined by the data at this point. Compared against the
- * LARGEST diagonal of JtJ, so it is scale-free.
- * WHY 1e-12: measured JtJ diagonals here span ten orders of magnitude purely
- * because the parameters have different units, so the tolerance has to sit
- * below that spread while staying above double-precision accumulation noise on
- * a 10^4-term sum (~1e-13 relative). 1e-12 is the one decade that satisfies
- * both.
- * @type {number}
- */
-const JTJ_RANK_TOL = 1e-12;
-
-/**
- * Relative cost drop below which an LM iteration counts as converged.
- * WHY 1e-7 and not smaller: in Le Bail mode the intensity re-extraction at the
- * top of the next iteration moves the cost by far more than 1e-9, so the old
- * 1e-9 threshold could never fire and LM always burned maxIter. 1e-7 is a
- * relative change no longer distinguishable from the re-extraction's own
- * jitter.
- * @type {number}
- */
-const LM_COST_TOL = 1e-7;
-
-/**
- * Consecutive iterations under LM_COST_TOL required to declare convergence.
+ * Consecutive iterations under the fit's cost tolerance (Settings → tolerance,
+ * problem.tol, 1e-5 by default) required to declare convergence.
  * WHY 2: one flat step is common mid-fit (a rejected trial, a lambda
  * adjustment); two in a row is not.
  * @type {number}
  */
 const LM_CONVERGED_REPEATS = 2;
 
-/**
- * Relative slack before an outer (extract-then-refine) iteration is judged to
- * have made the TRUE, re-extracted cost worse.
- * WHY 1e-6: an order of magnitude looser than LM_COST_TOL, so a step that
- * merely converged is never mistaken for a step that regressed.
- * @type {number}
- */
-const LM_OUTER_TOL = 1e-6;
-
-/**
- * Outer rejections tolerated before giving up.
- * WHY 6: each rejection halves the trust region, so six take the step cap down
- * by 2^-6 ~ 1.6%. Below that the step is smaller than the finite-difference
- * probe and further iterations cannot learn anything new.
- * @type {number}
- */
-const LM_MAX_OUTER_REJECTS = 6;
-
-/**
- * Initial trust-region scaling on the per-parameter step caps.
- * WHY 0.05: the caps in getParameterMapping are PHYSICAL limits (half an
- * angstrom on a cell edge, ~2 deg on a cell angle). Starting at 5% of those
- * means the first LM step is ~0.025 A on a cell edge -- big enough to make
- * real progress, small enough that a bad initial Jacobian cannot throw the
- * cell somewhere unrecoverable.
- * @type {number}
- */
-const LM_TRUST_INITIAL = 0.05;
-
-/**
- * Trust-region growth factor after an iteration that improved the
- * re-extracted cost.
- * WHY 1.6: geometric growth reaches the full physical cap in ~6 good
- * iterations. A larger factor (2 or more) overshoots into the rejection
- * branch too readily; a smaller one wastes iterations creeping.
- * @type {number}
- */
-const LM_TRUST_GROWTH = 1.6;
-
 // ===========================================================================
 //  8. Parallel tempering
 // ===========================================================================
 
 /**
- * Number of PT replicas.
- * WHY 8: the swap acceptance between neighbours falls off as the temperature
- * ratio grows. Spanning PT_MAX_TEMP..PT_MIN_TEMP (five decades) with 8
- * replicas gives a ratio of 10^(5/7) ~ 5.2 per rung, which keeps neighbouring
- * chains overlapping enough to exchange while staying affordable -- the cost
- * is linear in replica count and every replica evaluates the full pattern.
+ * Number of PT replicas (CPU PT and the GPU kernel's chains).
+ * WHY 6: the cost is linear in the replica count and every replica evaluates
+ * the full pattern, so the ladder has to stay short. Six rungs spread over
+ * 1..PT_MAX_TEMP give a temperature ratio of 100^(1/5) ~ 2.5 between
+ * neighbours, which keeps their energies overlapping enough to exchange while
+ * remaining affordable.
  * @type {number}
  */
-const PT_NUM_REPLICAS = 8;
+const PT_NUM_REPLICAS = 6;
 
 /**
- * Hottest replica temperature, in units of the RELATIVE cost scale (see
- * ptCostScale). At T = 1 a move that doubles chi-squared is accepted with
- * probability e^-1 ~ 0.37, which is the definition of a chain that explores
- * freely.
+ * Hottest replica temperature, in chi-squared/2 units: the acceptance test is
+ * exp(-dChi2 / (2 T)), the coldest replica sits at T = 1. At T = 100 a move
+ * that worsens chi-squared by 200 is accepted with probability e^-1 ~ 0.37,
+ * which is the definition of a chain that explores freely.
  * @type {number}
  */
-const PT_MAX_TEMP = 1.0;
-
-/**
- * Coldest replica temperature, same units. At T = 1e-5 a move that worsens
- * chi-squared by 0.01% is already rejected with probability 1 - e^-10, i.e.
- * the chain is effectively a greedy minimiser -- which is what the cold end of
- * a PT ladder is for.
- * @type {number}
- */
-const PT_MIN_TEMP = 1e-5;
-
-/**
- * Iterations between replica-exchange attempts.
- * WHY 10: swaps must be rare enough that a replica decorrelates between them
- * (otherwise the ladder just shuffles identical states) and frequent enough to
- * carry a good configuration down the ladder within a run.
- * @type {number}
- */
-const PT_SWAP_INTERVAL = 10;
-
-/**
- * Floor on the PT cost scale, guarding a division by zero for a fit that
- * starts at a numerically perfect cost.
- * @type {number}
- */
-const PT_COST_SCALE_FLOOR = 1e-9;
-
-/**
- * Fractional cost change below which the PT energy scale is NOT rescaled.
- *
- * WHY this exists. Both PT acceptance tests divide the cost difference by a
- * reference energy scale, which makes the temperature ladder RELATIVE:
- * exp(-(dChi2/scale)/T). The scale used to be frozen at the initial cost. That
- * is fine for the first stretch of a run, but a successful global search drops
- * chi-squared by one to two orders of magnitude, and a frozen scale then means
- * the ladder is silently 10-100x hotter in relative terms than it was
- * designed to be: the cold replicas stop being cold, and PT loses the
- * exploit end of its explore/exploit balance exactly when it is closing in on
- * a solution.
- *
- * Rescaling on every refresh would break detailed balance outright (the
- * acceptance criterion would change under the chain's feet on every step), so
- * the scale is instead re-quoted only at the periodic Le Bail refresh
- * boundaries -- points at which the objective function is ALREADY being
- * redefined and every replica cost re-quoted -- and only when the cost has
- * moved by more than this fraction.
- *
- * WHY 0.5: a factor-of-two change in chi-squared is a genuine change of regime
- * for the search, well outside Monte Carlo jitter, and rescaling at that
- * granularity means a two-decade descent triggers ~7 rescalings across the
- * whole run rather than one per refresh.
- * @type {number}
- */
-const PT_RESCALE_THRESHOLD = 0.5;
+const PT_MAX_TEMP = 100;
 
 // ===========================================================================
 //  8b. Separable (variable-projection) WPPF
@@ -653,24 +446,6 @@ const PT_RESCALE_THRESHOLD = 0.5;
 //  least-squares problem rather than something to iterate towards. LM and PT
 //  therefore search only the non-linear parameters. See wppf_linear.js.
 // ---------------------------------------------------------------------------
-
-/**
- * Use the EXACT variable-projection Jacobian, i.e. re-solve the intensities
- * inside every finite-difference probe.
- *
- * WHY false (Kaufman's approximation, 1975). The exact form measures the
- * derivative of the REDUCED cost, which is what LM is really minimising, and
- * it is the better Jacobian. It also costs one extra banded solve per column
- * per iteration -- 56 ms at 2500 reflections, times ~12 columns, so about a
- * second an iteration. Holding the linear parameters fixed inside the probe
- * costs typically one or two extra iterations and never changes the minimum,
- * because the ACCEPTANCE test still evaluates the trial point with fully
- * re-solved intensities. Cheaper per iteration, same answer.
- *
- * Set true if a fit converges slowly on a strongly correlated cell.
- * @type {boolean}
- */
-const WPPF_VARPRO_EXACT_JACOBIAN = false;
 
 /**
  * Relative pivot repair applied by the modified Cholesky when a direction in
@@ -732,40 +507,9 @@ function lowerBound(arr, target) {
     return lo;
 }
 
-// ---------------------------------------------------------------------------
-//  Node export footer. MIN_PROFILE_FWHM_DEG is exposed as a live getter so a
-//  node consumer sees mutations from setMinProfileFwhmFromAxis; a plain value
-//  would snapshot the 1e-3 placeholder.
-// ---------------------------------------------------------------------------
-if (typeof module !== 'undefined' && module.exports) {
-    const _exports = {
-        CALCULATION_WINDOW_MULTIPLIER_G, CALCULATION_WINDOW_MULTIPLIER_L,
-        PROFILE_WINDOW_MAX_DEG, CALCULATION_WINDOW_MULTIPLIER,
-        setMinProfileFwhmFromAxis, getMinProfileFwhmDeg, softPositive,
-        PV_G0, PV_L0, PV_GAUSS_AREA, PV_LORENTZ_AREA, pvMixCoeffs,
-        GSAS_GAUSSIAN_TO_DEG, GSAS_LORENTZIAN_TO_DEG,
-        STEPHENS_PREFACTOR, STEPHENS_DEFAULT_ETA,
-        LEBAIL_REVIVAL_FRACTION, LEBAIL_PASSES_PER_ITER,
-        LEBAIL_MAX_PASSES, LEBAIL_PASS_TOL,
-        LEBAIL_RESET_EACH_ITER, LEBAIL_FLAT_SEED, LEBAIL_PT_REFRESH_INTERVAL,
-        FD_BASE_FRACTION, FD_MAX_PROBE_FRACTION, FD_MAX_ATTEMPTS,
-        JTJ_RANK_TOL, LM_COST_TOL, LM_CONVERGED_REPEATS,
-        LM_OUTER_TOL, LM_MAX_OUTER_REJECTS, LM_TRUST_INITIAL, LM_TRUST_GROWTH,
-        PT_NUM_REPLICAS, PT_MAX_TEMP, PT_MIN_TEMP, PT_SWAP_INTERVAL,
-        PT_COST_SCALE_FLOOR, PT_RESCALE_THRESHOLD,
-        WPPF_VARPRO_EXACT_JACOBIAN, WPPF_PIVOT_REPAIR,
-        WPPF_DEGENERACY_CORRELATION,
-        lowerBound
-    };
-    Object.defineProperty(_exports, 'MIN_PROFILE_FWHM_DEG', {
-        enumerable: true,
-        get: () => MIN_PROFILE_FWHM_DEG
-    });
-    module.exports = _exports;
-}
-
+// Defaults of the charge-flipping form and of the adaptive search (rv_solve.js). Kept beside the other
+// numerical constants so the value the form advertises and the value a job starts from are the same.
 const CF_DEFAULTS = {
-    gridSize: 32,
     thresholdSigma: 1.10,
     maxIterations: 1000,
     randomStarts: 3,
@@ -775,3 +519,32 @@ const CF_DEFAULTS = {
     weakFraction: 0.15,
     weakGrouping: 'cluster'
 };
+
+// ---------------------------------------------------------------------------
+//  Node export footer. MIN_PROFILE_FWHM_DEG is exposed as a live getter rather
+//  than a value so a node consumer sees the current floor, not a snapshot.
+// ---------------------------------------------------------------------------
+if (typeof module !== 'undefined' && module.exports) {
+    const _exports = {
+        CALCULATION_WINDOW_MULTIPLIER_G, CALCULATION_WINDOW_MULTIPLIER_L,
+        PROFILE_WINDOW_MAX_DEG,
+        getMinProfileFwhmDeg, softPositive,
+        PV_G0, PV_L0, PV_GAUSS_AREA, PV_LORENTZ_AREA, pvMixCoeffs,
+        GSAS_GAUSSIAN_TO_DEG, GSAS_LORENTZIAN_TO_DEG,
+        STEPHENS_PREFACTOR, STEPHENS_DEFAULT_ETA,
+        LEBAIL_REVIVAL_FRACTION, LEBAIL_PASSES_PER_ITER,
+        LEBAIL_MAX_PASSES, LEBAIL_PASS_TOL,
+        LEBAIL_FLAT_SEED,
+        FD_BASE_FRACTION, LM_CONVERGED_REPEATS,
+        PT_NUM_REPLICAS, PT_MAX_TEMP,
+        WPPF_PIVOT_REPAIR,
+        WPPF_DEGENERACY_CORRELATION,
+        CF_DEFAULTS,
+        lowerBound
+    };
+    Object.defineProperty(_exports, 'MIN_PROFILE_FWHM_DEG', {
+        enumerable: true,
+        get: () => MIN_PROFILE_FWHM_DEG
+    });
+    module.exports = _exports;
+}
