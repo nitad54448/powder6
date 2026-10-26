@@ -29,8 +29,8 @@ RV.solve = (function () {
   function defaults() {
     return { formula: '', z: '', tab: 'sgt', sgtN: 0, sgtAuto:true,
              cf: { adaptive:false, grid: 'auto', threshold: CFD.thresholdSigma, iterations: CFD.maxIterations, trials: CFD.randomStarts, symLambda: CFD.symLambda,
-                   densityLevel: 3, densityStride: 1, densityCell: true, densitySites: true, weakFraction: CFD.weakFraction, weakGrouping: CFD.weakGrouping, overlapTol: CFD.overlapTolTth, peakMerge: CFD.peakMerge },
-             wy: { maxSites: '', maxRepeat: '', rhoMin: WD.rhoMin, rhoMax: WD.rhoMax, maxZ: WD.maxZ, particles: WD.particles, particlesAuto:true, iterations: WD.iterations, restarts: WD.restarts, minContact: WD.minContact, shapeWeight: WD.shapeWeight, polyMoves: WD.polyMoves, constraints: '' } };
+                   densityLevel: 3, densityStride: 1, densityCell: true, densitySites: true, weakFraction: CFD.weakFraction, weakGrouping: CFD.weakGrouping, overlapTol: CFD.overlapTolTth, peakMerge: CFD.peakMerge, seed: '' },
+             wy: { maxSites: '', maxRepeat: '', rhoMin: WD.rhoMin, rhoMax: WD.rhoMax, maxZ: WD.maxZ, particles: WD.particles, particlesAuto:true, iterations: WD.iterations, restarts: WD.restarts, minContact: WD.minContact, shapeWeight: WD.shapeWeight, polyMoves: WD.polyMoves, constraints: '', seed: '' } };
   }
   // the options of a stored or saved copy, kept only where they have the type of the defaults
   function cleanOpts(s) {
@@ -184,6 +184,14 @@ RV.solve = (function () {
     return St.atomicWeight(el) / 2 || 0;
   }
   function typedZ(value) { var z = parseInt(String(value==null?SV.opts.z:value).trim(), 10); return Number.isFinite(z) && z >= 1 ? Math.min(WL.zMax, z) : null; }
+  /* The seed of a search. A typed whole number from 0 to 2^32-1 makes the run repeatable; a blank field starts a new
+     one, which the Log and the result report, so the search that worked can be run again. .typed says which it was. */
+  function seedPlan(value) {
+    var t = String(value == null ? '' : value).trim();
+    if (!t) return { seed: (Date.now() >>> 0), typed: false };
+    if (!/^\d+$/.test(t) || Number(t) > 4294967295) return { error: 'The seed is a whole number from 0 to 4294967295, or blank for a new one.' };
+    return { seed: Number(t) >>> 0, typed: true };
+  }
 
   // ---------------------------------------------------------------- distance constraints (powder5.html, unchanged rules)
   // the rule language is shared with the Rietveld restraints (js/distance_rules.js); here A and B are elements
@@ -468,6 +476,9 @@ RV.solve = (function () {
     var starts=ui.parseNum(o.trials);
     if(r.adaptive && (!Number.isSafeInteger(starts) || starts<CFAdaptive.MIN_STARTS || starts>CFAdaptive.MAX_STARTS))r.error='Adaptive CF needs '+CFAdaptive.MIN_STARTS+'–'+CFAdaptive.MAX_STARTS+' random starts.';
     else if(!r.adaptive && starts>CFAdaptive.MAX_STARTS)r.error='At most '+CFAdaptive.MAX_STARTS+' random starts.';
+    // Every start's seed is drawn from this one, so a typed seed repeats the whole run
+    var sd=seedPlan(o.seed);
+    if(sd.error)r.error=sd.error; else r.seed=sd.seed;
     return r;
   }
   function cfAssessment(I){return CFAdaptive.assess(I,SV.opts.cf,function(r){return reflectionWidth(I,r);});}
@@ -519,7 +530,7 @@ RV.solve = (function () {
     if(!ag.fits){ui.toast('Reflections exceed the supported CF grid. Reduce the extracted range.','warn');return;}
     if (!I.symops) ui.toast(I.symErr + ' Charge flipping runs in P1, without the symmetry in the loop, and no sites can be placed.', 'warn');
     try { W = new Worker('js/charge_flipping_worker.js'); } catch (e) { ui.toast('Could not start js/charge_flipping_worker.js: ' + e.message, 'err'); return; }
-    var run = SV.cfRun = { worker: W, trial: 0, done: 0, best: null, structure: null, stopped: false, stage: 'flip', o: o, grid: grid, auto: o.grid === 'auto', ag: ag, inp: inp, I: I, t0: performance.now(), infos: [],search:search,trialLog:[],candidates:[],seed:Date.now()>>>0,compareIndex:0 };
+    var run = SV.cfRun = { worker: W, trial: 0, done: 0, best: null, structure: null, stopped: false, stage: 'flip', o: o, grid: grid, auto: o.grid === 'auto', ag: ag, inp: inp, I: I, t0: performance.now(), infos: [],search:search,trialLog:[],candidates:[],seed:o.seed,compareIndex:0 };
     var job = { type: 'run-charge-flipping', gridSize: grid, maxIterations: o.iterations, thresholdSigma: o.threshold, cell: I.cell, system: I.sg.system, hklList: inp.hklList,
                 symops: I.symops, laueClass: rec ? rec.laue_class : null, centering: rec ? rec.centering : 'P', symLambda: I.symops ? o.symLambda : 0, overlapTolTth: o.overlapTol,
                 applyLP: true, polarization: I.pol, minPeakSeparation: o.peakMerge, maxPeaks: 40, peakHeightCutoff: 0.04, weakFraction: o.weakFraction, weakGrouping: o.weakGrouping,overlapFwhmFraction:search?search.grouping.overlapFwhmFraction:0 };
@@ -585,7 +596,7 @@ RV.solve = (function () {
     }
     run.build = build;
     ui.log('Charge flipping of ' + I.phaseName + ': ' + plural(inp.hklList.length, 'intensity') + ', grid ' + grid + '³' + (run.auto ? ' (auto, largest index ' + ag.maxIndex + ')' : '') + ', ' +
-           plural(o.trials, 'random start') + ' of ' + o.iterations + ' cycles, threshold ' + o.threshold + ' σ, symmetry ' + (I.symops ? o.symLambda : 'none') + '. ' + inp.note, 'info');
+           plural(o.trials, 'random start') + ' of ' + o.iterations + ' cycles, threshold ' + o.threshold + ' σ, symmetry ' + (I.symops ? o.symLambda : 'none') + ', seed ' + run.seed + '. ' + inp.note, 'info');
     if(search)ui.log('Adaptive CF: '+cfQualityText(search.quality)+' Seed '+run.seed+'. Three parameter settings; pairwise fitted-width overlap grouping.','info');
     St.setBusy(true,'Charge flipping…');
     progress('cf', -1, 'Preparing charge flipping…');
@@ -622,7 +633,8 @@ RV.solve = (function () {
       return { rank: s.rank, x: site.pos[0], y: site.pos[1], z: site.pos[2], raw: [s.x, s.y, s.z], height: s.height, relative: s.relative, mult: site.mult, wyck: site.wyck, element: '', use: false };
     });
     SV.cf = { best: run.best, structure: run.structure, sites: sites, trials: run.o.trials, trialsDone: run.done, bestTrial: run.bestTrial,
-              stopped: run.stopped, o: chosenOptions, grid: run.grid, auto: run.auto, ag: run.ag, note: run.inp.note, n: run.inp.hklList.length, I: I, stamp: I.stamp, err: err, seconds: dt,formula:SV.opts.formula,nameFromFormula:!!parseFormula(SV.opts.formula) };
+              stopped: run.stopped, o: chosenOptions, grid: run.grid, auto: run.auto, ag: run.ag, note: run.inp.note, n: run.inp.hklList.length, I: I, stamp: I.stamp, err: err, seconds: dt,formula:SV.opts.formula,nameFromFormula:!!parseFormula(SV.opts.formula),
+              seed: run.seed };
     if(run.search)SV.cf.search=Object.assign({},run.search,{seed:run.seed,trials:run.trialLog,mapAgreementThreshold:.9,selectionRule:'Lowest CF R using the same observations and overlap groups'});
     var asg = assignCf();
     if(RV.fitHistory)RV.fitHistory.solution('cf',SV.cf);
@@ -712,7 +724,9 @@ RV.solve = (function () {
              minContact: Number.isFinite(mc) ? Math.min(WL.minContact[1], Math.max(WL.minContact[0], mc)) : undefined,
              shapeWeight: Number.isFinite(readNum(o.shapeWeight, WL.shapeWeight[0], WL.shapeWeight[1])) ? readNum(o.shapeWeight, WL.shapeWeight[0], WL.shapeWeight[1]) : WD.shapeWeight,
              // Polyhedron moves, a percentage in the form, a share for the search
-             polyProb: (Number.isFinite(readNum(o.polyMoves, WL.polyMoves[0], WL.polyMoves[1])) ? readNum(o.polyMoves, WL.polyMoves[0], WL.polyMoves[1]) : WD.polyMoves) / 100 };
+             polyProb: (Number.isFinite(readNum(o.polyMoves, WL.polyMoves[0], WL.polyMoves[1])) ? readNum(o.polyMoves, WL.polyMoves[0], WL.polyMoves[1]) : WD.polyMoves) / 100,
+             // Repeat a search exactly; blank draws a new seed, which the run then reports
+             seed: seedPlan(o.seed) };
   }
   function runWy() {
     if (S.busy || SV.wyRun || SV.cfRun) return;
@@ -733,6 +747,8 @@ RV.solve = (function () {
     }
     var o = wyOptions(), inp = solveInput(I), W;
     try { o.restarts=wyckoffRestartCount(o.restarts); } catch(e) { ui.toast(e.message,'warn'); return; }
+    if (o.seed.error) { ui.toast(o.seed.error, 'warn'); return; }
+    o.seed = o.seed.seed;
     try { W = new Worker('js/wyckoff_worker.js'); } catch (e) { ui.toast('Could not start js/wyckoff_worker.js: ' + e.message, 'err'); return; }
     var run = SV.wyRun = { worker: W, stopped: false, formula: formula, vc: vc, o: o, I: I, inp: inp, t0: performance.now(), log: [], partials: [], live: null };
     W.onmessage = function (e) {
@@ -756,13 +772,13 @@ RV.solve = (function () {
     };
     W.onerror = function (ev) { if (run === SV.wyRun) finishWy('The Wyckoff worker crashed: ' + ((ev && ev.message) || 'unknown error')); };
     ui.log('Wyckoff search of ' + I.phaseName + ': ' + formula + ', ' + I.sg.symbol + ', ' + (Z ? 'Z = ' + Z : 'Z = Auto over ' + o.rhoMin + '–' + o.rhoMax + ' g/cm³') + ', ' +
-           plural(inp.hklList.length, 'intensity') + ', ' + o.particles + ' particles, ' + o.iterations + ' iterations, ' + plural(o.restarts, 'restart') + '. ' + inp.note, 'info');
+           plural(inp.hklList.length, 'intensity') + ', ' + o.particles + ' particles, ' + o.iterations + ' iterations, ' + plural(o.restarts, 'restart') + ', seed ' + o.seed + '. ' + inp.note, 'info');
     vc.windows.forEach(function (w) { ui.log('  constraint: ' + describeConstraint(w), 'info'); });
     vc.warnings.forEach(function (w) { ui.log('  constraints: ' + w, 'warn'); });
     St.setBusy(true,'Wyckoff structure search…');
     try { W.postMessage({ type: 'wyckoff-search', cell: I.cell, profileParams: I.profile, profileType: I.profile.profileType, symops: got.symops, wyckoffTable: got.setting.wyckoff,
                     targetComposition: formula, wyckoffZ: Z, wyckoffMaxSites: o.maxSites, wyckoffMaxRepeat: o.maxRepeat, densityMin: o.rhoMin, densityMax: o.rhoMax,
-                    maxZSearches: o.maxZ, swarmParticles: o.particles, swarmIterations: o.iterations, swarmRestarts: o.restarts, minContact: o.minContact, shapeWeight: o.shapeWeight, polyProb: o.polyProb,
+                    maxZSearches: o.maxZ, swarmParticles: o.particles, swarmIterations: o.iterations, swarmRestarts: o.restarts, minContact: o.minContact, shapeWeight: o.shapeWeight, polyProb: o.polyProb, seed: o.seed,
                     distanceConstraints: vc.windows, hklList: inp.hklList, applyLP: true, polarization: I.pol, wavelength: I.lambda, radiation: I.radiation }); } catch(e) { finishWy(e.message); return; }
     progress('wy', -1, 'starting…');
     syncRun();
@@ -793,8 +809,10 @@ RV.solve = (function () {
     function merit(s) { var R = s.refinement && Number.isFinite(s.refinement.R) ? s.refinement.R : null; return R !== null ? [0, R] : [1, Number.isFinite(s.searchCC) ? -s.searchCC : Infinity]; }
     sols.sort(function (p, q) { var a = merit(p), b = merit(q); return (a[0] - b[0]) || (a[1] - b[1]); });
     var s0 = sols[0];
+    // A kept or stopped result is still a result of that run: it carries the seed, so it can be repeated as well.
     return { sites: s0.sites, refinement: s0.refinement, z: s0.z, solutions: sols, stopped: true, salvaged: why || 'Stopped.',
-             wyckoffResult: { assignment: s0.assignment, searchCC: s0.searchCC, ranked: s0.ranked }, distanceConstraints: run.vc ? run.vc.windows : [] };
+             wyckoffResult: { assignment: s0.assignment, searchCC: s0.searchCC, ranked: s0.ranked }, distanceConstraints: run.vc ? run.vc.windows : [],
+             seed: run.o.seed };
   }
   // The search reports every Z, wave, restart and assignment; the Log keeps what a user acts on: the result of each Z,
   // the ranking, the values of Z that failed and the warnings. The whole log stays in History (Search log).
@@ -1084,6 +1102,7 @@ RV.solve = (function () {
             field('sv-cf-threshold', 'Threshold δ (σ)', o.cf.threshold, 'Density below δ, in standard deviations of the map, is flipped.', 'class="num" data-cf="threshold" inputmode="decimal"') +
             field('sv-cf-iterations', 'Cycles', o.cf.iterations, '', 'class="num" data-cf="iterations" inputmode="numeric"') +
             field('sv-cf-trials', 'Random starts', o.cf.trials, 'The best R is kept. 1–128 starts; adaptive mode uses 6–128 starts across three settings.', 'class="num" data-cf="trials" inputmode="numeric"') +
+            field('sv-cf-seed', 'Seed', o.cf.seed, 'Blank draws a new seed each run and reports it in the Log and in History; type one to repeat a run exactly.', 'class="num" data-cf="seed" placeholder="New" inputmode="numeric"') +
             field('sv-cf-symLambda', 'Symmetry in the loop', o.cf.symLambda, '0: none (P1), 1: strict.', 'class="num" data-cf="symLambda" inputmode="decimal"') +
             field('sv-cf-weakFraction', 'Weak reflections', o.cf.weakFraction, 'Fraction (0–0.33) of the weakest whose phase is shifted by π/2 instead (Oszlányi and Sütő 2005).', 'class="num" data-cf="weakFraction" inputmode="decimal"') +
             select('sv-cf-weakGrouping', 'Weak, by', o.cf.weakGrouping, [['cluster', 'overlap cluster'], ['individual', 'reflection']], '', 'data-cf="weakGrouping"') +
@@ -1118,6 +1137,7 @@ RV.solve = (function () {
             field('sv-wy-particles', 'Particles', o.wy.particles, 'Trial structures held at once ('+WL.particles[0]+'–'+gpuBudget.maxParticles+'). Default is 33% of the conservative hardware budget.', 'class="num" data-wy="particles" inputmode="numeric"') +
             field('sv-wy-iterations', 'Iterations', o.wy.iterations, WL.iterations[0] + '–' + WL.iterations[1] + '. When the assignments need more than ' + WL.fullWaves + ' waves, each is first screened for ' + Math.round(100 * WL.screenFraction) + ' % of them.', 'class="num" data-wy="iterations" inputmode="numeric"') +
             field('sv-wy-restarts', 'Restarts', o.wy.restarts, 'Positive whole number. Each full-search wave runs this many starts; screening uses one.', 'class="num" data-wy="restarts" inputmode="numeric"') +
+            field('sv-wy-seed', 'Seed', o.wy.seed, 'Blank draws a new seed each run and reports it in the Log and in History; type one to repeat a search exactly.', 'class="num" data-wy="seed" placeholder="New" inputmode="numeric"') +
             field('sv-wy-minContact', 'Shortest contact (Å)', o.wy.minContact, 'A structure with two unlike atoms closer than this is rejected.', 'class="num" data-wy="minContact" inputmode="decimal"') +
             field('sv-wy-shapeWeight', 'Shape weight', o.wy.shapeWeight, 'How strongly the angles of shaped shells (tet, oct…) count, as a multiple of the bond penalty: 0 off, 1 default, up to ' + WL.shapeWeight[1] + '.', 'class="num" data-wy="shapeWeight" inputmode="decimal"') +
             field('sv-wy-polyMoves', 'Polyhedron moves (%)', o.wy.polyMoves, POLY_HELP, 'class="num" data-wy="polyMoves" inputmode="numeric"') +
@@ -1535,7 +1555,45 @@ RV.solve = (function () {
      reference to it rather than a second copy. */
   function archive(includeDensity,historyIds){
     var wy=SV.wy && SV.wy.historyId && historyIds && historyIds.has(SV.wy.historyId)?{historyRef:SV.wy.historyId}:SV.wy;
+    // A Wyckoff result carries its own copy of the extraction it was made from, which IS the extraction object: it was
+    // written twice in every project. It is written once and reconnected by intsRef in restoreArchive.
+    if(wy && wy.I && wy.I===SV.ints)wy=Object.assign({},wy,{I:undefined,intsRef:true});
     return JSON.parse(JSON.stringify({cf:SV.cf,wy:wy,ints:SV.ints,sgt:SV.sgt,shown:SV.shown,opts:SV.opts,dsId:SV.dsId,phaseKey:SV.phaseKey},function(k,v){if(!includeDensity && k==='map' && (Array.isArray(v)||ArrayBuffer.isView(v)))return undefined;return ArrayBuffer.isView(v)?Array.from(v):v;}));
+  }
+  /* A fingerprint of the archived solution state, for the saved-state comparison in RV.project: the same values
+     archive() carries, mixed into a 32-bit hash instead of being copied and stringified. Cloning the archive there
+     cost a second copy of every reflection table and of the WPPF precision block on every save and every leave-page
+     check -- tens of megabytes with a solved structure, on the one path that must be cheap. Density maps are left out,
+     exactly as archive(false) leaves them out. */
+  function archiveFingerprint(){
+    var buf=new ArrayBuffer(8),f64=new Float64Array(buf),u32=new Uint32Array(buf),h=0x811c9dc5|0;
+    function mix(x){h=Math.imul(h^(x|0),16777619)|0;}
+    function num(x){
+      if(!Number.isFinite(x)){mix(x!==x?7:(x===Infinity?11:13));return;}
+      f64[0]=x;mix(u32[0]);mix(u32[1]);
+    }
+    function text(s){mix(s.length);for(var i=0;i<s.length;i++)mix(s.charCodeAt(i));}
+    function walk(v){
+      if(v===null||v===undefined){mix(1);return;}
+      var t=typeof v;
+      if(t==='number'){num(v);return;}
+      if(t==='string'){text(v);return;}
+      if(t==='boolean'){mix(v?17:19);return;}
+      if(t==='function'){mix(23);return;}
+      if(Array.isArray(v)||ArrayBuffer.isView(v)){
+        mix(31);mix(v.length);
+        if(v.length && typeof v[0]==='number'){for(var i=0;i<v.length;i++)num(v[i]);}
+        else for(var j=0;j<v.length;j++)walk(v[j]);
+        return;
+      }
+      var keys=Object.keys(v);mix(29);mix(keys.length);
+      for(var k=0;k<keys.length;k++){
+        if(keys[k]==='map')continue;      // archive(false) leaves the density grids out
+        text(keys[k]);walk(v[keys[k]]);
+      }
+    }
+    walk({cf:SV.cf,wy:SV.wy,ints:SV.ints,sgt:SV.sgt,shown:SV.shown,opts:SV.opts,dsId:SV.dsId,phaseKey:SV.phaseKey});
+    return 'fnv:'+(h>>>0).toString(16);
   }
   function restoreArchive(value,options){
     // Project boundaries must also clear caches keyed by IDs reused by the new project.
@@ -1543,6 +1601,7 @@ RV.solve = (function () {
     SV.dsId=null;SV.phaseKey=null;SV.shown=null;
     solutionSelection={};solutionViews={};inspectingSolution=false;
     value=value || {};
+    var archivedInts=value.ints || null;
     ['cf','wy','ints','dsId','phaseKey','shown','sgt'].forEach(function(k){if(value[k]!==undefined)SV[k]=value[k];});
     if(SV.wy && SV.wy.historyRef){
       var rec=RV.fitHistory && RV.fitHistory.find(SV.wy.historyRef),ref=SV.wy.historyRef;
@@ -1553,6 +1612,9 @@ RV.solve = (function () {
     SV.opts=cleanOpts(value.opts);
     var d=SV.ints && St.byId(SV.ints.dsId);
     if(d && d.inst.lambda1===SV.ints.lambda)SV.extractions[d.id]={I:SV.ints,stats:d.stats};else SV.ints=null;
+    // A Wyckoff result is saved once, with a reference to the extraction (archive). It gets it back here even when the
+    // extraction cache was just dropped because the dataset changed: the stored result is still theirs to look at.
+    if(SV.wy && SV.wy.intsRef){delete SV.wy.intsRef;SV.wy.I=SV.ints || archivedInts;}
     if(SV.cf){if(SV.cf.best && SV.cf.best.map)SV.cf.best.map=Float32Array.from(SV.cf.best.map);if(SV.cf.structure && SV.cf.structure.map)SV.cf.structure.map=Float32Array.from(SV.cf.structure.map);}
     saveOpts();dirty=true;if(!(options && options.silent))render();
   }
@@ -1586,5 +1648,5 @@ RV.solve = (function () {
   }
 
   return { init: init, running: running, stop: stop, report: report, render: render, saveHkl:saveHkl, hklWhy:hklWhy, autoExtract:autoExtract, probeGPU:probeGPU, budgetFor:budgetFor, gpuBudget:gpuBudget, state: SV, cfDensityData: cfDensityData, renderDensityMap: renderDensityMap, symopsFor: symopsFor, parseFormula: parseFormula,
-           validateConstraints: validateConstraints, assignCf: assignCf,renderSelectedSolution:renderSelectedSolution,adoptSolution:adoptSolution,reportSelected:function(){var k=RV.layout && RV.layout.structureKind();return withSolution(k,function(){return report(k);});},archive:archive,restoreArchive:restoreArchive,exportTo:exportTo };
+           validateConstraints: validateConstraints, assignCf: assignCf,renderSelectedSolution:renderSelectedSolution,adoptSolution:adoptSolution,reportSelected:function(){var k=RV.layout && RV.layout.structureKind();return withSolution(k,function(){return report(k);});},archive:archive,archiveFingerprint:archiveFingerprint,restoreArchive:restoreArchive,exportTo:exportTo };
 })();

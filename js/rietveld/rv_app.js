@@ -203,6 +203,9 @@
   async function loadDatabases() {
     S.sgLoading = true;
     var notes = [];
+    // Started first and awaited last: three small local files, whose values are part of every saved project. RV.project
+    // waits on the same promise, so no save can be compared against a document they have not reached yet.
+    var presets = RV.cmd.loadDefaultPresets();
     try {
       var resp = await fetch('sg/all.json');
       if (!resp.ok) throw new Error('sg/all.json: HTTP ' + resp.status);
@@ -235,7 +238,7 @@
       ui.toast('The scattering factors are not loaded (' + ((e && e.message) || e) + '): Rietveld calculations are unavailable until they are.', 'err');
     }
     RV.bus.emit('tables');
-    var got = await RV.cmd.loadDefaultPresets();
+    var got = await presets;
     if (got.length) notes.push('default peak shapes ' + got.join(', '));
     return notes;
   }

@@ -400,7 +400,13 @@ RV.state = (function () {
     return !!at && at.site.free.indexOf('xyz'.indexOf(c.comp)) >= 0;
   }
   // the start value of a peak-shape parameter: from the default preset of that shape (Voigt_default.json …) if there is one
-  function setPresetDefault(type, values) { if (C.PROFILE_PARAMS[type]) S.presetDefaults[type] = Object.assign({}, values); }
+  // onlyIfAbsent: the preset files next to the page fill in the start values a project does not carry and must not
+  // replace the ones it does, so a project opened before those files arrive keeps its own (see loadDefaultPresets).
+  function setPresetDefault(type, values, onlyIfAbsent) {
+    if (!C.PROFILE_PARAMS[type]) return;
+    if (onlyIfAbsent && S.presetDefaults[type]) return;
+    S.presetDefaults[type] = Object.assign({}, values);
+  }
   function profileDefault(ph, comp) {
     var pd = C.usesSeparatedProfile(ph) ? null : S.presetDefaults[ph.profileType];
     if (pd && Number.isFinite(pd[comp])) return pd[comp];
@@ -1382,7 +1388,7 @@ RV.state = (function () {
     var lim = {};
     Object.keys(S.limits).forEach(function (n) { lim[n] = S.limits[n].map(function (v) { return Number.isFinite(v) ? v : (v > 0 ? 'inf' : '-inf'); }); });
     return JSON.stringify({
-      format: PROJECT, version: 3, parameterUnits: {sampleSize:'um'}, program: 'Powder 6, ' + RV.version, saved: new Date().toISOString(),
+      format: PROJECT, version: 4, parameterUnits: {sampleSize:'um'}, program: 'Powder 6, ' + RV.version, saved: new Date().toISOString(),
       disabledPhases:S.disabledPhases, parameterLinks:S.parameterLinks, selection:Array.from(S.sel), focus:S.focus,
       fitHistory:!opts.noHistory && RV.fitHistory ? RV.fitHistory.exportData(!!opts.metadataOnly) : null,
       calculation: S.calculation, calculationOptions: S.calculationOptions, fitmode:load('fitmode') || 'single', phaseSelection:S.phaseSel, presetDefaults:S.presetDefaults, settings: S.settings, shared: S.shared, limits: lim,
@@ -1418,7 +1424,7 @@ RV.state = (function () {
     }
     if (!isObj(doc) || (doc.format !== PROJECT && doc.format !== PROJECT_V1)) throw new Error('not a project of this program');
     var v1 = doc.format === PROJECT_V1;
-    if (v1 ? (doc.version != null && doc.version !== 1) : ![2,3].includes(doc.version)) throw new Error('project version ' + doc.version + ' is not supported');
+    if (v1 ? (doc.version != null && doc.version !== 1) : ![2,3,4].includes(doc.version)) throw new Error('project version ' + doc.version + ' is not supported');
     if (!S.sgReady) throw new Error('the space-group database is not loaded, so the phases cannot be rebuilt');
     var phases = (doc.phases || []).map(function (p, i) {
       if (!isObj(p)) bad('phase ' + (i + 1));
@@ -1474,6 +1480,8 @@ RV.state = (function () {
     return { fitmode:doc.fitmode, phaseSelection:doc.phaseSelection, presetDefaults:isObj(doc.presetDefaults)?doc.presetDefaults:{}, calculation: C.METHODS.indexOf(doc.calculation) >= 0 ? doc.calculation : (phases[0] ? phases[0].method : 'lebail'), calculationOptions: isObj(doc.calculationOptions) ? doc.calculationOptions : {}, settings: cleanSettings(doc.settings), shared: isObj(doc.shared) ? doc.shared : {}, limits: limits, phases: phases, raws: raws, log: log, disabledPhases:doc.disabledPhases || [],  parameterLinks:doc.parameterLinks || [],selection:doc.selection,focus:doc.focus,fitHistory:RV.fitHistory?RV.fitHistory.validate(doc.fitHistory,raws.map(function(r){return r.dataKey;}).filter(Boolean)):null };
   }
   function commitProject(pj) {
+    // A project replaces the start values too: nothing of the session before it survives (openProject waits for the
+    // bundled preset files first, so they cannot land after this and refill what the project left empty).
     S.nextId=1; S.anchor=null; S.presetDefaults=cloneCalculation(pj.presetDefaults || {});
     store('fitmode',pj.fitmode==='global'?'global':'single');
     S.calculation = pj.calculation; S.calculationOptions = pj.calculationOptions;

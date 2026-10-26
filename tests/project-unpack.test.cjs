@@ -15,6 +15,7 @@ const { JSZip, RV } = context;
 
 // bytes made inside the context: JSZip there does not recognise a typed array of this realm
 const f64 = values => { const bytes = new Uint8Array(new Float64Array(values).buffer), out = new (vm.runInContext('Uint8Array', context))(bytes.length); out.set(bytes); return out; };
+const i32 = values => { const bytes = new Uint8Array(new Int32Array(values).buffer), out = new (vm.runInContext('Uint8Array', context))(bytes.length); out.set(bytes); return out; };
 async function archive(edit) {
   const doc = { format: 'powder6-project', version: 3, datasets: [{ name: 'd', dataKey: 'k1' }],
     observations: [{ key: 'k1', columns: { tth: { path: 'o/tth.f64', length: 3 }, y: { path: 'o/y.f64', length: 3 } } }] };
@@ -71,8 +72,47 @@ test('a missing column file is refused',
 test('datasets must be a list',
   rejects(doc => { doc.datasets = {}; }, /Missing project datasets/));
 
-test('only version 3 archives are read',
+test('versions 3 and 4 are read, anything else is refused',
   rejects(doc => { doc.version = 2; }, /Unsupported project format/));
+test('a version 5 archive is refused rather than guessed at',
+  rejects(doc => { doc.version = 5; }, /Unsupported project format/));
+
+// The WPPF precision block: its own entries in a version 4 archive, the flat matrix and index in project.json before.
+test('the precision block of a version 4 archive comes back as the matrix RV.sgtest reads', async () => {
+  const bytes = await archive((doc, files) => {
+    doc.version = 4;
+    doc.solutionState = { ints: { pre: { n: 2, available: 2, s2: 1.5,
+      Q: { path: 'solution/precision.Q.f64', length: 4 }, index: { path: 'solution/precision.index.i32', length: 2 } } } };
+    files['solution/precision.Q.f64'] = f64([1, 0.25, 0.25, 2]);
+    files['solution/precision.index.i32'] = i32([0, 7]);
+  });
+  const doc = await RV.project.unpack(bytes);
+  // Array.from: the values are decoded inside the vm realm, whose Array is not this realm's
+  assert.deepEqual(Array.from(doc.solutionState.ints.pre.Q), [1, 0.25, 0.25, 2]);
+  assert.deepEqual(Array.from(doc.solutionState.ints.pre.index), [0, 7]);
+  assert.equal(doc.solutionState.ints.pre.s2, 1.5);
+});
+test('a version 3 archive that kept the precision block in project.json still reads', async () => {
+  const doc = await RV.project.unpack(await archive(doc => {
+    doc.solutionState = { ints: { pre: { n: 2, available: 2, s2: 1, Q: [1, 0, 0, 1], index: [0, 1] } } };
+  }));
+  assert.deepEqual(Array.from(doc.solutionState.ints.pre.Q), [1, 0, 0, 1]);
+  assert.deepEqual(Array.from(doc.solutionState.ints.pre.index), [0, 1]);
+});
+test('a precision block whose entries are missing or the wrong size is refused',
+  rejects(doc => {
+    doc.version = 4;
+    doc.solutionState = { ints: { pre: { n: 2, Q: { path: 'solution/precision.Q.f64', length: 4 }, index: { path: 'solution/precision.index.i32', length: 2 } } } };
+  }, /Missing the WPPF precision block/));
+test('a precision block that claims more values than its entry holds is refused', async () => {
+  const bytes = await archive((doc, files) => {
+    doc.version = 4;
+    doc.solutionState = { ints: { pre: { n: 2, Q: { path: 'solution/precision.Q.f64', length: 9 }, index: { path: 'solution/precision.index.i32', length: 2 } } } };
+    files['solution/precision.Q.f64'] = f64([1, 0.25, 0.25, 2]);
+    files['solution/precision.index.i32'] = i32([0, 7]);
+  });
+  await assert.rejects(async () => RV.project.unpack(bytes), /precision block length mismatch/);
+});
 
 // Small limits exercise actual ZIP metadata and decoding without huge fixtures.
 function limited(overrides) {

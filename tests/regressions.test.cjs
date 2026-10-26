@@ -1149,6 +1149,31 @@ test('projects replace acquisition, method settings and defaults without inherit
   assert.equal(a.state.problemFor([d]).datasets[0].lambda1,.71073);assert.equal(a.state.load('fitmode'),'global');assert.equal(a.S.phaseSel,'p2');assert.deepEqual(plain(a.S.presetDefaults),{simple_pvoigt:{GW:.2}});
   const legacy=JSON.parse(a.state.projectJSON([]));delete legacy.fitmode;delete legacy.presetDefaults;
   a.state.commitProject(a.state.prepareProject(legacy));assert.equal(a.state.load('fitmode'),'single');assert.deepEqual(plain(a.S.presetDefaults),{});
+  // The bundled preset files only fill in what is missing: a value that is already there stays, whatever arrives later.
+  a.state.setPresetDefault('simple_pvoigt',{GW:.2});
+  a.state.setPresetDefault('simple_pvoigt',{GW:.9},true);assert.equal(a.S.presetDefaults.simple_pvoigt.GW,.2);
+  a.state.setPresetDefault('tch_aniso',{W:4},true);assert.equal(a.S.presetDefaults.tch_aniso.W,4);
+  a.state.setPresetDefault('simple_pvoigt',{GW:.5});assert.equal(a.S.presetDefaults.simple_pvoigt.GW,.5,'a loaded preset still replaces one');
+});
+
+test('a saved project keeps the WPPF precision block in its own entry, not in project.json', async () => {
+  const a = model();
+  const pre = { n: 2, available: 2, s2: 1.25, Q: [1, 0.5, 0.5, 2], index: [0, 4] };
+  a.context.RV.solve = { archive: () => ({ ints: { stamp: 's', dsId: a.ds.id, phaseKey: 'p1', lambda: a.ds.inst.lambda1, det: [], refl: [], pre },
+    wy: { intsRef: true } }) };
+  const packed = await a.context.RV.project.pack();
+  const zip = await a.context.JSZip.loadAsync(packed);
+  assert.ok(zip.file('solution/precision.Q.f64'), 'the matrix has its own entry');
+  assert.ok(zip.file('solution/precision.index.i32'), 'the index has its own entry');
+  const doc = JSON.parse(await zip.file('project.json').async('string'));
+  assert.equal(doc.version, 4);
+  assert.deepEqual(doc.solutionState.ints.pre.Q, { path: 'solution/precision.Q.f64', length: 4 });
+  assert.deepEqual(doc.solutionState.ints.pre.index, { path: 'solution/precision.index.i32', length: 2 });
+  const back = await a.context.RV.project.unpack(packed);
+  // Array.from: the values are rebuilt inside the vm realm, whose Array is not this realm's
+  assert.deepEqual(Array.from(back.solutionState.ints.pre.Q), [1, 0.5, 0.5, 2]);
+  assert.deepEqual(Array.from(back.solutionState.ints.pre.index), [0, 4]);
+  assert.equal(back.solutionState.ints.pre.s2, 1.25);
 });
 
 test('Chebyshev backgrounds recover signed slope and curvature in all three methods, with exclusions', () => {
@@ -1456,6 +1481,25 @@ test('distance rules are shared: the Wyckoff parser keeps elements upper case, r
   assert.deepEqual(plain(wy.windows[0]), { a: 'FE', b: 'C', count: 6, countMode: 'exact', dmin: 1.6, dmax: 2.2, geometry: 'octahedral' });
   assert.equal(re.windows[0].a, 'Fe1'); assert.equal(re.windows[0].b, 'C1');
   assert.match(DR.parse('Fe C 6 1.6/2.2 cube', WL.geometries).bad[0], /not a shape/);
+});
+
+test('a distance rule never drops a token: extra numbers and a count with two distances are errors', () => {
+  const DR = require('../js/distance_rules.js'), WL = require('../js/wyckoff_limits.js').WY_LIMITS;
+  // the third number used to be read and thrown away without a word
+  for (const text of ['Fe O 2.0 2.2 2.4', 'Fe O - 2.0 2.5 9', 'Fe O 2.0 2.2 2.4 tetra']) {
+    const r = DR.parse(text, WL.geometries);
+    assert.equal(r.windows.length, 0, text + ' must not become a rule');
+    assert.match(r.bad[0], /is not read|not a shape|needs/, text + ': ' + r.bad[0]);
+  }
+  assert.match(DR.parse('Fe O 2.0 2.2 2.4', WL.geometries).bad[0], /"2\.4" after "2\.0 2\.2" is not read/);
+  // "S O 4 1.4 1.6" is a count followed by two distances: it used to be reported as dmax below dmin
+  const ambiguous = DR.parse('S O 4 1.4 1.6', WL.geometries).bad[0];
+  assert.match(ambiguous, /has a count and two distances/);
+  assert.match(ambiguous, /S O 4 1\.4\/1\.6/);
+  // the forms that do read are untouched
+  assert.deepEqual(plain(DR.parse('S O 4 1.4/1.6', WL.geometries).windows[0]), { a: 'S', b: 'O', count: 4, countMode: 'exact', dmin: 1.4, dmax: 1.6, geometry: null });
+  assert.deepEqual(plain(DR.parse('S O 1.4 1.6', WL.geometries).windows[0]), { a: 'S', b: 'O', count: null, countMode: null, dmin: 1.4, dmax: 1.6, geometry: null });
+  assert.deepEqual(plain(DR.parse('S O 4 1.40/1.60 tetra', WL.geometries).windows[0].geometry), 'tetrahedral');
 });
 
 test('restraints measure distances, counts and angles through the symmetry images', () => {

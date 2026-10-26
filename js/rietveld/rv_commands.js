@@ -1172,21 +1172,30 @@ RV.cmd = (function () {
     ui.download(String(PRESET_FILES[ph.profileType] || 'profile.json').replace('_default', '_' + ph.name.replace(/[^\w-]+/g, '_')), JSON.stringify(doc, null, 2), 'application/json');
     ui.toast('Saved the peak shape of ' + ph.name + (ds ? ' in ' + ds.name : '') + ' as a sample-broadening preset. Instrument calibration is saved separately using Profile.', 'ok');
   }
-  // the start values of new phases, from Voigt_default.json and its siblings next to the page; silent when absent
-  async function loadDefaultPresets() {
-    var got = [];
-    for (var type in PRESET_FILES) {
-      try {
-        var r = await fetch(PRESET_FILES[type], { cache: 'no-cache' });
-        if (!r.ok) continue;
-        var pr = presetOf(await r.json());
-        if (pr.type !== type || pr.separatedProfile) continue;
-        St.setPresetDefault(type, pr.values);
-        got.push(PRESET_FILES[type]);
-      } catch (e) { /* absent or not a preset: the built-in defaults stay */ }
-    }
-    return got;
+  // the start values of new phases, from Voigt_default.json and its siblings next to the page; silent when absent.
+  // ONE promise for the life of the page: the values are part of the saved document, so anything that compares or
+  // writes the document (saving a project, opening one) must be able to wait for them instead of racing them.
+  var defaultPresets = null;
+  function loadDefaultPresets() {
+    if (defaultPresets) return defaultPresets;
+    defaultPresets = (async function () {
+      var got = [];
+      for (var type in PRESET_FILES) {
+        try {
+          var r = await fetch(PRESET_FILES[type], { cache: 'no-cache' });
+          if (!r.ok) continue;
+          var pr = presetOf(await r.json());
+          if (pr.type !== type || pr.separatedProfile) continue;
+          // A project opened before these files arrive keeps the start values it brought.
+          St.setPresetDefault(type, pr.values, true);
+          got.push(PRESET_FILES[type]);
+        } catch (e) { /* absent or not a preset: the built-in defaults stay */ }
+      }
+      return got;
+    })();
+    return defaultPresets;
   }
+  function defaultPresetsReady() { return defaultPresets || loadDefaultPresets(); }
 
   // ---------------------------------------------------------------- intensities for the Solve tab
   /* The statistics, uncertainties and intensities of a dataset at its current values, with the ticked parameters
@@ -1445,6 +1454,9 @@ RV.cmd = (function () {
   }
   async function openProject(text) {
     if (!idle()) return;
+    // The bundled preset files are part of the document: let them land first, so the project's own start values are
+    // merged over a settled state and the saved-state mark taken below is the one the file describes.
+    await defaultPresetsReady();
     var doc;
     try { doc = typeof text==='object'?text:JSON.parse(text); } catch (e) { throw new Error('the project file is not valid JSON'); }
     var pj = St.prepareProject(doc);
@@ -1711,7 +1723,7 @@ RV.cmd = (function () {
 
   return { init: init, readFiles: readFiles, readStructure: readStructure, newPhase: newPhase, addAtom: addAtom, atomsFromCif: atomsFromCif, atomsFromCifText: atomsFromCifText, fragment: fragment, fragmentInto: fragmentInto, deletePhase: deletePhase, setMethod: setMethod,
            readData: readData0, scalesOnly: scalesOnly, resolution: resolution, setInstrumentProfile:setInstrumentProfile, instrument: instrument, background: background, excludeRegions: excludeRegions, markAt: markAt, removeAnchor: removeAnchor, addZone: addZone, editZone: editZone, applyZone: applyZone, removeZone: removeZone, regionAt: regionAt, simulate: simulate,
-           loadPreset: loadPreset, savePreset: savePreset, loadDefaultPresets: loadDefaultPresets, extract: extract,
+           loadPreset: loadPreset, savePreset: savePreset, loadDefaultPresets: loadDefaultPresets, defaultPresetsReady: defaultPresetsReady, extract: extract,
            deleteDatasets: deleteDatasets, estimate: estimate, cloneTo: cloneTo, tickSteps: tickSteps, fitGroupState: fitGroupState, setFitGroup: setFitGroup,
            fit: fit, fitSelected: fitSelected, globalFit: globalFit, stop: stop, undo: undo, saveProject: saveProject, openProject: openProject,
            demo: demo, runCommand: runCommand, showHelp: showHelp, openDocumentation: openDocumentation, why: why, syncButtons: syncButtons, phaseFromCif: phaseFromCif,

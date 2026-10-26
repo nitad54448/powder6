@@ -42,7 +42,9 @@ test('invalid restart counts fail before GPU setup instead of being rounded or c
 test('the worker forwards the exact restart count and validates before requesting a GPU',async()=>{
   let requests=0,destroyed=0;
   const device={destroy(){destroyed++;}},worker=vm.createContext({console,navigator:{gpu:{async requestAdapter(){requests++;return {async requestDevice(){return device;}};}}}});
+  // the real script order: the worker imports the swarm module, which carries the seeded stream
   vm.runInContext(read('js/wyckoff_limits.js'),worker);
+  vm.runInContext(read('js/swarm_wyckoff.js'),worker);
   vm.runInContext(read('js/wyckoff_worker.js'),worker);
   worker.wyRunWithDevice=async(device,cell,symops,job)=>({sites:[],restarts:job.swarmRestarts});
   for(const n of [1,20,37]){
@@ -52,4 +54,27 @@ test('the worker forwards the exact restart count and validates before requestin
   assert.equal(requests,3);assert.equal(destroyed,3);
   const result=await worker.runWyckoffFromIntensities({},[],{targetComposition:'C',swarmRestarts:2.5});
   assert.match(result.error,/Restarts must be a positive whole number/);assert.equal(requests,3);
+});
+test('the seeded stream repeats exactly, differs with another seed, and is dropped without a seed',()=>{
+  // swGaussian() is the real consumer of the stream (initial coordinates, restarts and exchanges come from the same
+  // one), so drawing deviates is what proves the seed reaches the search rather than only being stored.
+  const draw=seed=>{context.swSetSeed(seed);const out=[];for(let i=0;i<6;i++)out.push(context.swGaussian());return out;};
+  assert.deepEqual(draw(7),draw(7),'the same seed must repeat the stream');
+  assert.notDeepEqual(draw(7),draw(8),'a different seed must give a different stream');
+  const stream=a=>{const r=context.swRng(a),out=[];for(let i=0;i<4;i++)out.push(r());return out;};
+  assert.deepEqual(stream(99),stream(99));
+  for(const [seed,expected] of [[0,0],[1,1],[12345,12345],[4294967295,4294967295]]){
+    context.swSetSeed(seed);assert.equal(context.swSeed(),expected);
+  }
+  for(const bad of [null,undefined,-1,2.5,NaN,Infinity,4294967296,'7',{}]){context.swSetSeed(bad);assert.equal(context.swSeed(),null,'not a 32-bit unsigned seed: '+String(bad));}
+});
+test('the worker seeds the search from the job and reports it; a job without a seed stays unseeded',async()=>{
+  const device={destroy(){}},worker=vm.createContext({console,navigator:{gpu:{async requestAdapter(){return {async requestDevice(){return device;}};}}}});
+  vm.runInContext(read('js/wyckoff_limits.js'),worker);
+  vm.runInContext(read('js/swarm_wyckoff.js'),worker);
+  vm.runInContext(read('js/wyckoff_worker.js'),worker);
+  worker.wyRunWithDevice=async()=>({sites:[],seed:worker.swSeed()});
+  assert.equal((await worker.runWyckoffFromIntensities({},[],{targetComposition:'C',swarmRestarts:1,seed:424242})).seed,424242);
+  assert.equal((await worker.runWyckoffFromIntensities({},[],{targetComposition:'C',swarmRestarts:1})).seed,null);
+  assert.equal((await worker.runWyckoffFromIntensities({},[],{targetComposition:'C',swarmRestarts:1,seed:'424242'})).seed,null,'a seed that is not a number is not used');
 });

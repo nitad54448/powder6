@@ -43,6 +43,13 @@ var DistanceRules = (function () {
           bad.push('line ' + (i + 1) + ': "' + rest[0] + '" on its own is ambiguous - write "' + a + ' ' + b + ' ' + rest[0] + ' dmin/dmax" for a coordination number, or "' + a + ' ' + b + ' ' + rest[0] + '.0" for a distance');
           return;
         }
+        // A count followed by two numbers, "A B 4 1.4 1.6", is the same ambiguity one step further on: read as
+        // distances it would be 4 A to 1.4 A, which is not what anyone writes it for.
+        if (rest.length >= 3 && /^\d+\+?$/.test(rest[0])) {
+          bad.push('line ' + (i + 1) + ': "' + a + ' ' + b + ' ' + rest.join(' ') + '" has a count and two distances - write "' + a + ' ' + b + ' ' + rest[0] + ' ' + rest[1] + '/' + rest[2] + '" for a coordination number, or "' + a + ' ' + b + ' ' + rest[1] + ' ' + rest[2] + '" for distances only');
+          return;
+        }
+        if (nums.length > 2) { bad.push('line ' + (i + 1) + ': "' + nums.slice(2).join(' ') + '" after "' + nums[0] + ' ' + nums[1] + '" is not read - a rule is "A B dmin dmax" (or "A B N dmin/dmax [shape]")'); return; }
         dmin = parseFloat(nums[0]);
         if (!Number.isFinite(dmin)) { bad.push('line ' + (i + 1) + ': "' + nums[0] + '" is not a distance'); return; }
         if (nums.length > 1) { dmax = parseFloat(nums[1]); if (!Number.isFinite(dmax)) { bad.push('line ' + (i + 1) + ': "' + nums[1] + '" is not a distance'); return; } }

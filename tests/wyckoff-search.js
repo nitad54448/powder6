@@ -40,6 +40,13 @@
     }
     set('#sv-wy-restarts','20');
     record('Invalid restart counts are rejected before starting a worker');
+    // the seed: a whole number from 0 to 2^32-1, or blank for a new one; anything else is refused before a worker starts
+    for(const invalid of ['-1','2.5','abc','4294967296']){
+      set('#sv-wy-seed',invalid);q('#sv-wy-run').click();await wait(50);
+      check(!RV.solve.state.wyRun && !S.busy && /seed is a whole number/.test(q('#status-msg').textContent),'An invalid seed started a search: '+invalid+' — '+q('#status-msg').textContent);
+    }
+    set('#sv-wy-seed','');
+    record('An invalid seed is refused before starting a worker');
     const Orig=w.Worker,progress=[];
     w.Worker=function(url,opts){const real=new Orig(url,opts);if(String(url).includes('wyckoff_worker'))real.addEventListener('message',e=>{if(e.data && e.data.type==='wy-progress')progress.push(e.data);});return real;};
     const before=RV.ui.logEntries().length;
@@ -67,13 +74,18 @@
     check(wy.o.restarts===20 && full.every(p=>p.restarts===20),'The requested restart count changed before reaching the GPU');
     for(const wave of waves)check(full.some(p=>p.wave===wave && p.restart===20 && p.generation===p.generations-1),'A full-search wave did not complete restart 20');
     check(progress.filter(p=>p.stage==='screen').every(p=>p.restarts===1),'Screening must use one start');
+    // the blank seed drew one; the search used it and the Log reports it, so the run can be repeated
+    check(Number.isSafeInteger(wy.o.seed) && wy.o.seed>=0 && wy.o.seed<=4294967295,'The search did not record the seed it ran from: '+wy.o.seed);
+    check(shown.includes('seed '+wy.o.seed+'.'),'The Log does not report the seed: '+shown.slice(0,400));
+    check(wy.results.seed===wy.o.seed,'The search result reports a different seed than the job carried: '+wy.results.seed+' vs '+wy.o.seed);
+    record('A blank seed draws one, the search runs from it and the Log and result report it',{seed:wy.o.seed});
     const cpuCheck=wy.results.wyckoffResult.cpuCheck;
     check(cpuCheck && Number.isFinite(cpuCheck.cpu) && Number.isFinite(cpuCheck.gpu) && cpuCheck.delta<=1e-3,'CPU and GPU Wyckoff fitness disagree: '+JSON.stringify(cpuCheck));
     check(wy.sols[0].refinement && Number.isFinite(wy.sols[0].refinement.R),'CPU coordinate refinement did not finish');
     record('Every full-search wave completes 20 requested starts; GPU fitness agrees with the CPU and coordinate refinement completes',{waves:waves.length,cpuCheck});
 
     // a shaped shell: the kernel is compiled with neighbour vectors and charges the angles
-    set('#sv-wy-constraints','Pb O 6 1.9/2.9 oct');set('#sv-wy-iterations','60');set('#sv-wy-restarts','1');await frame();
+    set('#sv-wy-constraints','Pb O 6 1.9/2.9 oct');set('#sv-wy-iterations','60');set('#sv-wy-restarts','1');set('#sv-wy-seed','424242');await frame();
     check(!/not a shape|needs exactly/.test(q('#sv-wy-cstat').textContent),'The octahedron line was refused: '+q('#sv-wy-cstat').textContent);
     set('#sv-wy-constraints','Pb O 4 1.9/2.9 oc');await frame();
     check(/needs exactly 6 neighbours/.test(q('#sv-wy-cstat').textContent),'A wrong count for the shape was not reported: '+q('#sv-wy-cstat').textContent);
@@ -93,6 +105,10 @@
     // the form's percentage reaches the search, for a counted shell; the first run (0 %, bare rules) had none
     check(/Polyhedron moves: 30 %/.test(log2) && !/Polyhedron moves/.test(log),'Polyhedron moves did not follow the form: '+(log2.match(/Polyhedron[^\n]*/) || ['none'])[0]);
     record('Polyhedron moves follow the form, for a counted shell only');
+    // a typed seed is what the search runs from, so the run can be repeated exactly (a kept result carries it too)
+    check(wy2.o.seed===424242 && wy2.results.seed===424242,'The typed seed did not reach the search: '+wy2.o.seed+' / '+(wy2.results && wy2.results.seed));
+    check(log2.includes('seed 424242.'),'The Log does not report the typed seed');
+    record('A typed seed reaches the worker and is reported, so a search repeats exactly');
 
     check(!errors.length,'Browser errors: '+errors.join('; '));record('no browser errors');
     window.browserTestResult={ok:true,results};

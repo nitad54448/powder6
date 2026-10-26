@@ -1,16 +1,21 @@
 /* Portable compressed projects: one little-endian binary copy of each observation
-   column, JSON model/checkpoint metadata, and optional CF density arrays. */
+   column and of the WPPF precision block, JSON model/checkpoint metadata, and optional CF density arrays. */
 RV.project = (function(){
   'use strict';
   var St=RV.state,S=St.S,columns=['tth','y','sig','weights'];
   // Compare saved content, not UI events: rendering and undo can emit the same
   // events as edits. Observation data is immutable and identified by dataKey.
   var savedSnapshot=null;
+  /* The document as the saved state: everything project.json carries, except the fields that describe this session
+     rather than the project, plus a fingerprint of the solution state. RV.solve.archiveFingerprint() answers "did the
+     archived extracts, tests and structures change?" without building them: cloning the archive here cost a second
+     copy of every reflection table and of the precision block on every save and every leave-page check. */
   function snapshot(){
     var doc=JSON.parse(St.projectJSON([],{metadataOnly:true}));
     delete doc.saved;
     delete doc.selection;delete doc.focus;delete doc.phaseSelection;
-    if(RV.solve && RV.solve.archive)doc.solutionState=RV.solve.archive(false);
+    if(RV.solve && RV.solve.archiveFingerprint)doc.solutionState=RV.solve.archiveFingerprint();
+    else if(RV.solve && RV.solve.archive)doc.solutionState=RV.solve.archive(false);
     return JSON.stringify(doc);
   }
   function markSaved(value){savedSnapshot=value===undefined?snapshot():value;}
@@ -29,12 +34,24 @@ RV.project = (function(){
   }
   function binary(array){var buffer=new ArrayBuffer(array.length*8),view=new DataView(buffer);for(var i=0;i<array.length;i++)view.setFloat64(i*8,array[i],true);return new Uint8Array(buffer);}
   function values(array){if(array.byteLength%8)throw new Error('Invalid observation column size.');var view=new DataView(array.buffer,array.byteOffset,array.byteLength),out=new Float64Array(array.length/8);for(var i=0;i<out.length;i++)out[i]=view.getFloat64(i*8,true);return out;}
+  // the precision block of the WPPF intensities (RV.sgtest.inputFrom): a flat matrix of doubles and the reflection
+  // index it belongs to, stored as their own little-endian entries
+  var PRECISION_Q='solution/precision.Q.f64',PRECISION_INDEX='solution/precision.index.i32';
+  function ints32(array){var out=new Int32Array(array.length);for(var i=0;i<array.length;i++)out[i]=array[i];return new Uint8Array(out.buffer);}
+  function int32s(bytes){if(bytes.byteLength%4)throw new Error('Invalid precision index size.');return new Int32Array(bytes.buffer,bytes.byteOffset,bytes.byteLength/4);}
   async function pack(opts){opts=opts || {};if(typeof JSZip==='undefined')throw new Error('Project compression library is unavailable.');var doc=JSON.parse(St.projectJSON(RV.ui.logEntries?RV.ui.logEntries():[],{metadataOnly:true})),pool=RV.fitHistory.observations(),zip=new JSZip(),index=[];
     if(opts.compact && doc.fitHistory){doc.fitHistory.records=doc.fitHistory.records.filter(function(r){return r.pinned || r.id===(RV.fitHistory.latest(r.method)||{}).id;});var used=new Set(doc.fitHistory.records.map(function(r){return r.model;}));Object.keys(doc.fitHistory.models).forEach(function(k){if(!used.has(k))delete doc.fitHistory.models[k];});}
     var needed=new Set(doc.datasets.map(function(d){return d.dataKey;}));if(doc.fitHistory)doc.fitHistory.records.forEach(function(r){r.datasets.concat(r.dependencies || []).forEach(function(d){needed.add(d.dataKey);});});
     var ordinal=0;for(var key of needed){var raw=pool[key];if(!raw)throw new Error('Missing observations '+key);var row={key:key,columns:{}};for(var c of columns){if(!raw[c])continue;var path='observations/'+ordinal+'/'+c+'.f64';row.columns[c]={path:path,length:raw[c].length};zip.file(path,binary(raw[c]));}index.push(row);ordinal++;}
     doc.observations=index;if(doc.fitHistory)doc.fitHistory.observations=[];
     doc.solutionState=RV.solve && RV.solve.archive?RV.solve.archive(!!opts.density,new Set(doc.fitHistory?doc.fitHistory.records.map(function(r){return r.id;}):[])):null;
+    // The WPPF precision block is a square matrix of doubles: 8 bytes a value in its own entry, against ~19 bytes of
+    // text in project.json. It is the largest thing a solved structure puts in a project.
+    var pre=doc.solutionState && doc.solutionState.ints && doc.solutionState.ints.pre;
+    if(pre && Array.isArray(pre.Q) && Array.isArray(pre.index)){
+      zip.file(PRECISION_Q,binary(pre.Q));zip.file(PRECISION_INDEX,ints32(pre.index));
+      pre.Q={path:PRECISION_Q,length:pre.Q.length};pre.index={path:PRECISION_INDEX,length:pre.index.length};
+    }
     zip.file('project.json',JSON.stringify(doc));
     return zip.generateAsync({type:'uint8array',compression:'DEFLATE',compressionOptions:{level:3}},function(p){if(opts.progress)opts.progress(p.percent);});
   }
@@ -51,7 +68,8 @@ RV.project = (function(){
     var entry=zip.file('project.json');if(!entry)throw new Error('This archive is not a Powder 6 project.');
     var size=declaredSize(entry);if(size!==null && size>LIMITS.json)throw new Error('project.json is too large to be a Powder 6 project.');
     var doc;try{doc=JSON.parse(await entry.async('string'));}catch(e){throw new Error('project.json is not valid JSON.');}
-    if(!plain(doc) || doc.format!=='powder6-project' || doc.version!==3)throw new Error('Unsupported project format.');
+    // 4 stores the precision block as its own entry; 3 kept it in project.json, which reads back the same way.
+    if(!plain(doc) || doc.format!=='powder6-project' || !(doc.version===3 || doc.version===4))throw new Error('Unsupported project format.');
     var pool=Object.create(null),rows=doc.observations;if(!Array.isArray(rows))throw new Error('Missing project observations.');if(rows.length>LIMITS.rows)throw new Error('Too many observation sets.');if(!Array.isArray(doc.datasets))throw new Error('Missing project datasets.');
     // Validate every reference before decoding any column. Count repeated paths
     // too: each reference allocates another output and a temporary byte array.
@@ -69,6 +87,16 @@ RV.project = (function(){
       pool[row.key]=raw;}
     doc.datasets.forEach(function(d){var raw=plain(d) && typeof d.dataKey==='string'?pool[d.dataKey]:null;if(!raw)throw new Error('Missing observations for '+(plain(d) && d.name || 'a dataset'));columns.forEach(function(c){d[c]=raw[c] || null;});});
     if(doc.fitHistory)doc.fitHistory.observations=Object.values(pool).map(function(raw){var o={key:raw.key};columns.forEach(function(c){o[c]=raw[c] || null;});return o;});
+    // The precision block of a saved extraction, back as the flat matrix and index RV.sgtest.inputFrom reads.
+    var pre=doc.solutionState && plain(doc.solutionState.ints) && doc.solutionState.ints.pre;
+    if(plain(pre) && plain(pre.Q) && typeof pre.Q.path==='string'){
+      var qf=zip.file(pre.Q.path),xf=plain(pre.index)?zip.file(pre.index.path):null;
+      if(!qf || !xf)throw new Error('Missing the WPPF precision block.');
+      if(!Number.isSafeInteger(pre.Q.length) || pre.Q.length<0 || pre.Q.length>LIMITS.column || !Number.isSafeInteger(pre.index.length))throw new Error('Invalid WPPF precision block.');
+      var q=values(await qf.async('uint8array'));if(q.length!==pre.Q.length)throw new Error('WPPF precision block length mismatch.');
+      var xi=int32s(await xf.async('uint8array'));if(xi.length!==pre.index.length)throw new Error('WPPF precision index length mismatch.');
+      pre.Q=Array.from(q);pre.index=Array.from(xi);
+    }
     return doc;
   }
   /* Ask what to keep, then WHERE (Save As, while the click still counts), then compress and write. Every way out
@@ -77,6 +105,10 @@ RV.project = (function(){
     var ui=RV.ui;
     if(S.busy){ui.toast('A calculation is running: wait for it to finish, or press Stop, then save the project again.','warn');return;}
     if(!S.datasets.length && !S.phases.length){ui.toast('Nothing to save yet: read a pattern or make a phase first.','info');return;}
+    // The preset files started at load are part of the document. Waiting for them here is what keeps a save made in
+    // the first moments of a session from being compared against a document they had not reached: without it the
+    // project looked modified the moment it was written (beforeunload warned with nothing edited).
+    if(RV.cmd && RV.cmd.defaultPresetsReady)await RV.cmd.defaultPresetsReady();
     RV.fitHistory.observations();var storage=RV.fitHistory.usage(),hasPicker=typeof window.showSaveFilePicker==='function' && window.isSecureContext!==false;
     var choice=await ui.prompt('Save project',[{key:'compact',label:'Compact history',type:'checkbox',value:false,hint:'Keep the latest fit of each method and all records marked Keep. Otherwise save every retained record.'},{key:'density',label:'Include CF density maps',type:'checkbox',value:false,hint:'Atomic candidates and source information are always saved; density grids can be large.'}],
       hasPicker?'Choose file…':'Save',

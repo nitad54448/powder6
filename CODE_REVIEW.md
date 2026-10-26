@@ -1,6 +1,23 @@
-# Focused code review — 24 October 2026
+# Code reviews
+
+## 26 October 2026 — saving, project format, rules, reproducibility (implemented in 2.42.0)
+
+Scope: the whole repository at the level of automated evidence (syntax, every Node suite, every browser page) plus a reading of the state/project, distance-rule and search-launch paths. Verified before the fixes: `node --check` on every script, 155/155 Node tests, 26 of 27 browser pages, no undefined module member or DOM id, WGSL injection markers intact.
+
+1. **A saved project was reported as modified (fixed).** `tests/project-save.html` failed intermittently — `Successful save must clear the leave-page warning`. `loadDatabases()` announced `S.sgReady` and the tables before fetching the preset files, whose values are part of the document (`rv_state.js` `projectJSON`); a save between the two took its baseline before `presetDefaults` arrived (`rv_project.js` save) and every later check disagreed. `loadDefaultPresets()` is now one promise (`RV.cmd.defaultPresetsReady()`), started first in `loadDatabases`, awaited by `save()` and by `openProject()`, and `setPresetDefault(type, values, true)` only fills a shape the document lacks.
+2. **The saved-state check cloned the archive (fixed).** `snapshot()` ran `RV.solve.archive(false)` — a deep copy of every reflection table and of the precision block — on every save and every `beforeunload`. `RV.solve.archiveFingerprint()` hashes the same values into 32 bits and allocates nothing.
+3. **Project size (fixed, format 4).** The precision block (`ints.pre`, 8.6 MB of text for 600 reflections) and a duplicate of the extraction inside the Wyckoff result (`wy.I === ints`, another 10 MB) dominated a solved project. The block is now binary entries `solution/precision.Q.f64` and `solution/precision.index.i32`; a solution stores `intsRef` and `restoreArchive` reconnects it. Format 3 is still read; the writer emits 4.
+4. **Distance rules dropped tokens (fixed).** `A B dmin dmax extra` silently ignored the extra token; `A B N dmin dmax` was reported as "dmax below dmin". Both are now named errors with the form to use.
+5. **Searches could not be repeated (fixed).** Item 3 of the 24 October list: the Wyckoff search's initial coordinates, restarts, replica exchanges, Gaussian deviates and GPU per-chain seeds now come from one seeded stream (`swSetSeed`/`swSeed` in `js/swarm_wyckoff.js`), fed by a **Seed** field in the Wyckoff and charge-flipping forms, recorded in the Log, the result, History and the project.
+6. **Developer notes (fixed).** `CLAUDE.md`'s Node command now uses the glob (it had omitted `anomalous` and `wyckoff-adaptation`).
+
+Still open from the 24 October list: the collective `quench()` proposal (item 4) and the statistical convergence benchmark (item 5).
+
+## Focused code review — 24 October 2026
 
 Scope: Wyckoff proposal generation and search controls, command/result header surfaces. This is not an exhaustive audit of the refinement engine.
+
+Status of its “Remaining findings” (26 October): 1 and 2 are closed (the adaptation constants are injected by `swInject` and covered by `tests/wyckoff-adaptation.test.cjs`; `SW_DEFAULTS.minObsPerParam` no longer exists), 3 is closed (2.42.0, above), 4 and 5 remain open.
 
 ## Implemented in 2.23.0
 

@@ -46,7 +46,14 @@
     check(jobs.length===6 && jobs.every(j=>j.overlapFwhmFraction===.5 && j.weakGrouping==='cluster' && j.hklList.length===I.det.length),'Adaptive jobs changed the reflection set or grouping policy across starts');
     check(new Set(jobs.map(j=>j.seed)).size===2 && new Set(jobs.map(j=>j.thresholdSigma)).size===3,'Settings were not compared with repeated independent seeds');
     check(model()===before && JSON.stringify(I.det)===raw,'Adaptive CF changed the fitted model or measured intensities');
+    // the saved-state fingerprint must see a new solution: it answers "did the archive change?" without copying it
+    check(RV.project.hasUnsavedChanges(),'A completed charge-flipping result did not mark the project as modified');
     record('actual CF workers execute the previewed settings with paired seeds and unchanged observations',{backend:result.best.backend,bestR:result.best.bestR});
+    // the run's own seed: drawn when the field is blank, reported, and the source of every start's seed
+    check(Number.isSafeInteger(result.seed) && result.seed>=0 && result.seed<=4294967295 && result.search.seed===result.seed,'The CF run did not record the seed its starts came from: '+result.seed+' / '+(result.search && result.search.seed));
+    check(jobs.every(j=>Number.isSafeInteger(j.seed) && j.seed>=0),'A CF start ran without a seed');
+    check(RV.ui.logEntries().some(e=>e.msg.includes('seed '+result.seed+'.')),'The Log does not report the CF seed');
+    record('a blank CF seed is drawn, recorded in the result and reported in the Log',{seed:result.seed});
     check(result.search.trials.every(r=>Number.isFinite(r.mapCorrelation) && r.mapCorrelation>=0 && r.mapCorrelation<=1),'Map comparisons did not complete');
     RV.layout.structureResult('cf');await frame();check(q('#sv-cf-out').textContent.includes('other independent seeds') && q('#sv-cf-out table tbody').rows.length===6,'Trial diagnostics missing from the selected result');
     const saved=RV.fitHistory.list('wppf','cf').slice(-1)[0];check(saved.solution.search.trials.length===6 && !saved.solution.search.candidates,'Search metadata was lost or temporary candidate maps were archived');
@@ -59,9 +66,18 @@
     failNext=true;result=await run();check(result.search.trials.length===6 && result.search.trials.filter(r=>r.error).length===1 && Number.isFinite(result.best.bestR) && !S.busy,'One failed start prevented the remaining search from completing');
     record('an individual worker error is retained in the trial log while the remaining starts complete');
     change(q('#sv-cf-adaptive'),false);await frame();check(!q('#sv-cf-threshold').parentElement.hidden && Object.entries(manual).every(([k,v])=>RV.solve.state.opts.cf[k]===v),'Switching back to manual mode lost the original settings');
-    change(q('#sv-cf-trials'),'1');result=await run();const manualJob=jobs[jobs.length-1];
+    change(q('#sv-cf-trials'),'1');change(q('#sv-cf-seed'),'777');await frame();
+    result=await run();const manualJob=jobs[jobs.length-1];
     check(!result.search && manualJob.thresholdSigma===1.07 && manualJob.symLambda===.3 && manualJob.weakFraction===.12 && manualJob.overlapTolTth===.037 && manualJob.overlapFwhmFraction===0,'Manual mode did not use its original numerical settings');
     record('an actual manual CF run retains its original settings and fixed overlap grouping');
+    // a typed seed is what the run comes from, so it can be repeated exactly
+    check(result.seed===777 && Number.isSafeInteger(manualJob.seed),'A typed CF seed did not reach the run: '+result.seed);
+    // an invalid seed either disables Run (the field is marked invalid) or is refused with the message; it never starts
+    change(q('#sv-cf-seed'),'abc');await frame();
+    const seedRun=q('#sv-cf-run');if(!seedRun.disabled)seedRun.click();await frame();
+    check(!S.busy && !RV.solve.state.cfRun && (seedRun.disabled || /seed is a whole number/.test(q('#status-msg').textContent)),'An invalid CF seed started a run: '+q('#status-msg').textContent);
+    change(q('#sv-cf-seed'),'');await frame();
+    record('a typed CF seed reaches the run; an invalid one is refused before a worker starts');
     check(!errors.length,'Browser errors: '+errors.join('; '));record('adaptive workflow completes without browser errors');
     window.browserTestResult={ok:true,results};
   }catch(e){results.push({name:'failure',error:e.stack || String(e)});out.textContent=JSON.stringify(results,null,2);window.browserTestResult={ok:false,results};}

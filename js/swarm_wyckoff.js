@@ -335,13 +335,54 @@ function hasInversionAtOrigin(symOps) {
  * bounded proposal kernel would never make a long jump, and long jumps are how
  * a hot replica leaves a basin.
  */
+/* ---------------------------------------------------------------------------
+ * REPRODUCIBLE RANDOMNESS
+ *
+ * Every host-side draw in this file comes from RANDOM(): the initial
+ * coordinates, the restarts, the replica exchanges, the Gaussian deviates and
+ * the per-chain seeds handed to the kernel. It is Math.random() until a run
+ * supplies a seed, then a mulberry32 stream from that seed, so two runs of the
+ * same seed, settings and starting assignments search the same starts in the
+ * same order. Without it a GPU seed alone reproduced nothing: the starts were
+ * already different by the time the kernel saw the data, and two proposal
+ * strategies could not be compared on anything but luck.
+ *
+ * The GPU draws from its own per-chain stream, seeded from this one, so the
+ * whole run is reproducible from the single number reported with it.
+ * --------------------------------------------------------------------------- */
+let RANDOM = Math.random, swSeedUsed = null;
+function swRng(seed) {
+    let s = seed >>> 0;
+    return function () {
+        s = (s + 0x6D2B79F5) >>> 0;
+        let t = s;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+/**
+ * Seed every host-side draw of the searches.
+ * @param {number|null|undefined} seed 32-bit unsigned; null, absent or invalid keeps Math.random().
+ * @returns {number|null} The seed in force, null when unseeded.
+ */
+function swSetSeed(seed) {
+    const s = Number.isSafeInteger(seed) && seed >= 0 && seed <= 0xFFFFFFFF ? seed >>> 0 : null;
+    RANDOM = s === null ? Math.random : swRng(s);
+    swSeedUsed = s;
+    swHasSpare = false;                     // a new stream must not hand out a deviate of the old one
+    return swSeedUsed;
+}
+/** @returns {number|null} The seed in force, or null when the run is unseeded. */
+function swSeed() { return swSeedUsed; }
+
 let swSpareGaussian = 0, swHasSpare = false;
 function swGaussian() {
     if (swHasSpare) { swHasSpare = false; return swSpareGaussian; }
     let u, v, q;
     do {
-        u = 2 * Math.random() - 1;
-        v = 2 * Math.random() - 1;
+        u = 2 * RANDOM() - 1;
+        v = 2 * RANDOM() - 1;
         q = u * u + v * v;
     } while (q === 0 || q >= 1);
     const f = Math.sqrt(-2 * Math.log(q) / q);
@@ -1723,7 +1764,7 @@ async function runWyckoffSearch(o) {
 
         for (let i = 0; i < numParticles; i++) {
             const base = i * coordsPerParticle;
-            for (let k = 0; k < coordsPerParticle; k++) positions[base + k] = Math.random();
+            for (let k = 0; k < coordsPerParticle; k++) positions[base + k] = RANDOM();
             projectSites(positions, i, assignOf[i], T);
             curFit[i] = -Infinity; curCC[i] = NaN; curPen[i] = 0;
             stepSize[i] = SW_DEFAULTS.stepInit;
@@ -1796,7 +1837,7 @@ async function runWyckoffSearch(o) {
                     if (!Number.isFinite(fa) || !Number.isFinite(fb)) continue;
                     tried++;
                     const d = (1 / tempOf[a] - 1 / tempOf[b]) * (fb - fa);
-                    if (d < 0 && Math.random() >= Math.exp(d)) continue;
+                    if (d < 0 && RANDOM() >= Math.exp(d)) continue;
                     taken++;
                     const ba = a * coordsPerParticle, bb = b * coordsPerParticle;
                     for (let k = 0; k < coordsPerParticle; k++) {
@@ -2099,7 +2140,7 @@ async function runWyckoffSearch(o) {
             // are the end of a cooling schedule and would not move again.
             for (let i = 0; i < numParticles; i++) {
                 const base = i * coordsPerParticle;
-                for (let k = 0; k < coordsPerParticle; k++) positions[base + k] = Math.random();
+                for (let k = 0; k < coordsPerParticle; k++) positions[base + k] = RANDOM();
                 projectSites(positions, i, assignOf[i], T);
                 curFit[i] = -Infinity; curCC[i] = NaN; curPen[i] = 0;
                 stepSize[i] = SW_DEFAULTS.stepInit;
@@ -2132,7 +2173,7 @@ let needCurrentEval = true, firstEval = (wi === 0);
                 stateF32[b + 2] = curPen[i];
                 stateF32[b + 3] = stepSize[i];
                 stateF32[b + 4] = tempOf[i];
-                stateU32[b + 5] = Math.floor(Math.random() * 4294967296);
+                stateU32[b + 5] = Math.floor(RANDOM() * 4294967296);
                 stateU32[b + 6] = 0;
                 // Reset the GPU's per-particle best cache. Safe to reset here
                 // because every call site harvests it (updateGlobalBestFromGPU)
@@ -2282,7 +2323,7 @@ let needCurrentEval = true, firstEval = (wi === 0);
                         // A reassigned chain starts fresh: its state belongs to a
                         // different subspace and is not a point of the new one.
                         for (let k = 0; k < coordsPerParticle; k++) {
-                            positions[base + k] = Math.random();
+                            positions[base + k] = RANDOM();
                         }
                         projectSites(positions, i, A, T);
                         stepSize[i] = SW_DEFAULTS.stepInit;
@@ -2591,6 +2632,9 @@ let needCurrentEval = true, firstEval = (wi === 0);
              floors: restraints.floors,
              overallB, route: obs.route, reflections: obs.rows.length,
              groups: refl.nGroups, stopped, log,
+             // The seed this search ran from (null when it was unseeded): with it, and these settings, the turn
+             // comes out the same.
+             seed: swSeed(),
              // The caller has to group the reflections the same way to count
              // independent observations for a significance test; handing back
              // the tolerance keeps the two from drifting apart.
@@ -2611,5 +2655,5 @@ let needCurrentEval = true, firstEval = (wi === 0);
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { SHARKO_SWARM_WYCKOFF_VERSION, runWyckoffSearch, swPackReflections, swScatteringTable,
-                       swMaxGenAtoms, rampedGroupCount };
+                       swMaxGenAtoms, rampedGroupCount, swSetSeed, swSeed, swRng };
 }

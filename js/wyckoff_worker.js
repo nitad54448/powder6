@@ -662,6 +662,9 @@ async function runWyckoffFromIntensities(cell, symops, job) {
     } catch (e) {
         return { sites: [], error: e.message };
     }
+    // One stream for the whole job, from the seed the page reports: the same seed and settings repeat the run, every
+    // Z search included. A job without a seed keeps Math.random(), and the search says so.
+    swSetSeed(Number.isSafeInteger(job.seed) ? job.seed : null);
 
     let device;
     try {
@@ -1746,6 +1749,8 @@ if (constraintBreak) {
         autoZ,
         densityMin: rho.lo,
         densityMax: rho.hi,
+        // The seed the whole job ran from (one stream, every Z search included), so a run can be repeated exactly.
+        seed: swSeed(),
         stopped: !!(best.stopped || (wyckoffStopRequested && solutions.length < zPlan.length))
     };
 }
@@ -1868,6 +1873,8 @@ globalThis.onmessage = async (e) => {
                 autoZ: !!res.autoZ,
                 densityMin: res.densityMin ?? null,
                 densityMax: res.densityMax ?? null,
+                // The seed the search actually ran from, so the page can report it and the run can be repeated.
+                seed: res.seed ?? null,
                 stopped: !!res.stopped
             }
         });
