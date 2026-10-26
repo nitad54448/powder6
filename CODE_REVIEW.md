@@ -11,13 +11,13 @@ Scope: the whole repository at the level of automated evidence (syntax, every No
 5. **Searches could not be repeated (fixed).** Item 3 of the 24 October list: the Wyckoff search's initial coordinates, restarts, replica exchanges, Gaussian deviates and GPU per-chain seeds now come from one seeded stream (`swSetSeed`/`swSeed` in `js/swarm_wyckoff.js`), fed by a **Seed** field in the Wyckoff and charge-flipping forms, recorded in the Log, the result, History and the project.
 6. **Developer notes (fixed).** `CLAUDE.md`'s Node command now uses the glob (it had omitted `anomalous` and `wyckoff-adaptation`).
 
-Still open from the 24 October list: the collective `quench()` proposal (item 4) and the statistical convergence benchmark (item 5).
+Still open from the 24 October list: the statistical convergence benchmark (item 5; item 4, site-wise `quench()` proposals, is implemented in 2.42.4).
 
 ## Focused code review — 24 October 2026
 
 Scope: Wyckoff proposal generation and search controls, command/result header surfaces. This is not an exhaustive audit of the refinement engine.
 
-Status of its “Remaining findings” (26 October): 1 and 2 are closed (the adaptation constants are injected by `swInject` and covered by `tests/wyckoff-adaptation.test.cjs`; `SW_DEFAULTS.minObsPerParam` no longer exists), 3 is closed (2.42.0, above), 4 and 5 remain open.
+Status of its “Remaining findings” (26 October): 1 and 2 are closed (the adaptation constants are injected by `swInject` and covered by `tests/wyckoff-adaptation.test.cjs`; `SW_DEFAULTS.minObsPerParam` no longer exists), 3 is closed (2.42.0, above), 4 is closed (2.42.4), and 5 remains open.
 
 ## Implemented in 2.23.0
 

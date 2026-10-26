@@ -5,7 +5,7 @@ RV.fitHistory = (function () {
   var St=RV.state,S=St.S,records=[],models={},data={},serial=1,method='lebail',busyView=false,active={},historySelected={};
   function clone(x){return JSON.parse(JSON.stringify(x,function(k,v){return ArrayBuffer.isView(v)?Array.from(v):v;}));}
   function bytes(x){return new TextEncoder().encode(JSON.stringify(x)).length;}
-  function phaseDoc(p){return {key:p.key,name:p.name,color:p.color,method:p.method,number:p.sg.number,symbol:p.sg.symbol,hall:p.sg.hall,profileType:p.profileType,separatedProfile:p.separatedProfile,broadening:p.broadening,poDir:p.poDir,constraints:p.constraints,atoms:p.atoms.map(function(a){return {label:a.label,type:a.type};}),v:p.v,fit:p.fit,provenance:p.provenance || null};}
+  function phaseDoc(p){return {key:p.key,name:p.name,color:p.color,method:p.method,number:p.sg.number,symbol:p.sg.symbol,hall:p.sg.hall,profileType:p.profileType,separatedProfile:p.separatedProfile,broadening:p.broadening,poDir:p.poDir,constraints:p.constraints,restraints:RV.restraintsOf(p.restraints),atoms:p.atoms.map(function(a){return {label:a.label,type:a.type};}),v:p.v,fit:p.fit,provenance:p.provenance || null};}
   function observation(d){data[d.dataKey]={key:d.dataKey,tth:d.tth,y:d.y,sig:d.sig,weights:d.weights};return d.dataKey;}
   function model(list){var keys=new Set();list.forEach(function(d){d.phases.forEach(function(k){keys.add(k);});});var value=clone(S.phases.filter(function(p){return keys.has(p.key);}).map(phaseDoc)),json=JSON.stringify(value),key=Object.keys(models).find(function(k){return JSON.stringify(models[k])===json;});if(!key){key='model-'+serial++;models[key]=value;}return key;}
   function dataset(d){var atoms=St.atomicValues(d);return clone({id:d.id,dataKey:observation(d),name:d.name,color:d.color || null,inst:d.inst,phases:d.phases,p:Object.keys(d.p).reduce(function(o,n){o[n]=Number.isFinite(atoms[n])?atoms[n]:d.p[n];return o;},{}),step:d.step,fit:d.fit,esd:d.esd,stats:d.stats,ints:d.ints,apart:d.apart,sim:d.sim});}
@@ -109,7 +109,7 @@ RV.fitHistory = (function () {
     var g=r.global && r.datasets[0] && r.datasets[0].stats && r.datasets[0].stats.globalSummary;
     if(g)out.push({title:'Global fit summary',open:true,kv:[['Points',g.n],['Refined variables',g.nVar],['Free intensities',g.nInt],['Degrees of freedom',g.dof],['χ²',g.chi2],['Reduced χ²',g.chi2red],['GOF',g.GOF],['Rp',pctOf(g.Rp)],['Rwp',pctOf(g.Rwp)],['Rexp',pctOf(g.Rexp)],['Iterations',g.iter],['Algorithm',g.algorithm],['Result',g.msg]]});
     var phases=models[r.model] || [];
-    if(phases.length)out.push({title:'Phases ('+phases.length+')',head:['Phase','Space group','Method','Profile','Atoms','Origin'],rows:phases.map(function(p){return [p.name,p.symbol+' ('+p.number+')',p.method,p.profileType || '—',(p.atoms || []).map(function(a){return a.label+(a.type && a.type!==a.label.replace(/\d+$/,'')?' ('+a.type+')':'');}).join(', ') || 'none',p.provenance?(p.provenance.label || p.provenance.kind)+(p.provenance.dataset?', '+p.provenance.dataset:''):'—'];})});
+    if(phases.length)out.push({title:'Phases ('+phases.length+')',head:['Phase','Space group','Method','Profile','Atoms','Restraints','Origin'],rows:phases.map(function(p){var rs=RV.restraintsOf(p.restraints),nr=typeof AtomRestraints!=='undefined' && AtomRestraints.hasRules(rs)?AtomRestraints.parse(rs.text).windows.length:0;return [p.name,p.symbol+' ('+p.number+')',p.method,p.profileType || '—',(p.atoms || []).map(function(a){return a.label+(a.type && a.type!==a.label.replace(/\d+$/,'')?' ('+a.type+')':'');}).join(', ') || 'none',nr,p.provenance?(p.provenance.label || p.provenance.kind)+(p.provenance.dataset?', '+p.provenance.dataset:''):'—'];})});
     if(r.solution)out=out.concat(solutionSections(r.kind,r.solution));
     var limits=o.limits || {},limitRows=Object.keys(limits).map(function(k){return [paramLabel(k,names),num(limits[k][0]),num(limits[k][1])];});
     if(limitRows.length)out.push({title:'Parameter limits ('+limitRows.length+')',head:['Parameter','Lower','Upper'],rows:limitRows});
@@ -156,9 +156,9 @@ RV.fitHistory = (function () {
   }
   function sectionHTML(s){
     var esc=RV.ui.esc,body;
-    if(s.kv)body='<dl class="sv-dl">'+s.kv.map(function(kv){return '<dt>'+esc(kv[0])+'</dt><dd>'+esc(num(kv[1]))+'</dd>';}).join('')+'</dl>';
-    else if(s.pre!=null)body='<pre class="history-log">'+esc(s.pre)+'</pre>';
-    else body='<div class="table-wrap"><table class="grid compact"><thead><tr>'+s.head.map(function(h){return '<th>'+esc(h)+'</th>';}).join('')+'</tr></thead><tbody>'+s.rows.map(function(row){return '<tr>'+row.map(function(c){return '<td>'+esc(num(c))+'</td>';}).join('')+'</tr>';}).join('')+'</tbody></table></div>';
+    if(s.kv)body=(body || '')+'<dl class="sv-dl">'+s.kv.map(function(kv){return '<dt>'+esc(kv[0])+'</dt><dd>'+esc(num(kv[1]))+'</dd>';}).join('')+'</dl>';
+    if(s.pre!=null)body=(body || '')+'<pre class="history-log">'+esc(s.pre)+'</pre>';
+    if(s.head && s.rows && s.rows.length)body=(body || '')+'<div class="table-wrap"><table class="grid compact"><thead><tr>'+s.head.map(function(h){return '<th>'+esc(h)+'</th>';}).join('')+'</tr></thead><tbody>'+s.rows.map(function(row){return '<tr>'+row.map(function(c){return '<td>'+esc(num(c))+'</td>';}).join('')+'</tr>';}).join('')+'</tbody></table></div>';
     return '<details class="object-group"'+(s.open?' open':'')+'><summary>'+esc(s.title)+'</summary>'+body+'</details>';
   }
   // Dataset blocks are filled when opened: a batch can hold hundreds of datasets.
@@ -168,7 +168,7 @@ RV.fitHistory = (function () {
       r.datasets.map(function(d,i){return '<details class="object-group history-dataset" data-history-detail="'+r.id+'" data-history-index="'+i+'"'+(one?' open':'')+'><summary>Dataset '+esc(d.name)+'</summary>'+(one?datasetSections(r,d).map(sectionHTML).join(''):'')+'</details>';}).join('')+'</section>';
   }
   function fillDataset(el){if(el.dataset.filled)return;var r=find(el.dataset.historyDetail),d=r && r.datasets[+el.dataset.historyIndex];if(!d)return;el.dataset.filled='1';if(el.children.length>1)return;el.insertAdjacentHTML('beforeend',datasetSections(r,d).map(sectionHTML).join(''));}
-  function sectionText(s){var L=['','## '+s.title];if(s.kv)s.kv.forEach(function(kv){L.push(kv[0]+'\t'+num(kv[1]));});else if(s.pre!=null)L.push(s.pre);else{L.push(s.head.join('\t'));s.rows.forEach(function(row){L.push(row.map(num).join('\t'));});}return L;}
+  function sectionText(s){var L=['','## '+s.title];if(s.kv)s.kv.forEach(function(kv){L.push(kv[0]+'\t'+num(kv[1]));});if(s.pre!=null)L.push(s.pre);if(s.head && s.rows && s.rows.length){L.push(s.head.join('\t'));s.rows.forEach(function(row){L.push(row.map(num).join('\t'));});}return L;}
   function runReport(r){
     var L=['# Powder 6 · '+runTitle(r)+' · '+r.id+' · '+new Date(r.time).toLocaleString()];
     runSections(r).forEach(function(s){L=L.concat(sectionText(s));});

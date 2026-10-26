@@ -150,12 +150,11 @@ var FourierMap = (function () {
     return { fo: fo, fc: Float64Array.from(amp2, Math.sqrt), known: known, nObs: nObs, scale: rbar };
   }
 
-  function nearestAtom(cell, G, orbits, atoms, p) {
+  function minDist2(G, a, b) { var d0 = [a[0] - b[0], a[1] - b[1], a[2] - b[2]].map(function (v) { return v - Math.round(v); }), best = Infinity; for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++) for (var k = -1; k <= 1; k++) { var x = d0[0] + i, y = d0[1] + j, z = d0[2] + k, s = x * (G[0] * x + G[1] * y + G[2] * z) + y * (G[3] * x + G[4] * y + G[5] * z) + z * (G[6] * x + G[7] * y + G[8] * z); if (s < best) best = s; } return Math.max(0, best); } function nearestAtom(cell, G, orbits, atoms, p) {
     var best = { atom: null, distance: Infinity };
     orbits.forEach(function (o, j) {
       o.forEach(function (q) {
-        var d0 = [p[0] - q[0], p[1] - q[1], p[2] - q[2]], n = d0.map(Math.round), d = [d0[0] - n[0], d0[1] - n[1], d0[2] - n[2]];
-        var r2 = d[0] * (G[0] * d[0] + G[1] * d[1] + G[2] * d[2]) + d[1] * (G[3] * d[0] + G[4] * d[1] + G[5] * d[2]) + d[2] * (G[6] * d[0] + G[7] * d[1] + G[8] * d[2]);
+        var r2 = minDist2(G, p, q);
         if (r2 < best.distance * best.distance) best = { atom: atoms[j].label, distance: Math.sqrt(r2) };
       });
     });
@@ -175,7 +174,7 @@ var FourierMap = (function () {
         if ((di || dj || dk) && sign * (at(i + di, j + dj, k + dk) - mean) > v) { top = false; break; }
       }
       if (!top) continue;
-      var c = at(i, j, k), p = [(i + vertex(at(i - 1, j, k), c, at(i + 1, j, k)) * sign) / N, (j + vertex(at(i, j - 1, k), c, at(i, j + 1, k)) * sign) / N, (k + vertex(at(i, j, k - 1), c, at(i, j, k + 1)) * sign) / N];
+      var c = at(i, j, k), p = [(i + vertex(at(i - 1, j, k), c, at(i + 1, j, k))) / N, (j + vertex(at(i, j - 1, k), c, at(i, j + 1, k))) / N, (k + vertex(at(i, j, k - 1), c, at(i, j, k + 1))) / N];
       p = p.map(function (x) { return x - Math.floor(x); });
       var near = nearestAtom(cell, G, orbits, atoms, p);
       found.push({ x: p[0], y: p[1], z: p[2], height: c - mean, sigmas: (c - mean) / sigma, sign: sign, atom: near.atom, distance: near.distance });
@@ -222,7 +221,7 @@ var FourierMap = (function () {
     list.forEach(function (p) {
       var img = orbit(ops, [p.x, p.y, p.z]), dup = kept.find(function (q) {
         if (q.sign !== p.sign) return false;
-        return img.some(function (o) { var d = [q.x - o[0], q.y - o[1], q.z - o[2]].map(function (v) { return v - Math.round(v); }); return d[0] * d[0] * G[0] + d[1] * d[1] * G[4] + d[2] * d[2] * G[8] + 2 * (d[0] * d[1] * G[1] + d[0] * d[2] * G[2] + d[1] * d[2] * G[5]) < 0.16; });
+        return img.some(function (o) { return minDist2(G, [q.x, q.y, q.z], o) < 0.16; });
       });
       if (dup) dup.copies = (dup.copies || 1) + 1; else { p.copies = 1; kept.push(p); }
     });

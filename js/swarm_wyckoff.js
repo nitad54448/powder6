@@ -2051,10 +2051,7 @@ async function runWyckoffSearch(o) {
                 positions.set(gBestPos.subarray(gb, gb + coordsPerParticle), base);
             }
 
-            // Re-measure at the final objective before descending from it.
-            const f0 = await evaluateCoordsSync(positions);
-            recordBest(f0, positions, scale);
-            for (let i = 0; i < numParticles; i++) curFit[i] = f0[i];
+            for (let i = 0; i < numParticles; i++) curFit[i] = gBestFit[assignOf[i]]; const movableOf = assignments.map((_, A) => { const m = [], nS = T.siteCount[A]; for (let s = 0; s < nS; s++) { const pb = (A * T.maxSites + s) * 12; if (T.siteProj[pb] + T.siteProj[pb + 4] + T.siteProj[pb + 8] > 1e-6) m.push(s); } return m; }); const quenchPropose = (i, base, sd) => { const mov = movableOf[assignOf[i]]; proposals.set(positions.subarray(base, base + coordsPerParticle), base); const pick = mov.length > 1 && RANDOM() < 0.75 ? [mov[Math.floor(RANDOM() * mov.length)]] : mov; for (let m = 0; m < pick.length; m++) for (let c = 0; c < 3; c++) { const k = pick[m] * 3 + c, x = positions[base + k] + swGaussian() * sd; proposals[base + k] = x - Math.floor(x); } };
 
             const steps = SW_DEFAULTS.quenchSteps;
             for (let q = 0; q < steps; q++) {
@@ -2066,8 +2063,8 @@ async function runWyckoffSearch(o) {
                 for (let i = 0; i < numParticles; i++) {
                     const base = i * coordsPerParticle;
                     for (let k = 0; k < coordsPerParticle; k++) {
-                        const x = positions[base + k] + swGaussian() * sd;
-                        proposals[base + k] = x - Math.floor(x);
+                        if (k === 0) quenchPropose(i, base, sd);
+                        // site-wise or collective perturbation written by quenchPropose
                     }
                     projectSites(proposals, i, assignOf[i], T);
                 }

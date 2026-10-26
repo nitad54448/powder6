@@ -443,7 +443,7 @@ RV.state = (function () {
     ds.p = np; ds.fit = nf; ds.esd = ne;
     syncSites(ds);
   }
-  function remapAll() { S.datasets.forEach(function (ds) { remap(ds); ds.ints = null; invalidate(ds); }); }
+  function pruneLinks() { if (!Array.isArray(S.parameterLinks) || !S.parameterLinks.length) return; S.parameterLinks = S.parameterLinks.filter(function (l) { if (!l || !l.source || !l.target) return false; var sd = byId(l.source.datasetId), td = byId(l.target.datasetId); return !!(sd && td && own(sd.p, l.source.name) && own(td.p, l.target.name) && isVariable(l.source.name) && isVariable(l.target.name)); }); } function remapAll() { S.datasets.forEach(function (ds) { remap(ds); ds.ints = null; invalidate(ds); }); pruneLinks(); }
 
   // ---------------------------------------------------------------- shared flags and limits
   function shareable(name) { var k = C.classify(name).kind; return k === 'cell' || k === 'atom' || k === 'po' || k === 'profile' || k === 'zero' || k === 'disp' || k === 'transp' || k === 'instrument'; }
@@ -718,7 +718,7 @@ RV.state = (function () {
       invalidate(ds);
       changed++;
     });
-    if (changed) { S.version++; RV.bus.emit('phases'); RV.bus.emit('datasets'); RV.bus.emit('params', {}); }
+    if (changed) { pruneLinks(); S.version++; RV.bus.emit('phases'); RV.bus.emit('datasets'); RV.bus.emit('params', {}); }
     return changed;
   }
 
@@ -785,7 +785,7 @@ RV.state = (function () {
     ph.v[pre + 'x'] = site.pos[0]; ph.v[pre + 'y'] = site.pos[1]; ph.v[pre + 'z'] = site.pos[2];
     ph.v[pre + 'occ'] = Number.isFinite(a.occ) ? a.occ : 1;
     ph.v[pre + 'B'] = Number.isFinite(a.B) ? a.B : 0.5;
-    ['x', 'y', 'z', 'occ', 'B'].forEach(function (c) { ph.fit[pre + c] = false; });
+    ['x', 'y', 'z', 'occ', 'B'].forEach(function (c) { ph.fit[pre + c] = false; S.datasets.forEach(function (ds) { if (ds.mem) delete ds.mem[pre + c]; Object.keys(ds.calculations || {}).forEach(function (m) { var b = ds.calculations[m]; if (b) { delete b.p[pre + c]; delete b.fit[pre + c]; delete b.esd[pre + c]; } }); }); });
     return label;
   }
   // ids: the datasets that hold the new phase (default: every dataset)
@@ -826,7 +826,7 @@ RV.state = (function () {
       var rp = AtomRestraints.prune(ph.atoms, ph.restraints);
       if (rp.dropped.length) { ph.restraints = Object.assign({}, ph.restraints, { text: rp.text }); rp.dropped.forEach(function (m) { RV.ui.log('Restraints of ' + ph.name + ': removed "' + m + '" (an atom it names is gone).', 'warn'); }); RV.ui.toast(rp.dropped.length + ' restraint rule' + (rp.dropped.length === 1 ? '' : 's') + ' of ' + ph.name + ' removed: ' + (rp.dropped.length === 1 ? 'it names' : 'they name') + ' a missing atom (see the Log).', 'warn'); }
     }
-    S.datasets.forEach(function (d) { d.stats = null; d.esd = {}; });
+    S.datasets.forEach(function (d) { d.stats = null; d.esd = {}; if (hasPhase(d, ph)) Object.keys(d.calculations || {}).forEach(function (m) { var b = d.calculations[m]; if (b) { b.stats = null; b.esd = {}; b.ints = null; } }); });
     S.version++;
     remapAll();
     RV.bus.emit('phases'); RV.bus.emit('params', {});
@@ -843,7 +843,7 @@ RV.state = (function () {
     var before = ph.atoms.map(function (a) { return a.label; });
     ph.atoms.forEach(function (a) { if (a.label === oldLabel) a.label = label; });
     (ph.constraints || []).forEach(function(c){c.atoms=c.atoms.map(function(a){return a===oldLabel?label:a;});});
-    if(ph.restraints && ph.restraints.text)ph.restraints.text=AtomRestraints.relabel(before,ph.restraints.text,oldLabel,label);
+    if(ph.restraints && ph.restraints.text)ph.restraints.text=AtomRestraints.relabel(before,ph.restraints.text,oldLabel,label); (S.parameterLinks || []).forEach(function (l) { if (l.source && l.source.name.indexOf(from) === 0) l.source.name = to + l.source.name.slice(from.length); if (l.target && l.target.name.indexOf(from) === 0) l.target.name = to + l.target.name.slice(from.length); });
     [ph.v, ph.fit, S.shared, S.limits].forEach(function (m) { renameKeys(m, from, to); });
     S.datasets.forEach(function (ds) { [ds.p, ds.fit, ds.esd, ds.mem, ds.apart].forEach(function (m) { renameKeys(m, from, to); });Object.keys(ds.calculations || {}).forEach(function(k){var bank=ds.calculations[k];[bank.p,bank.fit,bank.esd,bank.apart].forEach(function(m){if(m)renameKeys(m,from,to);});bank.stats=null;bank.ints=null;}); });
     phaseChanged(ph);
@@ -870,7 +870,7 @@ RV.state = (function () {
     S.datasets.forEach(function (ds) { Object.keys(ds.calculations || {}).forEach(function (m) {
       var b = ds.calculations[m]; [b.p, b.fit, b.esd].forEach(drop); b.stats = null; b.ints = null;
     }); });
-    ph.atoms = [];ph.constraints=[];
+    ph.atoms = [];ph.constraints=[]; S.parameterLinks = S.parameterLinks.filter(function (l) { return !mine(l.source.name) && !mine(l.target.name); });
     var used = new Set(), c = cell || cellOf(ph, ph.v);
     atoms.forEach(function (a) { addAtomTo(ph, a, c, used); });
     S.datasets.forEach(function (ds) { ds.stats = null; ds.esd = {}; });

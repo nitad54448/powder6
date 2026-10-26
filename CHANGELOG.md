@@ -2,6 +2,13 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.42.4 — 26 October 2026
+
+1. **History keeps phase restraints and anomalous tables.** Calculation checkpoints now store each phase’s geometric restraints (`rv_fit_history.js`, `phaseDoc`), so exported text and PDF reports include `## Restraints` when inspecting a saved run, **Set** / **Use as start** restores them, and editing restraints marks the working setup as changed since the run. History sections that carry both key–value pairs and a table (`Anomalous scattering`) now render and export the per-element `f′`/`f″` table instead of stopping after the key–value list.
+2. **Parameter links and saved calculations follow structural edits.** Parameter links follow renamed atoms, are pruned when a linked phase, atom, dataset-phase assignment or free variable leaves the model (`rv_state.js`, `pruneLinks`), convert their displayed multiplier to display units (`rv_workspace.js`, `rv_panels.js`), and use collision-free IDs. Adding an atom or editing a phase clears stale entries in `ds.mem` and saved calculation banks (`ds.calculations`).
+3. **Fourier maps, Wyckoff quench and coordinate refinement.** Parabolic sub-voxel interpolation of negative difference-map peaks (`fourier_map.js`) no longer negates the offset for holes, and nearest-atom / equivalent-peak distances search the 27 lattice translations in oblique cells. The Wyckoff closing `quench()` (`swarm_wyckoff.js`) reuses the full-resolution fitness just computed by `rescoreAtFullResolution` instead of running a duplicate GPU evaluation pass, and mixes single movable-site proposals (75 %) with collective movable-site proposals (25 %), leaving fixed special positions untouched. `refineCoordinatesAgainstWppf` (`coord_refine.js`) reports the actual number of accepted steps.
+4. **Style and tests.** Four literal radii and a heading font size in `powder6.css` now use `:root` tokens (`--radius-xs`, `--fs-md`). Node regression tests cover History restraints and anomalous tables, link renaming and pruning, negative Fourier peak interpolation, oblique minimum-image distances and `coord_refine` step counts.
+
 ## 2.42.3 — 26 October 2026
 
 1. **A smaller question mark.** The help icon is 80 % of a small control (`--help-q-h`, `--help-q-fs` from `--ctl-h-sm` and `--fs-sm`) everywhere it is used, so a title line carries it without shouting. It is the same widget in every panel, and the help it opens is unchanged.

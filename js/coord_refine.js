@@ -513,7 +513,7 @@ if (nObsUsed <= nFree + 1) {
     let chi = chiOf(Ical, scale);
     const chi2Start = chi, Rstart = rOf(Ical, scale);
 
-    let lambda = opt.lambda0, iter = 0, converged = false;
+    let lambda = opt.lambda0, iter = 0, steps = 0, converged = false;
     const J = new Float64Array(groups.length * nP);
     const JTJ = new Float64Array(nP * nP);
     const JTr = new Float64Array(nP);
@@ -607,7 +607,7 @@ if (nObsUsed <= nFree + 1) {
                 }
                 scale = sTr; chi = chiTr;
                 lambda = Math.max(lambda * opt.lambdaDown, 1e-12);
-                stepped = true;
+                stepped = true; steps++;
                 if (moved < opt.tolStep || rel < opt.tolChi) converged = true;
                 break;
             }
@@ -649,7 +649,7 @@ if (nObsUsed <= nFree + 1) {
         // on. A residual whose weighting is unstated is not interpretable.
         weighted: true,
         nSigmaWeighted, nGroupsTotal: groups.length,
-        iterations: iter + 1, converged,
+        iterations: steps, converged,
         nObs: nObsUsed,
         nParams: nFree,        // free coordinates, after the Wyckoff constraints
         nAmbient: nP,          // 3N, the space the normal equations live in
@@ -657,7 +657,7 @@ if (nObsUsed <= nFree + 1) {
     };
 }
 
-/** Cholesky with a partial-pivot LU fallback. Returns null if singular. */
+/** Cholesky solver for the damped normal matrix. Returns null if not positive definite. */
 function crSolve(A, b, n) {
     const L = new Float64Array(n * n);
     let ok = true;

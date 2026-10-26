@@ -298,7 +298,7 @@ RV.panels = (function () {
     host.classList.toggle('global', g);
     // GSAS-II atomic constraints (Rietveld only): held, independent, dependent and equation terms are marked
     var acRoles = {};
-    S.parameterLinks.filter(function(l){return l.target.datasetId===ds.id;}).forEach(function(l){acRoles[l.target.name]={role:'dependent',ignore:true,editable:true,follows:{name:l.source.name,datasetId:l.source.datasetId},text:'Follows '+l.factor+' × '+l.source.name+' in '+(St.byId(l.source.datasetId)||{}).name+' + '+(l.offset || 0)};});
+    S.parameterLinks.filter(function(l){return l.target.datasetId===ds.id;}).forEach(function(l){var lf=+Number(l.factor*St.toDisplay(l.target.name,1)/St.toDisplay(l.source.name,1)).toPrecision(6);acRoles[l.target.name]={role:'dependent',ignore:true,editable:true,follows:{name:l.source.name,datasetId:l.source.datasetId},text:'Follows '+lf+' × '+l.source.name+' in '+(St.byId(l.source.datasetId)||{}).name+' + '+St.toDisplay(l.target.name,l.offset || 0)};});
     if (S.calculation === 'rietveld' && typeof AtomicConstraints !== 'undefined') S.phases.forEach(function (ph) {
       if (ph.method === 'rietveld' && ph.constraints && ph.constraints.length && St.hasPhase(ds, ph)) { try { Object.assign(acRoles, AtomicConstraints.roles(ph, ds.fit)); } catch (e) { /* shown by the editor */ } }
     });
