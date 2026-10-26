@@ -74,22 +74,22 @@
 #                    they are precomputable, and the consumer needs no distance
 #                    tolerance to decide how many atoms a site generates.
 #
-# CHANGE 2: one JSON file per space group, in ./sg/, plus a light index.
+# CHANGE 2 (now optional): one JSON file per space group, in ./sg/, plus a light index.
 #
-#   The single monolithic file held all 230 groups in all settings. Only one
-#   setting is ever live, so the browser parsed the whole thing to use a
-#   fraction of a percent of it. sg/index.json now carries just enough to build
-#   a space-group picker (symbols, settings, Laue class), and sg/62.json is
-#   fetched only when the user actually selects Pnma.
-#
-#   The monolithic file is STILL WRITTEN by default, because sg_engine.js has
-#   not been migrated yet. Pass --no-legacy once it has.
+#   Powder 6 reads ONLY sg/all.json: the picker lists all 230 groups and the
+#   analysis paths are synchronous, so the whole database is in memory anyway
+#   (rv_app.js fetches sg/all.json once). A split layout - sg/index.json for the
+#   picker plus sg/62.json fetched when Pnma is selected - is still useful to a
+#   consumer that wants one group at a time, so it is written on request with
+#   --split. It is not part of this repository: a plain run writes sg/all.json
+#   and nothing else.
 #
 # Usage:
-#   python cctbx_Harko_v1.py                 all groups, ./sg/ plus legacy file
+#   python cctbx_Harko_v1.py                 all groups, sg/all.json
 #   python cctbx_Harko_v1.py --only 62,206   just those two, for testing
 #   python cctbx_Harko_v1.py --out ../app    write somewhere else
-#   python cctbx_Harko_v1.py --no-legacy     skip the monolithic file
+#   python cctbx_Harko_v1.py --split         also sg/<n>.json and sg/index.json
+#   python cctbx_Harko_v1.py --legacy        also the old formatted monolith
 #   python cctbx_Harko_v1.py --pretty        indent the per-group files
 #
 # --- v6/v5 header retained below ---
@@ -959,17 +959,16 @@ def resolve_output_dir(explicit):
     return here
 
 
-def write_split_database(sorted_data, out_dir, pretty=False):
-    """One file per space-group NUMBER in sg/, plus a light index.
+def write_database(sorted_data, out_dir, pretty=False, split=False):
+    """Write sg/all.json, and on request the split layout.
 
-    Per NUMBER rather than per SETTING: the app picks a number first and offers
-    its settings afterwards, so a file holding every setting of one group is
-    exactly one fetch per user choice. Splitting per setting would mean the app
-    could not list the settings without fetching them all.
+    sg/all.json is the single file Powder 6 reads: one compact object holding
+    every group and setting, fetched once at start-up.
 
-    The index carries enough to populate the picker - symbol, crystal system,
-    Laue class and a one-line summary of each setting - so nothing is fetched
-    until a group is actually selected.
+    split=True adds one file per space-group NUMBER (sg/62.json) and a light
+    index (sg/index.json) carrying enough to populate a picker without fetching
+    the groups. Kept for a consumer that wants one group at a time; nothing in
+    this repository reads them.
     """
     sg_dir = os.path.join(out_dir, SG_DIR_NAME)
     os.makedirs(sg_dir, exist_ok=True)
@@ -978,8 +977,8 @@ def write_split_database(sorted_data, out_dir, pretty=False):
     if pretty:
         dump_kw['indent'] = 2
     else:
-        # Compact by default: these files are machine-read, and dropping the
-        # indentation takes roughly a third off the bytes the browser fetches.
+        # Compact by default: the split files are machine-read, and dropping the
+        # indentation takes roughly a third off their bytes.
         dump_kw['separators'] = (',', ':')
 
     index = OrderedDict()
@@ -995,13 +994,14 @@ def write_split_database(sorted_data, out_dir, pretty=False):
         for k, v in entry.items():
             payload[k] = v
 
-        path = os.path.join(sg_dir, f"{num}.json")
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(payload, f, **dump_kw)
-        size = os.path.getsize(path)
-        total_bytes += size
-        if size > biggest[1]:
-            biggest = (f"{num}.json", size)
+        if split:
+            path = os.path.join(sg_dir, f"{num}.json")
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f, **dump_kw)
+            size = os.path.getsize(path)
+            total_bytes += size
+            if size > biggest[1]:
+                biggest = (f"{num}.json", size)
 
         index["space_groups"][num] = OrderedDict([
             ("number", entry["number"]),
@@ -1035,14 +1035,16 @@ def write_split_database(sorted_data, out_dir, pretty=False):
     with open(all_path, 'w', encoding='utf-8') as f:
         json.dump(all_payload, f, ensure_ascii=False, separators=(',', ':'))
 
-    index_path = os.path.join(sg_dir, INDEX_NAME)
-    with open(index_path, 'w', encoding='utf-8') as f:
-        json.dump(index, f, ensure_ascii=False, indent=2)
-
-    print(f"\nWrote {len(sorted_data)} group files to {sg_dir}")
-    print(f"  all.json  {os.path.getsize(all_path)/1024:.0f} KB  (single-request fast path)")
-    print(f"  total {total_bytes/1024:.0f} KB, largest {biggest[0]} at {biggest[1]/1024:.0f} KB")
-    print(f"  index {os.path.getsize(index_path)/1024:.0f} KB ({INDEX_NAME})")
+    if split:
+        index_path = os.path.join(sg_dir, INDEX_NAME)
+        with open(index_path, 'w', encoding='utf-8') as f:
+            json.dump(index, f, ensure_ascii=False, indent=2)
+        print(f"\nWrote {len(sorted_data)} group files to {sg_dir}")
+        print(f"  all.json  {os.path.getsize(all_path)/1024:.0f} KB  (every group and setting)")
+        print(f"  total {total_bytes/1024:.0f} KB, largest {biggest[0]} at {biggest[1]/1024:.0f} KB")
+        print(f"  index {os.path.getsize(index_path)/1024:.0f} KB ({INDEX_NAME})")
+    else:
+        print(f"\nWrote {all_path}  ({os.path.getsize(all_path)/1024:.0f} KB, every group and setting)")
     return sg_dir
 
 
@@ -1129,8 +1131,10 @@ def parse_args():
                    help="comma-separated space-group numbers, e.g. 62,206 - for quick tests")
     p.add_argument('--pretty', action='store_true',
                    help="indent the per-group files (about 50%% larger)")
-    p.add_argument('--no-legacy', action='store_true',
-                   help="skip the monolithic cctbx_space_groups_all_settings_v6.json")
+    p.add_argument('--split', action='store_true',
+                   help="also write sg/<n>.json and sg/index.json (nothing in Powder 6 reads them)")
+    p.add_argument('--legacy', action='store_true',
+                   help="also write the old formatted monolith cctbx_space_groups_all_settings_v6.json")
     p.add_argument('--no-check', action='store_true',
                    help="skip the group-closure verification (it is the slow part)")
     return p.parse_args()
@@ -1144,7 +1148,7 @@ def main():
         only = set(int(x) for x in args.only.replace(' ', '').split(',') if x)
 
     print("=" * 62)
-    print("sHarko space-group generator v1 - Wyckoff projections, split output")
+    print("sHarko space-group generator v1 - Wyckoff projections, sg/all.json")
     print("=" * 62)
     if only:
         print(f"Restricted to space group(s): {sorted(only)}")
@@ -1162,19 +1166,18 @@ def main():
         sorted_data[k]["settings"].sort(key=lambda x: x["symbol"])
 
     out_dir = resolve_output_dir(args.out)
-    write_split_database(sorted_data, out_dir, pretty=args.pretty)
+    write_database(sorted_data, out_dir, pretty=args.pretty, split=args.split)
 
-    if not args.no_legacy:
+    if args.legacy:
         wrapper = OrderedDict()
         wrapper["schema_version"] = SCHEMA_VERSION
         wrapper["space_groups"] = sorted_data
         legacy = os.path.join(out_dir, LEGACY_OUTPUT_NAME)
         with open(legacy, 'w', encoding='utf-8') as f:
             json.dump(wrapper, f, indent=2, ensure_ascii=False)
-        print(f"\nAlso wrote the legacy monolithic file:")
+        print(f"\nAlso wrote the old formatted monolith:")
         print(f"  {legacy}  ({os.path.getsize(legacy)/1024/1024:.1f} MB)")
-        print("  sg_engine.js and refinement_worker.js still fetch this. Once they")
-        print("  read sg/index.json instead, re-run with --no-legacy.")
+        print("  Nothing in Powder 6 reads it; kept for older consumers only.")
 
     if not args.no_check:
         verify(sorted_data)

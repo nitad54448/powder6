@@ -2,7 +2,14 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.42.12 — 26 October 2026
+
+1. **`sg/` carries only the file the page reads.** It held 230 per-group files and `sg/index.json` (4.69 MB) that nothing fetched: `rv_app.js` loads `sg/all.json` once, and the picker lists every group from it. They were the staged lazy-load layout, so `scripts/cctbx_Harko_v1.py` now writes `sg/all.json` by default, the split layout only with `--split` (it used to be written always) and the old formatted monolith only with `--legacy` (it used to be written unless `--no-legacy`). A re-run no longer recreates 231 unused files.
+2. **Unused scripts and reference data removed.** `scripts/cctbx_generate_sg_harker_v7.py` (schema 7; the shipped data is schema 8 and names `cctbx_Harko_v1.py` as its generator), `scripts/wyckoff_patch.py` and `scripts/wyckoff_probe.py` (instructions for patching a `cctbx_generate_sg_harker_v6.py` that does not exist, applied long ago), and `tools/cif_pd.dic` (the powder CIF dictionary, 522 KB, read by no code). `tools/` is gone; `scripts/` holds the two generators that produced the shipped data.
+3. **Verified.** `python -m py_compile scripts/cctbx_Harko_v1.py`; 178 Node tests pass; the `workspace` and `wyckoff-search` browser pages pass — the latter runs the real GPU Wyckoff search on the shipped `sg/all.json`.
+
 ## 2.42.11 — 26 October 2026
+
 
 1. **The last references to removed code.** `profile.js`'s `intensityDerivativeColumn()` still documented a flat-list form "from `bucketContributionsByPeak`" (deleted in 2.42.9) and carried the flat-list branch that no caller used — the one caller, `rietveld_core.js`, passes the buckets it builds itself. The function takes `buckets` only now, and its doc says where they come from. `wyckoff_worker.js`'s note on automatic Z no longer cites `suggestZ()` by name; it describes the volume-per-atom estimate it replaced.
 2. **Verified.** 178 Node tests and the `wyckoff-search` browser page pass; no numerical behaviour changed.
