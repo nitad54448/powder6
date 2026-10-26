@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.42.7 — 26 October 2026
+
+1. **Shortcuts stay out of open dialogs.** While a modal dialog was open, F9 started a fit behind it and Ctrl+S opened a second save prompt; only the space-group overlay stopped them. Both now return while `#dlg` is open, and F9 no longer fires from inside a text field (Ctrl+Z already did not). `rv_app.js`.
+2. **A failed start-up says so.** `loadDatabases().then(...)` had no rejection handler: an exception from a `phases`/`tables` listener left the page half-started with an unhandled rejection and no message. It now says "Start-up did not finish: …" and what to check.
+3. **The project.json size limit no longer depends on JSZip's internals.** `declaredSize()` reads JSZip's private `_data.uncompressedSize`; if that ever disappears the check silently becomes a no-op before `JSON.parse`. The decoded string length is now checked as well, and a read failure is reported as such instead of as "not valid JSON" (`rv_project.js`).
+
 ## 2.42.6 — 26 October 2026
 
 1. **Distance rules no longer drop a token after the range.** `S O 4 1.40/1.60 2.0` and `S O 4 1.40/1.60 3` were accepted with the last number or count silently discarded — the same defect the 2.42.0 release fixed for the `A B dmin dmax` form, still present in the `A B N dmin/dmax` one. Both now fail with `"2.0" after "4 1.40/1.60" is not read - a rule is "A B dmin dmax" (or "A B N dmin/dmax [shape]")`, so a rule cannot say one thing and enforce another (`distance_rules.js`, one guard; covered by the existing "never drops a token" test).

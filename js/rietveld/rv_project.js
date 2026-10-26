@@ -57,6 +57,8 @@ RV.project = (function(){
   }
   // Limits on what an archive may claim, so a damaged or hostile file fails with a message instead of exhausting memory.
   var LIMITS={json:256e6,column:8e8,rows:100000,files:100000,archive:512e6,decoded:1e9};
+  // Advisory only: JSZip's per-entry header record. A missing one returns null, and the caller then relies on
+  // the decoded length (project.json) or on the field length it validated itself (observation columns).
   function declaredSize(entry){var d=entry && entry._data;return d && Number.isFinite(d.uncompressedSize)?d.uncompressedSize:null;}
   function plain(x){return !!x && typeof x==='object' && !Array.isArray(x);}
   async function unpack(buffer){if(typeof JSZip==='undefined')throw new Error('Project compression library is unavailable.');
@@ -66,8 +68,13 @@ RV.project = (function(){
     var total=0;
     entries.forEach(function(file){if(file.dir)return;var n=declaredSize(file);if(!Number.isSafeInteger(n) || n<0)throw new Error('Invalid archive entry size.');total+=n;if(total>LIMITS.archive)throw new Error('Project archive uncompressed size exceeds the limit.');});
     var entry=zip.file('project.json');if(!entry)throw new Error('This archive is not a Powder 6 project.');
+    // A declared size is only a cheap early exit: it comes from JSZip's private header record, which is not
+    // guaranteed to be there. The decoded length is the authoritative check, so the limit still holds when
+    // the header cannot be read.
     var size=declaredSize(entry);if(size!==null && size>LIMITS.json)throw new Error('project.json is too large to be a Powder 6 project.');
-    var doc;try{doc=JSON.parse(await entry.async('string'));}catch(e){throw new Error('project.json is not valid JSON.');}
+    var json;try{json=await entry.async('string');}catch(e){throw new Error('project.json could not be read.');}
+    if(json.length>LIMITS.json)throw new Error('project.json is too large to be a Powder 6 project.');
+    var doc;try{doc=JSON.parse(json);}catch(e){throw new Error('project.json is not valid JSON.');}
     // 4 stores the precision block as its own entry; 3 kept it in project.json, which reads back the same way.
     if(!plain(doc) || doc.format!=='powder6-project' || !(doc.version===3 || doc.version===4))throw new Error('Unsupported project format.');
     var pool=Object.create(null),rows=doc.observations;if(!Array.isArray(rows))throw new Error('Missing project observations.');if(rows.length>LIMITS.rows)throw new Error('Too many observation sets.');if(!Array.isArray(doc.datasets))throw new Error('Missing project datasets.');

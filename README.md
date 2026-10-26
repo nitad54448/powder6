@@ -1,6 +1,6 @@
 # Powder 6
 
-Version **2.42.6**, 26 October 2026. See [corrections](CHANGELOG.md).
+Version **2.42.7**, 26 October 2026. See [corrections](CHANGELOG.md).
 
 Refine powder diffraction patterns in the browser. Several phases and several patterns in one session, each phase by **Rietveld**, **Le Bail** or **WPPF**, fitted individually or in one global fit, with **structure solution** from the extracted intensities. Everything runs locally; nothing is uploaded.
 

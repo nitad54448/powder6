@@ -311,10 +311,13 @@
 
     document.addEventListener('keydown', function (e) {
       var typing = e.target.matches && e.target.matches('input, select, textarea');
-      if ($('#sg-modal-overlay').classList.contains('open')) return;
-      if (e.key === 'F9') { e.preventDefault(); RV.cmd.fit(); }
+      // A dialog or the space-group overlay owns the keyboard while it is open: a shortcut firing behind it
+      // (F9 starting a fit under a save prompt, Ctrl+S opening a second one) acts on a page whose state the
+      // user cannot see.
+      if ($('#sg-modal-overlay').classList.contains('open') || ($('#dlg') && $('#dlg').open)) return;
+      if (e.key === 'F9') { if (typing) return; e.preventDefault(); RV.cmd.fit(); }
       else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); RV.cmd.saveProject(); }
-      else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && !$('#dlg').open) { e.preventDefault(); RV.cmd.undo(); }
+      else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); RV.cmd.undo(); }
     });
     window.addEventListener('beforeunload', function (e) {
       var dirty=true;
@@ -342,6 +345,10 @@
     ui.toast('Loading the space groups and the scattering factors…', 'info');
     loadDatabases().then(function (notes) {
       if (notes.length >= 2) ui.toast('Ready: ' + notes.join(', ') + '. ' + (RV.pool.usingWorkers() ? (RV.pool.size() > 1 ? 'Fits run in up to ' + RV.pool.size() + ' parallel workers.' : 'Fits run in a worker.') : 'Web Workers are unavailable: fits run in this window.'), 'ok');
+    }).catch(function (e) {
+      // The databases have their own toasts; this catches what happens after them (a listener of the
+      // 'phases'/'tables' events throwing), so start-up cannot fail in silence.
+      ui.toast('Start-up did not finish: ' + ((e && e.message) || e) + '. Reload the page; if it persists, check that sg/ and scatters/ are beside index.html.', 'err');
     });
   }
 
