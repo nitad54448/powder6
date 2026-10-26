@@ -6,7 +6,7 @@
  *  'settings', 'theme', 'tab', 'tables', 'shared'.
  */
 var RV = window.RV || (window.RV = {});
-RV.version = '2.44.0 (26 oct 2026)';
+RV.version = '2.45.0 (26 oct 2026)';
 
 RV.bus = (function () {
   'use strict';

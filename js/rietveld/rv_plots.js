@@ -160,6 +160,7 @@ RV.plots = (function () {
     var anchorWhy=!list.some(function(ds){return ds.inst.bkgType==='spline' && ds.inst.bkgX.length;})?'Anchors are used only by spline backgrounds in the plotted datasets.':
       backgroundSubtracted(list)?'Anchors are hidden while background subtraction is enabled.':
       S.settings.plotMode==='overview' && list.length>1?'Choose Overlay or Inspect one dataset to display spline anchors.':'';
+    anchorLabel.hidden=!list.some(function(ds){return ds.inst.bkgType==='spline';});
     RV.ui.able(anchors,anchorWhy);anchorLabel.classList.toggle('disabled',!!anchorWhy);anchorLabel.title=anchorWhy || 'Show spline background anchors independently of the background curve.';
     var empty = S.datasets.length ? 'Select one or more datasets' : 'No data yet. Use File, drop files on this window, or type demo in the command line below.';
     P.pat.o.empty = empty;

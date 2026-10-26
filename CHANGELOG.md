@@ -2,6 +2,13 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.45.0 — 26 October 2026
+
+1. **Ctrl+click respects the chosen background.** The anchor-placement handler returns without changing anything in Chebyshev mode. It no longer changes the model to a spline, edits a parameter, enables display options or creates an undo entry. The Anchors checkbox is hidden for Chebyshev backgrounds; spline editing and Ctrl+Shift exclusions continue to work.
+2. **One background type for the project.** Background… explicitly selects Chebyshev or Spline for every dataset, including unselected datasets and new patterns. The project setting is authoritative; no dataset acts as a master and reordering the list does not change the choice. Each dataset retains its own term count, coefficients, anchor positions, heights and refinement flags. The explicit bkg>>n and anchors>>n commands select the corresponding common type.
+3. **Persistence and History.** The shared choice is stored in the project settings and undo snapshots. Switching fitting methods keeps the common type while restoring each method's own values. History inspection preserves the working setup; Set restores the recorded type across the project.
+4. **Checks.** Numerical regressions cover the Chebyshev no-op, unselected and imported datasets, ordering, independent background values, method switching, explicit commands, save/load, Undo and History. The browser check exercises real Ctrl+click input, the hidden Anchors control and explicit spline selection in Background….
+
 ## 2.44.0 — 26 October 2026
 
 1. **Parameters before Links.** Rename Parameter links and sharing to Parameters, directly before Links at the same level. Bounds remain available for the dataset being inspected.

@@ -35,6 +35,16 @@
         check(reset.hidden && plot.auto && RV.plots._plots.diff.auto,'Autoscale button must reset both plots and hide');
         record('Autoscale appears after zooming and hides after the button or either plot is reset');
         St.setSetting('showAnchors',false);await frame();check(!q('#show-anchors').checked,'Anchors preference did not clear its checkbox');
+        view();const beforeCtrl=JSON.stringify({inst:ds.inst,p:ds.p,fit:ds.fit,showAnchors:S.settings.showAnchors,showBkg:S.settings.showBkg});
+        clickData(23,81.25);await frame();
+        check(JSON.stringify({inst:ds.inst,p:ds.p,fit:ds.fit,showAnchors:S.settings.showAnchors,showBkg:S.settings.showBkg})===beforeCtrl,'Ctrl-click changed a Chebyshev background');
+        check(q('#show-anchors').closest('label').hidden,'Anchors is visible in Chebyshev mode');
+        record('Ctrl-click leaves Chebyshev unchanged and Anchors stays hidden');
+        const backgroundDialog=RV.cmd.background();await frame();
+        check(q('#dlg [data-key="type"]').closest('.body').textContent.includes('all datasets'),'Background dialog does not explain its scope');
+        q('#dlg [data-key="type"]').value='spline';q('#dlg [data-key="type"]').dispatchEvent(new w.Event('change',{bubbles:true}));
+        q('#dlg [data-key="anchors"]').value='10 70';q('#dlg .primary').click();await backgroundDialog;await frame();
+        check(other.inst.bkgType==='spline' && !q('#show-anchors').closest('label').hidden,'Explicit spline selection did not update all datasets or reveal Anchors');
         const placedPoints={};
         for(const [mode,x,y] of [['lin',23,81.25],['sqrt',37,93.75],['log',49,112.125]]){
             St.setSetting('yscale',mode);await frame();view();const point=clickData(x,y);placedPoints[mode]=point;await frame();

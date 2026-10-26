@@ -936,8 +936,71 @@ test('missing WebGPU uses CPU PT, while LM and extraction never request a GPU', 
   assert.equal(called, 0);
 });
 
+test('Ctrl-click cannot change a Chebyshev background, parameters or display preferences',()=>{
+  const a=model();a.context.RV.plots={anchorAt:()=>null};a.state.setSetting('showAnchors',false);a.state.setSetting('showBkg',false);
+  const before=plain({inst:a.ds.inst,p:a.ds.p,fit:a.ds.fit,settings:a.S.settings});
+  a.context.RV.cmd.markAt(25,42.75,100,120);
+  a.state.setSetting('noBackground',true);const messages=a.messages.length;a.context.RV.cmd.markAt(25,42.75,100,120);assert.equal(a.messages.length,messages);a.state.setSetting('noBackground',false);
+  assert.deepEqual(plain({inst:a.ds.inst,p:a.ds.p,fit:a.ds.fit,settings:a.S.settings}),before);
+});
+
+test('one project background type applies to unselected and newly imported datasets without copying their values',()=>{
+  const a=model(),other=a.state.insertDatasets([a.state.makeDataset({name:'other',tth:[100,110,120],y:[7,8,9],inst:{bkgN:3,lambda1:.8}})],{estimate:false,select:false})[0];
+  a.ds.p.bkg0=42;other.p.bkg0=7;
+  a.state.setInstrument([a.ds],{bkgType:'spline',bkgX:[10,30,60]});
+  assert.equal(a.state.backgroundType(),'spline');assert.ok(a.S.datasets.every(d=>d.inst.bkgType==='spline'));
+  assert.equal(other.inst.lambda1,.8);assert.equal(other.inst.bkgN,3);assert.ok(other.inst.bkgX.every(x=>x>=100 && x<=120));
+  other.p.bga0=17;other.fit.bga0=false;const before=plain({inst:other.inst,p:other.p,fit:other.fit});
+  a.state.setInstrument([a.ds],{bkgX:[10,40,60]});assert.deepEqual(plain({inst:other.inst,p:other.p,fit:other.fit}),before);
+  const added=a.state.insertDatasets([a.state.makeDataset({name:'new',tth:[200,210,220],y:[3,4,3],inst:{bkgType:'cheb'}})],{estimate:false,select:false})[0];
+  assert.equal(added.inst.bkgType,'spline');assert.ok(added.inst.bkgX.every(x=>x>=200 && x<=220));
+  a.state.move(other.id,null);assert.equal(a.state.backgroundType(),'spline');
+  a.state.setInstrument([a.ds],{bkgType:'cheb',bkgN:2});
+  assert.ok(a.S.datasets.every(d=>d.inst.bkgType==='cheb'));assert.equal(other.inst.bkgN,3);assert.equal(other.p.bkg0,7);assert.equal(a.ds.p.bkg0,42);
+  a.state.setInstrument([a.ds],{bkgType:'spline'});assert.equal(other.p.bga0,17);assert.equal(other.fit.bga0,false);
+});
+
+test('switching fit methods keeps the project background type and each method own spline heights',()=>{
+  const a=model();a.state.setCalculation('wppf');a.state.setInstrument([a.ds],{bkgType:'spline',bkgX:[10,40,70]});
+  a.ds.p.bga0=12;a.ds.fit.bga0=false;a.state.setCalculation('rietveld');
+  assert.equal(a.state.backgroundType(),'spline');assert.equal(a.ds.inst.bkgType,'spline');
+  a.ds.p.bga0=27;a.state.setCalculation('wppf');assert.equal(a.ds.p.bga0,12);assert.equal(a.ds.fit.bga0,false);
+  a.state.setCalculation('rietveld');assert.equal(a.ds.p.bga0,27);
+});
+
+test('project files restore the common background type directly from project settings',()=>{
+  const a=model();a.state.insertDatasets([a.state.makeDataset({name:'other',tth:[100,110,120],y:[7,8,9]})],{estimate:false,select:false});
+  a.state.setInstrument([a.ds],{bkgType:'spline',bkgX:[10,30,60]});
+  const doc=JSON.parse(a.state.projectJSON([]));assert.equal(doc.settings.inst.bkgType,'spline');
+  const b=app();b.state.commitProject(b.state.prepareProject(doc));assert.equal(b.state.backgroundType(),'spline');assert.ok(b.S.datasets.every(d=>d.inst.bkgType==='spline'));
+
+});
+
+test('explicit background commands select the common type while limiting per-dataset settings to the selection',()=>{
+  const a=model(),other=a.state.insertDatasets([a.state.makeDataset({name:'other',tth:[10,20,30],y:[7,8,9],inst:{bkgN:3}})],{estimate:false,select:false})[0];
+  a.context.RV.ui.parseNum=Number;
+  a.context.RV.cmd.runCommand('anchors>>4');assert.equal(a.state.backgroundType(),'spline');assert.equal(other.inst.bkgType,'spline');
+  a.context.RV.cmd.runCommand('bkg>>2');assert.equal(a.state.backgroundType(),'cheb');assert.equal(other.inst.bkgType,'cheb');assert.equal(other.inst.bkgN,3);
+});
+
+test('History inspection preserves the common type and Set restores the recorded type for every dataset',()=>{
+  const a=fitted(),h=a.context.RV.fitHistory,record=h.complete(h.begin([a.ds],false),[a.ds],false);
+  const other=a.state.insertDatasets([a.state.makeDataset({name:'other',tth:[10,20,30],y:[7,8,9]})],{estimate:false,select:false})[0];
+  a.state.setInstrument([a.ds],{bkgType:'spline'});h.withResult(record,()=>assert.equal(a.S.datasets[0].inst.bkgType,'cheb'));
+  assert.equal(a.state.backgroundType(),'spline');assert.equal(other.inst.bkgType,'spline');
+  h.restore(record.id);assert.equal(a.state.backgroundType(),'cheb');assert.ok(a.S.datasets.every(d=>d.inst.bkgType==='cheb'));
+});
+
+test('Undo restores the shared background type and all datasets together',()=>{
+  const a=model();a.state.insertDatasets([a.state.makeDataset({name:'other',tth:[10,20,30],y:[7,8,9]})],{estimate:false,select:false});
+  const before=plain(a.S.datasets.map(d=>({id:d.id,inst:d.inst,p:d.p,fit:d.fit})));
+  a.context.RV.history.take('common background');a.state.setInstrument([a.ds],{bkgType:'spline'});a.context.RV.history.undo();
+  assert.equal(a.state.backgroundType(),'cheb');assert.deepEqual(plain(a.S.datasets.map(d=>({id:d.id,inst:d.inst,p:d.p,fit:d.fit}))),before);
+});
+
 test('manual background anchors use both cursor coordinates and keep existing anchors', () => {
   const a = model(); a.context.RV.plots = { anchorAt: () => null };
+  a.state.setInstrument([a.ds],{bkgType:'spline',bkgX:[10,70]});
   a.context.RV.cmd.markAt(25, 42.75, 100, 120);
   assert.equal(a.ds.inst.bkgType, 'spline');
   let k = a.ds.inst.bkgX.indexOf(25); assert.ok(k >= 0);

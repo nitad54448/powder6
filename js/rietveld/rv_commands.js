@@ -885,12 +885,12 @@ RV.cmd = (function () {
     RV.app.showTab('datasets');
     var i = d.inst, placed = null;
     var v = await ui.prompt('Background', [
-      { key: 'type', label: 'Background', type: 'select', value: i.bkgType, options: [['cheb', 'Chebyshev polynomials over the fitted range'], ['spline', 'Spline through anchors (monotone cubic)']] },
+      { key: 'type', label: 'Background type (all datasets)', type: 'select', value: St.backgroundType(), options: [['cheb', 'Chebyshev polynomials over the fitted range'], ['spline', 'Spline through anchors (monotone cubic)']] },
       { key: 'bkgN', label: 'Terms', type: 'number', value: i.bkgN, when: 'type:cheb', hint: 'A whole number from 0 to 24.' },
       { key: 'anchors', label: 'Anchors at 2θ /°', type: 'text', value: i.bkgX.map(fmt6).join(' '), when: 'type:spline', hint: 'Separated by spaces. Empty: placed automatically in each dataset. Ctrl+click on the pattern places an anchor at both cursor coordinates, or removes the one under the cursor. Right-drag an anchor to move it; its height and refinement flag are in this dataset’s Background group.' },
       { key: 'nAuto', label: 'Anchors to place', type: 'number', value: S.settings.nAnchors, when: 'type:spline', hint: 'Place puts them at the two ends of the fitted range and at the lowest point of equal stretches between them, never in an excluded region.' }
     ], 'Apply', (list.length > 1 ? 'For the ' + plural(list.length, 'selected dataset') + ' (the values shown are those of ' + ui.esc(d.name) + '). ' : '') +
-       'The heights of new anchors start at the data; anchors that stay where they were keep their values.', {
+       'The background type applies to every dataset, including unselected datasets and patterns read later. Term counts, anchor positions, heights and refinement flags remain dataset-specific. The heights of new anchors start at the data; anchors that stay where they were keep their values.', {
       after: '<p class="buttons" data-when="type:spline"><button type="button" data-place>Place anchors now</button><span class="hint" data-placed></span></p>',
       onOpen: function (body) {
         body.querySelector('[data-place]').addEventListener('click', function () {
@@ -916,13 +916,13 @@ RV.cmd = (function () {
     snapshot('background of ' + plural(list.length, 'dataset'));
     if (v.type === 'cheb') {
       St.setInstrument(list, { bkgType: 'cheb', bkgN: v.bkgN });
-      ui.toast('Background of ' + plural(list.length, 'dataset') + ': ' + plural(v.bkgN, 'Chebyshev term') + '.', 'ok');
+      ui.toast('All datasets use Chebyshev backgrounds; ' + plural(v.bkgN, 'term') + ' for ' + plural(list.length, 'dataset') + '.', 'ok');
       return;
     }
     St.setSetting('nAnchors', Math.round(v.nAuto));
     var xs = parseList(v.anchors).values;
     list.forEach(function (ds) { St.setInstrument([ds], { bkgType: 'spline', bkgX: xs.length ? xs : St.autoAnchors(ds, Math.round(v.nAuto)) }); });
-    ui.toast('Background of ' + plural(list.length, 'dataset') + ': a spline through ' + (xs.length ? plural(xs.length, 'anchor') : 'anchors placed in each') + '. Their heights start at the data; tick them in this dataset’s Background group to refine them.', 'ok');
+    ui.toast('All datasets use spline backgrounds. For ' + plural(list.length, 'dataset') + ': a spline through ' + (xs.length ? plural(xs.length, 'anchor') : 'anchors placed in each') + '. Their heights start at the data; tick them in this dataset’s Background group to refine them.', 'ok');
   }
   function regionsText(ex) { return ex.map(function (r) { return fmt6(r[0]) + ' ' + fmt6(r[1]); }).join('\n'); }
   async function excludeRegions() {
@@ -1009,20 +1009,13 @@ RV.cmd = (function () {
   function markAt(x, y, px, py) {
     var ds = St.first();
     if (!ds) { ui.toast('Select the dataset whose background anchors to edit.', 'warn'); return; }
+    if(ds.inst.bkgType!=='spline')return;
     if (S.busy) { ui.toast('A fit is running. Wait for it to finish or press Stop.', 'warn'); return; }
     if (S.settings.noBackground) { ui.toast('Turn off No background to edit background anchors.', 'info'); return; }
     var i = ds.inst;
     if (!(x >= ds.tth[0] && x <= ds.tth[ds.tth.length - 1]) || !Number.isFinite(y)) return;
     St.setSetting('showBkg', true);
     St.setSetting('showAnchors', true);
-    if (i.bkgType !== 'spline') {
-      snapshot('spline background of ' + ds.name);
-      St.setInstrument([ds], { bkgType: 'spline', bkgX: [i.tthMin, x, i.tthMax] });
-      var inserted = ds.inst.bkgX.indexOf(x);
-      if (inserted >= 0) St.setParam('bga'+inserted, y, [ds]);
-      ui.toast('The background of ' + ds.name + ' is now a spline through ' + plural(ds.inst.bkgX.length, 'anchor') + '. The anchor at ' + fmt6(x) + '° uses the cursor height. Ctrl+click adds more; right-drag an anchor to move it.', 'ok');
-      return;
-    }
     var hit = RV.plots.anchorAt(px, py, ds), near = hit ? hit.index : -1;
     if (near >= 0) {
       if (i.bkgX.length <= 2) { ui.toast('A spline background keeps at least two anchors; Background… turns it back into polynomials.', 'warn'); return; }
@@ -1650,8 +1643,8 @@ RV.cmd = (function () {
         if (!idle() || !haveSel()) break;
         if (!(Number.isInteger(a[0]) && a[0] >= 0 && a[0] <= 24)) { ui.toast('bkg>>n needs a whole number from 0 to 24.', 'err'); break; }
         snapshot('background terms');
-        St.setInstrument(sel(), { bkgN: a[0] });
-        ui.toast(plural(a[0], 'background term') + ' in ' + plural(S.sel.size, 'dataset') + '.', 'ok');
+        St.setInstrument(sel(), { bkgType:'cheb', bkgN: a[0] });
+        ui.toast('All datasets use Chebyshev backgrounds; '+plural(a[0], 'background term') + ' in ' + plural(S.sel.size, 'dataset') + '.', 'ok');
         break;
       case 'anchors':
         if (!idle() || !haveSel()) break;
@@ -1659,7 +1652,7 @@ RV.cmd = (function () {
         snapshot('spline background');
         St.setSetting('nAnchors', a[0]);
         sel().forEach(function (ds) { St.setInstrument([ds], { bkgType: 'spline', bkgX: St.autoAnchors(ds, a[0]) }); });
-        ui.toast('Spline background through ' + a[0] + ' anchors in ' + plural(S.sel.size, 'dataset') + '.', 'ok');
+        ui.toast('All datasets use spline backgrounds; ' + a[0] + ' anchors placed in ' + plural(S.sel.size, 'dataset') + '.', 'ok');
         break;
       case 'exclude': case 'include':
         if (!idle() || !haveSel()) break;

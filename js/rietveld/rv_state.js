@@ -163,7 +163,7 @@ RV.state = (function () {
   function restoreRefinementOptions(options) {
     REFINEMENT_KEYS.forEach(function (k) { if (options && validSetting(k, options[k])) S.settings[k] = options[k]; });
   }
-  function resetSettings() { var next = defaults(); setSetting('weight',next.weight); S.settings = next; store('settings', S.settings); RV.bus.emit('settings', '*'); }
+  function resetSettings() { var next = defaults(); next.inst.bkgType=backgroundType(); setSetting('weight',next.weight); S.settings = next; store('settings', S.settings); RV.bus.emit('settings', '*'); }
 
   // ---------------------------------------------------------------- scattering factors
   // tables from loadScatteringTables() (scatterers.js); labels are matched without regard to case
@@ -576,6 +576,7 @@ RV.state = (function () {
   function addDatasets(raws, opts) { return insertDatasets(raws.map(makeDataset), opts); }
   function insertDatasets(made, opts) {
     opts = opts || {};
+    made.forEach(function(ds){if(ds.inst.bkgType!==backgroundType())updateInstrument(ds,{bkgType:backgroundType()});});
     Array.prototype.unshift.apply(S.datasets, made);
     if (S.phases.length && opts.estimate !== false) made.forEach(function (ds) { if (!ds.sim) estimateScales(ds); });
     RV.bus.emit('datasets');
@@ -630,28 +631,35 @@ RV.state = (function () {
   }
   // instrument, range and background of some datasets; another kind or number of background terms changes their names.
   // The values of spline anchors that stay where they were are kept; a new anchor starts at the data.
-  function setInstrument(list, inst) {
-    list.forEach(function (ds) {
-      var old = ds.inst, oldX = old.bkgX.slice(), oldVals = {};
-      oldX.forEach(function (x, k) { if (own(ds.p, 'bga' + k)) oldVals[x] = [ds.p['bga' + k], ds.fit['bga' + k]]; });
-      ds.inst = cleanInst(Object.assign({}, old, inst));
-      if (!(ds.inst.tthMin < ds.inst.tthMax)) { ds.inst.tthMin = old.tthMin; ds.inst.tthMax = old.tthMax; }
-      rebaseBackground(ds,old,ds.inst);
-      if (ds.inst.bkgType === 'spline' && ds.inst.bkgX.length < 2) ds.inst.bkgX = autoAnchors(ds, S.settings.nAnchors);
-      var sameX = ds.inst.bkgX.length === oldX.length && ds.inst.bkgX.every(function (x, k) { return x === oldX[k]; });
-      if (ds.inst.bkgN !== old.bkgN || ds.inst.bkgType !== old.bkgType || !sameX) {
-        if (!sameX) {
-          // the anchors are named by their rank: drop the old names, keep the values of the anchors that did not move
-          var mem = ds.mem || {};
-          Object.keys(mem).forEach(function (n) { if (/^bga\d+$/.test(n)) delete mem[n]; });
-          Object.keys(ds.p).forEach(function (n) { if (/^bga\d+$/.test(n)) { delete ds.p[n]; delete ds.fit[n]; } });
-          ds.inst.bkgX.forEach(function (x, k) { if (oldVals[x]) { ds.p['bga' + k] = oldVals[x][0]; ds.fit['bga' + k] = oldVals[x][1]; } });
-        }
-        remap(ds);
+  function updateInstrument(ds, inst) {
+    var old = ds.inst, oldX = old.bkgX.slice(), oldVals = {};
+    oldX.forEach(function (x, k) { if (own(ds.p, 'bga' + k)) oldVals[x] = [ds.p['bga' + k], ds.fit['bga' + k]]; });
+    ds.inst = cleanInst(Object.assign({}, old, inst));
+    if (!(ds.inst.tthMin < ds.inst.tthMax)) { ds.inst.tthMin = old.tthMin; ds.inst.tthMax = old.tthMax; }
+    rebaseBackground(ds,old,ds.inst);
+    if (ds.inst.bkgType === 'spline' && ds.inst.bkgX.length < 2) ds.inst.bkgX = autoAnchors(ds, S.settings.nAnchors);
+    var sameX = ds.inst.bkgX.length === oldX.length && ds.inst.bkgX.every(function (x, k) { return x === oldX[k]; });
+    if (ds.inst.bkgN !== old.bkgN || ds.inst.bkgType !== old.bkgType || !sameX) {
+      if (!sameX) {
+        // the anchors are named by their rank: drop the old names, keep the values of the anchors that did not move
+        var mem = ds.mem || {};
+        Object.keys(mem).forEach(function (n) { if (/^bga\d+$/.test(n)) delete mem[n]; });
+        Object.keys(ds.p).forEach(function (n) { if (/^bga\d+$/.test(n)) { delete ds.p[n]; delete ds.fit[n]; } });
+        ds.inst.bkgX.forEach(function (x, k) { if (oldVals[x]) { ds.p['bga' + k] = oldVals[x][0]; ds.fit['bga' + k] = oldVals[x][1]; } });
       }
-      ds.stats = null; ds.esd = {}; ds.ints = null;
-      invalidate(ds);
-    });
+      remap(ds);
+    }
+    ds.stats = null; ds.esd = {}; ds.ints = null;
+    invalidate(ds);
+  }
+  // One explicit project choice; dataset order and selection do not control it.
+  function backgroundType() { return S.settings.inst.bkgType === 'spline' ? 'spline' : 'cheb'; }
+  function normalizeBackgrounds(type) {
+    S.datasets.forEach(function(ds){if(ds.inst.bkgType!==type)updateInstrument(ds,{bkgType:type});});
+  }
+  function setInstrument(list, inst) {
+    list.forEach(function(ds){updateInstrument(ds,inst);});
+    if(own(inst,'bkgType'))normalizeBackgrounds(inst.bkgType==='spline'?'spline':'cheb');
     var keep = Object.assign({}, inst);
     delete keep.tthMin; delete keep.tthMax; delete keep.bkgX; delete keep.excl; delete keep.exclOff;
     setSetting('inst', Object.assign(cleanInst(S.settings.inst), keep, { bkgX: [], excl: [], exclOff: [] }));
@@ -1376,6 +1384,7 @@ RV.state = (function () {
       remap(d);invalidate(d);
       if (!b && !d.sim) newR.forEach(function (k) { if (d.phases.indexOf(k) >= 0) estimateScales(d, k); });
     });
+    normalizeBackgrounds(backgroundType());
     // A link may read another dataset: validate caches only once all method
     // values are restored. Calibration imports can also edit inactive banks.
     S.datasets.forEach(function(d){
@@ -1504,6 +1513,7 @@ RV.state = (function () {
     // no longer take the id a later dataset brings with it.
     S.nextId=1+pj.raws.reduce(function(m,r){return Number.isInteger(r.savedId) && r.savedId>0?Math.max(m,r.savedId):m;},0);
     S.datasets = pj.raws.map(function(r){var d=makeDataset(r);if(Number.isInteger(r.savedId) && r.savedId>0)d.id=r.savedId;return d;});
+    normalizeBackgrounds(backgroundType());
     S.disabledPhases=pj.disabledPhases || [];S.parameterLinks=pj.parameterLinks;
     // Populate the selection before notifying views. They must never observe
     // new instruments with the previous project's dataset selection.
@@ -1532,7 +1542,7 @@ RV.state = (function () {
 
   return {
     S: S, ANODES: ANODES, defaultInst: defaultInst, instCopy: instCopy, cleanInst: cleanInst, mergeRegions: mergeRegions, excluded: excluded,
-    anchorValue: anchorValue, autoAnchors: autoAnchors, simulate: simulate, canRietveld: canRietveld, methodLabel: methodLabel, setMethod: setMethod,
+    backgroundType:backgroundType, anchorValue: anchorValue, autoAnchors: autoAnchors, simulate: simulate, canRietveld: canRietveld, methodLabel: methodLabel, setMethod: setMethod,
     setPresetDefault: setPresetDefault,
     polK: polK, anodeOf: anodeOf, defaults: defaults, restore: restore, store: store, load: load,
     refinementOptions: refinementOptions, restoreRefinementOptions: restoreRefinementOptions, setSetting: setSetting, resetSettings: resetSettings, validSetting: validSetting,
