@@ -188,6 +188,11 @@ RV.cmd = (function () {
     var hm = cif.sgName && cif.sgName !== cif.sgHall ? cif.sgName : null;
     var sg = St.resolveFileSG({ symbol: hm, hall: cif.sgHall, number: cif.sgNumber }, cif.cell);
     if (!sg) throw new Error('space group ' + (cif.sgName || cif.sgNumber || '(none given)') + ' not recognised');
+    // A parameter the crystal system leaves FREE must be in the file: normaliseCell would otherwise fill a
+    // missing length with a and a missing angle with 90, which is a silent, wrong cell.
+    var missing = C.cellParams(sg.system, sg.uniqueAxis).filter(function (c) { return !Number.isFinite(cif.cell[c]); });
+    if (missing.length) throw new Error('the cell is incomplete for ' + St.sgText(sg) + ': ' + missing.map(function (c) {
+      return (c.length > 1 ? '_cell_angle_' : '_cell_length_') + c; }).join(', ') + (missing.length > 1 ? ' are' : ' is') + ' missing or not a number');
     var ph = St.makePhase({ name: cif.blockName && !/^global$/i.test(cif.blockName) ? cif.blockName : baseName(fileName), sg: sg, cell: cif.cell, atoms: cifAtoms(cif) });
     return { ph: ph, cif: cif, how: sg.how };
   }
@@ -211,10 +216,11 @@ RV.cmd = (function () {
       ui.toast('Phase ' + ph.name + ' from ' + it.name + ': ' + St.sgText(ph.sg) + ', ' + ph.sg.system + ', ' + plural(ph.atoms.length, 'atom') + ' (' +
         ph.atoms.slice(0, 6).map(function (a) { return a.label + ' ' + a.site.wyck; }).join(', ') + (ph.atoms.length > 6 ? ' …' : '') + ')' +
         (got.cif.blocks > 1 ? '. The file has ' + got.cif.blocks + ' data blocks: only the first was read' : '') +
+        (got.cif.atomsSkipped ? '. ' + plural(got.cif.atomsSkipped, 'site') + ' skipped: coordinates are ? or not numbers' : '') +
         (got.how !== 'exact' ? '. The symbol of the file (' + (got.cif.sgName || got.cif.sgNumber) + ') named no setting exactly: check the space group' : '') +
         (miss.length ? '. Not in the X-ray table: ' + miss.join(', ') : '') +
         (S.datasets.length ? '. In ' + (S.datasets.length > 1 ? 'every dataset, scales estimated (change assignments in Datasets for datasets without it)' : 'the dataset, scale estimated') + '.' : '.'),
-        miss.length || got.cif.blocks > 1 || got.how !== 'exact' ? 'warn' : 'ok');
+        miss.length || got.cif.blocks > 1 || got.how !== 'exact' || got.cif.atomsSkipped ? 'warn' : 'ok');
     });
     return imported;
   }

@@ -628,6 +628,24 @@ _cell_length_a 5
 `, 'add'), /no atom sites/);
 });
 
+test('a structure CIF must give every cell parameter the crystal system leaves free, and counts skipped sites', () => {
+  const a = app();
+  const cubic = "_cell_length_a 5.43\n_space_group_name_H-M_alt 'F m -3 m'\nloop_\n_atom_site_label\n_atom_site_type_symbol\n_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\nNa1 Na 0 0 0\n";
+  // cubic: only a is free, so a file that gives a alone is complete (b, c and the angles follow)
+  const got = a.context.RV.cmd.phaseFromCif(cubic, 'nacl.cif');
+  assert.equal(got.ph.sg.number, 225);
+  assert.equal(got.ph.v[got.ph.key + '.a'], 5.43);
+  // triclinic: every parameter is free, and the same file is refused with the missing names instead of being
+  // silently completed with b = c = a and right angles
+  const tri = cubic.replace("'F m -3 m'", "'P 1'");
+  assert.throws(() => a.context.RV.cmd.phaseFromCif(tri, 'p1.cif'),
+    /cell is incomplete.*_cell_length_b.*_cell_angle_alpha/);
+  // a site whose coordinates are '?' is skipped and counted, so the caller can say so
+  const partial = a.context.CifStructure.parse(cubic.replace('Na1 Na 0 0 0', 'Na1 Na ? 0 0'));
+  assert.equal(partial.atoms.length, 0);
+  assert.equal(partial.atomsSkipped, 1);
+});
+
 test('a dataset saved without an id does not take the id of a later dataset', () => {
   const a = app();
   a.state.commitProject(a.state.prepareProject({ format: 'powder6-project', version: 3, phases: [], datasets: [

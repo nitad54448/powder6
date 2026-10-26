@@ -1,37 +1,20 @@
-/* Elemental mass attenuation tables and read-only Bragg–Brentano estimates.
+/* Elemental mass-attenuation tables and read-only Bragg–Brentano estimates.
  * Bare-table energies default to eV; per-element/document energyUnit wins.
  * Mass coefficients must be cm²/g. No extrapolation or invented coefficients.
+ * The table rules - units, element keys, ordering, the edge refusal - live in js/absorption_table.js, which
+ * holds no state and is covered by tests/absorption.test.cjs; this module keeps the loaded table, the
+ * composition and the Bragg–Brentano estimate.
  */
 RV.absorption = (function () {
   'use strict';
   var St=RV.state, S=St.S, ui=RV.ui, table=null, label='', error='', loading=false, revision=0, builtin=false;
   var HC_EV_ANGSTROM=12398.419843320025, AMU_DENSITY=1.66053906660;
-  function unitFactor(unit) {
-    var u=String(unit || 'eV').toLowerCase().replace(/\s/g,'');
-    if(u==='ev')return 1;if(u==='kev')return 1000;if(u==='mev')return 1e6;
-    throw new Error('Energy unit must be eV, keV or MeV.');
-  }
-  function normalize(doc, defaultUnit) {
-    if(!doc || typeof doc!=='object' || Array.isArray(doc))throw new Error('Expected an elemental absorption JSON object.');
-    var source=doc.elements || doc, out={}, factor=unitFactor(doc.energyUnit || defaultUnit || 'eV');
-    Object.keys(source).forEach(function(el){
-      if(!/^[A-Z][a-z]?$/.test(el))return;
-      var item=source[el];
-      if(!item || typeof item!=='object' || !Array.isArray(item.mu) || item.mu.length<2)throw new Error(el+': expected at least two [energy, mass coefficient] pairs.');
-      if(item.symbol && item.symbol!==el)throw new Error(el+': symbol does not match its key.');
-      var unit=String(item.unit || doc.unit || '').replace(/\s/g,'').replace(/²/g,'2').replace(/\^/g,'');
-      if(unit!=='cm2/g')throw new Error(el+': coefficients must have unit cm²/g.');
-      var f=item.energyUnit ? unitFactor(item.energyUnit) : factor, last=0;
-      var rows=item.mu.map(function(pair,i){
-        if(!Array.isArray(pair) || pair.length!==2 || !Number.isFinite(pair[0]) || !Number.isFinite(pair[1]) || !(pair[0]>0) || pair[1]<0)throw new Error(el+': invalid coefficient pair '+(i+1)+'.');
-        var E=pair[0]*f;if(!Number.isFinite(E))throw new Error(el+': energy is out of range.');if(E<last)throw new Error(el+': energies must be ordered, with equal-energy pairs allowed at absorption edges.');last=E;
-        return [E,pair[1]];
-      });
-      out[el]={rows:rows,source:String(item.source || doc.source || 'user table')};
-    });
-    if(!Object.keys(out).length)throw new Error('No elemental absorption tables found.');
-    return out;
-  }
+  // The table rules -- units, element keys, ordering, the refusal to interpolate across an edge -- live in
+  // js/absorption_table.js, which holds no state and is covered by tests/absorption.test.cjs.
+  var AT = typeof AbsorptionTable !== 'undefined' ? AbsorptionTable : null;
+  function api() { if (!AT) throw new Error('The absorption table module (js/absorption_table.js) is not loaded.'); return AT; }
+  function normalize(doc, defaultUnit) { return api().normalize(doc, defaultUnit); }
+  function coefficient(el, E) { return api().coefficient(table, el, E); }
   // isBuiltin: the absorption.json beside index.html, which every session reads itself and a project does not carry
   function loadDocument(doc,name,defaultUnit,isBuiltin) {
     var next=normalize(doc,defaultUnit); // validate completely before replacing a usable table
@@ -48,18 +31,6 @@ RV.absorption = (function () {
     if(!doc)return;
     try{loadDocument(doc,doc.label || 'project absorption table','eV');}catch(e){ui.toast('The absorption table saved with the project could not be read: '+e.message,'warn');}
   }
-  function coefficient(el,E) {
-    if(!table || !table[el])return {error:'No mass attenuation table for '+el+'.'};
-    var rows=table[el].rows,n=rows.length;
-    if(!(E>=rows[0][0] && E<=rows[n-1][0]))return {error:el+': photon energy is outside the table range; no extrapolation.'};
-    // Upper bound chooses the post-edge value when an exact energy is duplicated.
-    var lo=0,hi=n;while(lo<hi){var mid=(lo+hi)>>1;if(rows[mid][0]<=E)lo=mid+1;else hi=mid;}
-    var a=rows[Math.max(0,lo-1)];if(a[0]===E || lo===n)return {value:a[1]};
-    var b=rows[lo];
-    if(b[1]>a[1]*1.25 && b[0]/a[0]<1.2)return {error:el+': energy brackets a sharp absorption edge; add resolved edge values instead of interpolating across it.'};
-    var t=Math.log(E/a[0])/Math.log(b[0]/a[0]);
-    return {value:a[1]>0 && b[1]>0 ? Math.exp(Math.log(a[1])+t*Math.log(b[1]/a[1])) : a[1]+t*(b[1]-a[1])};
-  }
   function phaseComposition(ph,ds) {
     var counts={},pre=ph.key+'.';
     if(ph.atoms.length){
@@ -67,9 +38,11 @@ RV.absorption = (function () {
         var at=ph.atoms[i],occ=ds.p[pre+at.label+'.occ'];
         if(!Number.isFinite(occ) || occ<0)return {error:ph.name+': invalid site occupancy.'};
         if(!occ)continue;
+        var mult=at.site && at.site.mult;
+        if(!(mult>0))return {error:ph.name+': site '+at.label+' has no multiplicity.'};
         // Absorption tables are elemental: strip ionic charge; use the label only if the scatterer is absent.
         var el=St.elementOf(at.type) || (!String(at.type || '').trim() ? St.elementOf(at.label) : '');if(!el)return {error:ph.name+': unknown element '+at.type+'.'};
-        counts[el]=(counts[el] || 0)+occ*at.site.mult;
+        counts[el]=(counts[el] || 0)+occ*mult;
       }
     }else{
       var solve=RV.solve, opts=solve && solve.state && solve.state.opts;
@@ -87,25 +60,31 @@ RV.absorption = (function () {
     var phases=St.phasesIn(ds);if(!phases.length)return {error:'No phase assigned to this dataset.'};
     var parts=phases.map(function(ph){return phaseComposition(ph,ds);});
     for(var i=0;i<parts.length;i++)if(parts[i].error)return parts[i];
+    for(i=0;i<parts.length;i++)if(!(parts[i].density>0))return {error:phases[i].name+': crystallographic density is unavailable.'};
     var weights=phases.length===1 ? [1] : null;
     if(!weights){
       if(S.calculation!=='rietveld' || !RV.results)return {error:'A multiphase prediction needs Rietveld mass fractions; Le Bail/WPPF free intensities do not determine composition weights.'};
-      var all=RV.results.weights(ds);weights=phases.map(function(ph){return all[S.phases.indexOf(ph)].w;});
+      // By PHASE KEY, not by position: a change in the order or length of RV.results.weights() must not
+      // silently attach one phase's mass fraction to another.
+      var byKey={};RV.results.weights(ds).forEach(function(p){if(p && p.ph)byKey[p.ph.key]=p.w;});
+      weights=phases.map(function(ph){return byKey[ph.key];});
       if(!weights.every(function(w){return Number.isFinite(w) && w>=0;}) || !(weights.reduce(function(a,b){return a+b;},0)>0))return {error:'Usable Rietveld phase mass fractions are required.'};
     }
     var fractions={},v=0;
     parts.forEach(function(p,i){var w=weights[i];v+=w/p.density;Object.keys(p.masses).forEach(function(el){fractions[el]=(fractions[el] || 0)+w*p.masses[el]/p.mass;});});
+    if(!(v>0) || !Number.isFinite(v))return {error:'The mixture has no usable density.'};
     return {fractions:fractions,density:1/v,density90:0.9/v,multiphase:phases.length>1};
   }
   function predict(ds,lambda) {
     if(!ds || ds.inst.radiation!=='xray')return {error:'Elemental X-ray tables do not predict neutron attenuation.'};
     if(!table)return {error:loading?'Absorption table is loading.':error || 'The absorption.json table is unavailable. Place it beside index.html and reload.'};
-    var model=sample(ds);if(model.error)return model;
     if(!(lambda>0))return {error:'A positive X-ray wavelength is required.'};
+    var model=sample(ds);if(model.error)return model;
     var E=HC_EV_ANGSTROM/lambda,massMu=0;
     for(var el in model.fractions){if(!model.fractions[el])continue;var item=coefficient(el,E);if(item.error)return item;massMu+=model.fractions[el]*item.value;}
     if(!(massMu>0))return {error:'The mixture mass attenuation is zero; no finite transparency estimate.'};
     var mu90=massMu*model.density90/10, R=ds.inst.radiusMM;
+    if(!Number.isFinite(mu90) || !(mu90>0))return {error:'The mixture attenuation gives no finite mu for this table.'};
     // a penetrating beam moves the peaks to LOWER angle: dtwotheta = -sin(2theta) / (2 mu R), so t = -1 / (2 mu R)
     return {energyEV:E,massMu:massMu,density:model.density,density90:model.density90,mu90:mu90,transparency90:R>0?-1/(2*R*mu90):null,multiphase:model.multiphase,label:label};
   }
