@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.42.8 — 26 October 2026
+
+1. **One erfc, not two.** `polarization.js` and `profile.js` each carried the Numerical-Recipes `erfc` polynomial. The `polarization.js` copy had the negative-argument branch (`erfc(-x) = 2 - erfc(x)`); the `profile.js` copy — used by `asymmetryAreaCorrection()` — did not, and was correct only because every caller passes a positive argument. `profile.js` now defines `sharkoErfc(x)` once (both signs, the digit that matters documented in place), uses it in the asymmetric-area tail, exports it, and `cfErfc()` in `polarization.js` delegates to it. `pt_gpu.js` keeps the f32 WGSL copy, and both comments say so.
+2. **A test that would have caught the digit.** `tests/numerics.test.cjs` checks `erfc(0) = 1`, `erfc(1) = 0.157299207050285` and the reflection formula at four arguments.
+3. **No numerical change.** The polynomial is the same one the two copies held (they agreed apart from the missing branch); all 178 Node tests and the Solve browser page pass.
+
 ## 2.42.7 — 26 October 2026
 
 1. **Shortcuts stay out of open dialogs.** While a modal dialog was open, F9 started a fit behind it and Ctrl+S opened a second save prompt; only the space-group overlay stopped them. Both now return while `#dlg` is open, and F9 no longer fires from inside a text field (Ctrl+Z already did not). `rv_app.js`.

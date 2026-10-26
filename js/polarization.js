@@ -87,31 +87,15 @@ function cfLorentzPolarization(tthDeg, pol) {
 }
 
 /**
- * Complementary error function, Numerical Recipes' erfcc.
+ * Complementary error function for the French-Wilson posterior.
  *
- * THE FIFTH COEFFICIENT IS -0.18628806, NOT -1.18628806.
- *
- * It was the latter here, which is not an inaccuracy but a different function:
- * erfc(0) must be exactly 1 and came out as 0.368, an error of 63%. The whole
- * approximation is wrong across the range that matters -- 34% at x = 0.5, 18%
- * at x = 1 -- and it is worst in the middle, where a weak reflection's
- * posterior actually lives.
- *
- * It never fired, because the page carried a byte-identical copy of this
- * function apart from that digit, and its inline script is evaluated after
- * this file. Load order was the only thing standing between the French-Wilson
- * correction and a broken normal CDF: reorder the script tags, or delete the
- * inline copy as the redundant duplicate it appears to be, and every weak
- * reflection silently gets the wrong posterior intensity. The duplicate has
- * now been removed from the page and this is the single definition, so the
- * digit below is no longer covered by anything.
+ * THE IMPLEMENTATION LIVES IN profile.js (sharkoErfc), which is loaded before this file by the page. It used
+ * to be defined here, and a byte-identical copy apart from one digit lived in the page's inline script; the
+ * inline one was evaluated later and therefore won, so load order was the only thing keeping the correction
+ * right. Both copies are gone: one definition, called by name.
  */
 function cfErfc(x) {
-    const z = Math.abs(x), t = 1 / (1 + 0.5 * z);
-    const ans = t * Math.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 +
-        t * (0.09678418 + t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 +
-        t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))));
-    return x >= 0 ? ans : 2 - ans;
+    return sharkoErfc(x);
 }
 
 function cfNormPdf(t) { return Math.exp(-0.5 * t * t) / Math.sqrt(2 * Math.PI); }

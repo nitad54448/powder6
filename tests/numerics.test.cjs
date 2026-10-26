@@ -87,3 +87,10 @@ test('non-negative least squares clamps a negative component and keeps the rest 
   const y = c && (c.x || c);
   near(y[0], 0.5, 1e-12, 'coupled x0'); near(y[1], 0, 1e-12, 'coupled x1');
 });
+
+test('the one erfc is exact at zero, matches erfc(1) and is symmetric about it', () => {
+  const profile = js('profile.js');
+  near(profile.sharkoErfc(0), 1, 1.2e-7, 'erfc(0) is 1 to the approximation error');
+  near(profile.sharkoErfc(1), 0.15729920705028513, 1.2e-7, 'erfc(1)');
+  for (const x of [0.01, 0.5, 2, 5]) near(profile.sharkoErfc(-x), 2 - profile.sharkoErfc(x), 1e-12, 'erfc(-' + x + ')');
+});

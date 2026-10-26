@@ -764,6 +764,25 @@ const GL8_W = [0.3626837833783620, 0.3137066458778873, 0.2223810344533745, 0.101
  * @param {VoigtPrep} prep
  * @returns {number} Area to ADD to prep.analyticArea, degrees 2-theta; 0 without asymmetry.
  */
+/**
+ * Complementary error function, Numerical Recipes' erfcc (fractional error below 1.2e-7), valid for both
+ * signs: erfc(-x) = 2 - erfc(x). THE FIFTH COEFFICIENT IS -0.18628806, NOT -1.18628806 -- the latter is
+ * not an inaccuracy but a different function, and erfc(0) came out as 0.368, an error of 63%.
+ *
+ * This is the ONE JavaScript copy. cfErfc() in polarization.js (the French-Wilson correction) delegates here,
+ * and pt_gpu.js carries an f32 WGSL copy of the same polynomial for the GPU path. Keep the three in step: a
+ * second JS copy is exactly how two of them once came to differ by a digit with nothing to notice it.
+ * @param {number} x
+ * @returns {number} erfc(x)
+ */
+function sharkoErfc(x) {
+    const z = Math.abs(x), t = 1 / (1 + 0.5 * z);
+    const ans = t * Math.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 +
+        t * (0.09678418 + t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 +
+        t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))));
+    return x >= 0 ? ans : 2 - ans;
+}
+
 function asymmetryAreaCorrection(prep) {
     if (!prep || !prep.asym_param || !(prep.max_d > 0) || prep.type !== 3) return 0;
     const asym = Object.assign({}, prep, { x0: 0, max_d: Infinity, pedestal: 0 });
@@ -780,9 +799,7 @@ function asymmetryAreaCorrection(prep) {
         return s * h;
     };
     // area of the unit-height profile beyond |delta| = x (both components have the width H)
-    const erfc = z => { const t = 1 / (1 + 0.5 * z); return t * Math.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 +
-        t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277))))))))); };
-    const tail = x => prep.cL * 0.5 * H * (0.5 * Math.PI - Math.atan(2 * x / H)) + prep.cG * 0.5 * H * Math.sqrt(Math.PI / prep.Cg) * erfc(Math.sqrt(prep.Cg) * x / H);
+    const tail = x => prep.cL * 0.5 * H * (0.5 * Math.PI - Math.atan(2 * x / H)) + prep.cG * 0.5 * H * Math.sqrt(Math.PI / prep.Cg) * sharkoErfc(Math.sqrt(prep.Cg) * x / H);
     let total = 0;
     for (const side of [-1, 1]) {
         let lo = 0, e = 0.25 * w;
@@ -1123,7 +1140,7 @@ function calculatePatternCPU(tthAxis, hklList, params, outArr = null) {
 // ---------------------------------------------------------------------------
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-        calculatePeakShift,
+        sharkoErfc, calculatePeakShift,
         gaussianFromSigmaSq, lorentzianFromGamma, softFloor, applyFwhmFloor,
         calculateProfileWidths, getPeakFWHM, getPseudoVoigtArea, asymmetryAreaCorrection,
         prepareVoigt, evalVoigt,
