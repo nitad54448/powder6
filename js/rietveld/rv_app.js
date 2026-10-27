@@ -141,7 +141,7 @@
       if(e.type==='keydown' && e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();RV.cmd.stop();return;}
       var stop=e.target && e.target.closest && e.target.closest('#busy-cancel');
       if(stop)return;
-      var inspect=e.target && e.target.closest && e.target.closest('#pat-host,#diff-host,#plot-selection,#dataset-tabs,#result-run-select,#structure-run-select,[data-structure-result],#dataset-accordions > details > summary,#side-grip,#swap-panels,#btn-about,#pane-about,.panel-tabs');
+      var inspect=e.target && e.target.closest && e.target.closest('#pat-host,#diff-host,#plot-selection,#dataset-tabs,.dataset-title-tools,#ds-list [data-inspect-dataset],#result-run-select,#structure-run-select,[data-structure-result],#dataset-accordions > details > summary,#side-grip,#swap-panels,#btn-about,#pane-about,.panel-tabs');
       if(inspect)return;
       e.preventDefault();e.stopImmediatePropagation();
     }

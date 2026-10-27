@@ -15,13 +15,13 @@ RV.panels = (function () {
 
   // ================================================================ Datasets
   function dsRow(d) {
-    var on = S.sel.has(d.id);
-    return '<div class="ds'+(on?' on':'')+'" data-id="'+d.id+'" style="--dataset-color:'+RV.plots.colorVar(d)+'" draggable="true" role="option" aria-selected="'+on+'"><input type="checkbox" data-dataset-check="'+d.id+'" aria-label="Include '+esc(d.name)+' in plots and fit"'+(on?' checked':'')+'><span class="nm" title="'+esc(d.name)+'">'+esc(d.name)+'</span><button type="button" class="mini" data-edit-dataset="'+d.id+'" aria-label="Edit '+esc(d.name)+'"'+(S.busy?' disabled':'')+'>Edit</button><button type="button" class="icon-btn" data-remove-dataset="'+d.id+'" aria-label="Remove dataset '+esc(d.name)+'" title="Remove dataset '+esc(d.name)+'"'+(S.busy?' disabled':'')+'>✕</button></div>';
+    var on = S.sel.has(d.id), current = editorDataset() === d;
+    return '<li class="ds'+(on?' on':'')+(current?' inspected':'')+'" data-id="'+d.id+'" style="--dataset-color:'+RV.plots.colorVar(d)+'" draggable="true"><input type="checkbox" data-dataset-check="'+d.id+'" aria-label="Include '+esc(d.name)+' in plots and fit"'+(on?' checked':'')+'><button type="button" class="nm dataset-name" data-inspect-dataset="'+d.id+'" aria-label="Inspect '+esc(d.name)+'"'+(current?' aria-current="true"':'')+' title="Inspect '+esc(d.name)+'">'+esc(d.name)+'</button><button type="button" class="mini" data-edit-dataset="'+d.id+'" aria-label="Edit '+esc(d.name)+'"'+(S.busy?' disabled':'')+'>Edit</button><button type="button" class="icon-btn" data-remove-dataset="'+d.id+'" aria-label="Remove dataset '+esc(d.name)+'" title="Remove dataset '+esc(d.name)+'"'+(S.busy?' disabled':'')+'>✕</button></li>';
   }
   function renderDatasets() {
     if (!S.datasets.length) {
-      dsList.innerHTML = '<div class="empty-list"><p>No datasets yet.</p><p>Use File, drop powder patterns on this window, or ' +
-        '<button type="button" class="link" data-act="demo">load the demo</button> (NaCl and Si, measured with Cu and Co radiation).</p></div>';
+      dsList.innerHTML = '<li class="empty-list"><p>No datasets yet.</p><p>Use File, drop powder patterns on this window, or ' +
+        '<button type="button" class="link" data-act="demo">load the demo</button> (NaCl and Si, measured with Cu and Co radiation).</p></li>';
     } else dsList.innerHTML = S.datasets.map(dsRow).join('');
     countDatasets(); renderInfo();
   }
@@ -31,7 +31,9 @@ RV.panels = (function () {
       var id = +r.getAttribute('data-id');
       if (!id) return;
       var on = S.sel.has(id);
-      if (r.classList.contains('on') !== on) { r.classList.toggle('on', on); r.setAttribute('aria-selected', String(on)); }
+      r.classList.toggle('on', on);
+      var current=editorDataset(),name=r.querySelector('[data-inspect-dataset]'),inspected=!!current && current.id===id;
+      r.classList.toggle('inspected',inspected);if(name){if(inspected)name.setAttribute('aria-current','true');else name.removeAttribute('aria-current');}
       var edit=r.querySelector('[data-edit-dataset]');if(edit)edit.disabled=!!S.busy;
       var remove=r.querySelector('[data-remove-dataset]');if(remove)remove.disabled=!!S.busy;
       var cb=r.querySelector('[data-dataset-check]');if(cb)cb.checked=on;
@@ -39,19 +41,20 @@ RV.panels = (function () {
     countDatasets(); renderInfo();
   }
   function renderInfo() {
-    var host = $('#ds-info'), d = editorDataset(), why = S.busy ? 'Not while a fit is running.' : !d ? 'No data loaded yet.' : '';
+    var host = $('#dataset-info-help'), d = editorDataset(), why = S.busy ? 'Not while a fit is running.' : !d ? 'No data loaded yet.' : '';
     ['#ds-inst', '#ds-bkg', '#ds-excl', '#ds-resolution'].forEach(function (b) { ui.able($(b), why); });
     ui.able($('#ds-phases'), S.busy ? 'Not while a fit is running.' : !S.phases.length ? 'No phase yet. Read CIF or make a new phase in Phases.' : !S.datasets.length ? 'No data loaded yet.' : '');
-    if (!d) { host.innerHTML = ''; return; }
+    if (!d) { host.removeAttribute('data-help-html'); return; }
     var i = d.inst, pol = i.radiation === 'neutron' ? 'neutrons' : { tube: 'X-rays, no monochromator', mono: 'X-rays, monochromator at 2θ = ' + i.monoTth + '°', sync: 'synchrotron, polarised fraction ' + i.polFrac, none: 'X-rays, no polarisation correction' }[i.pol];
     var pts = St.fitPoints(d), nFit = pts.tth.length - pts.nExcluded;
-    host.innerHTML = '<dl><dt>λ</dt><dd>' + i.lambda1 + (i.ratio > 0 && i.lambda2 > 0 ? ' and ' + i.lambda2 + ' Å, ratio ' + i.ratio : ' Å') + (i.anode && St.ANODES[i.anode] && Math.abs(St.ANODES[i.anode][0] - i.lambda1) < 1e-6 ? ' (' + i.anode + ')' : '') + '</dd>' +
+    var info = '<dl><dt>λ</dt><dd>' + i.lambda1 + (i.ratio > 0 && i.lambda2 > 0 ? ' and ' + i.lambda2 + ' Å, ratio ' + i.ratio : ' Å') + (i.anode && St.ANODES[i.anode] && Math.abs(St.ANODES[i.anode][0] - i.lambda1) < 1e-6 ? ' (' + i.anode + ')' : '') + '</dd>' +
       '<dt>Beam</dt><dd>' + esc(pol) + '</dd>' +
       '<dt>Fitted</dt><dd>' + i.tthMin.toFixed(2) + '–' + i.tthMax.toFixed(2) + '°, ' + nFit + ' of ' + d.tth.length + ' points' + (d.step ? ', step ' + (+d.step.toPrecision(3)) + '°' : '') + '</dd>' +
       '<dt>Background</dt><dd>' + (i.bkgType === 'spline' ? 'spline through ' + plural(i.bkgX.length, 'anchor') : plural(i.bkgN, 'Chebyshev term')) + '</dd>' +
       (S.phases.length ? '<dt>Phases</dt><dd>' + (esc(St.phasesIn(d).map(function (p) { return p.name; }).join(', ')) || '<span class="why">none: background only</span>') + '</dd>' : '') +
       (i.excl.length ? '<dt>Excluded</dt><dd title="' + esc(i.excl.map(function (r) { return r[0].toFixed(2) + '–' + r[1].toFixed(2) + '°'; }).join(', ')) + '">' + plural(i.excl.length, 'region') + ', ' + pts.nExcluded + ' points</dd>' : '') +
       (d.sim ? '<dt>Simulated</dt><dd>calculated from the phases' + (d.sim.noise ? ', with counting noise' : '') + '</dd>' : '') + '</dl>';
+    host.setAttribute('data-help-html','<p>'+esc(C.METHOD_LABELS[S.calculation])+' &middot; Values and refine/fixed controls apply only to this dataset. Choose a dataset in the Datasets list to inspect its values.</p><p>'+d.tth.length+' observations &middot; '+(d.sig?'Imported Y uncertainties':'No imported Y uncertainties')+' &middot; '+(d.weights?'Imported point weights':'Calculated point weights')+'</p>'+info);
   }
   function rowOf(id) { return dsList.querySelector('.ds[data-id="' + id + '"]'); }
   async function editDataset(id) {
@@ -73,7 +76,7 @@ RV.panels = (function () {
   }
   function renameDs(id) {
     var row = rowOf(id), d = St.byId(id);
-    if (!row || !d) return;
+    if (!row || !d || S.busy) return;
     var nm = row.querySelector('.nm'), inp = document.createElement('input'), done = false;
     inp.className = 'rename'; inp.value = d.name; inp.setAttribute('aria-label', 'New name');
     nm.replaceWith(inp); inp.focus(); inp.select();
@@ -92,12 +95,13 @@ RV.panels = (function () {
   function moveSel(dir, extend) {
     var arr = S.datasets;
     if (!arr.length) return;
-    var ref = cursor != null && S.sel.has(cursor) ? cursor : S.anchor, i = arr.findIndex(function (d) { return d.id === ref; });
+    arr = arr.filter(function(d){var row=rowOf(d.id);return row && !row.hidden;});if(!arr.length)return;
+    var ref = cursor != null ? cursor : S.anchor, i = arr.findIndex(function (d) { return d.id === ref; });
     var j = Math.max(0, Math.min(arr.length - 1, i < 0 ? 0 : i + dir));
     cursor = arr[j].id;
-    if (extend) St.range(cursor); else St.selectIds([cursor]);
+    if(S.busy)RV.workspace.inspectDataset(cursor);else if (extend) St.range(cursor); else St.selectIds([cursor]);
     var r = rowOf(cursor);
-    if (r) r.scrollIntoView({ block: 'nearest' });
+    if (r) { r.scrollIntoView({ block: 'nearest' });r.querySelector('[data-inspect-dataset]').focus(); }
   }
   function initDatasets() {
     dsList = $('#ds-list');
@@ -109,17 +113,21 @@ RV.panels = (function () {
       if (!row) return;
       var id = +row.getAttribute('data-id');
       cursor = id;
-      if(e.target.matches('[data-dataset-check]'))St.toggle(id);else if (e.shiftKey) St.range(id); else if (e.ctrlKey || e.metaKey) St.toggle(id); else if(S.sel.has(id))St.setFocus(id);else St.selectIds([id]);
+      if(S.busy){if(e.target.closest('[data-inspect-dataset]'))RV.workspace.inspectDataset(id);return;}
+      if(e.target.matches('[data-dataset-check]')){if(e.shiftKey)St.range(id);else St.toggle(id);}else if (e.shiftKey) St.range(id); else if (e.ctrlKey || e.metaKey) St.toggle(id); else if(e.target.closest('[data-inspect-dataset]'))RV.workspace.inspectDataset(id);else if(S.sel.has(id))St.setFocus(id);else St.selectIds([id]);
     });
-    dsList.addEventListener('dblclick', function (e) { if(e.target.closest('button'))return;var row = e.target.closest('.ds'); if (row) renameDs(+row.getAttribute('data-id')); });
+    dsList.addEventListener('dblclick', function (e) { if(e.target.closest('button:not([data-inspect-dataset])'))return;var row = e.target.closest('.ds'); if (row) renameDs(+row.getAttribute('data-id')); });
     dsList.addEventListener('keydown', function (e) {
-      if(e.target.closest('button'))return;
+      if(e.target.closest('button:not([data-inspect-dataset])') || e.target.matches('.rename'))return;
+      var row=e.target.closest('.ds');if(row)cursor=+row.dataset.id;
+      if(S.busy && !['ArrowDown','ArrowUp','Enter',' '].includes(e.key))return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); St.selectAll(); }
       else if (e.key === 'Delete') { e.preventDefault(); RV.cmd.deleteDatasets(); }
       else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); moveSel(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey); }
-      else if (e.key === 'F2') { e.preventDefault(); var f = St.first(); if (f) renameDs(f.id); }
+      else if (e.key === 'F2') { e.preventDefault(); var f = St.byId(cursor) || editorDataset(); if (f) renameDs(f.id); }
     });
     dsList.addEventListener('dragstart', function (e) {
+      if(S.busy){e.preventDefault();return;}
       var row = e.target.closest('.ds');
       if (!row) return;
       dragId = +row.getAttribute('data-id');
@@ -145,7 +153,8 @@ RV.panels = (function () {
     $('#ds-bkg').addEventListener('click', function () { RV.cmd.background(); });
     RV.bus.on('datasets', renderDatasets);
     RV.bus.on('selection', updateSel);
-    RV.bus.on('datasetFocus', renderInfo);
+    RV.bus.on('datasetFocus', updateSel);
+    RV.bus.on('calculation', renderInfo);
     RV.bus.on('stats', renderDatasets);
     RV.bus.on('data', renderDatasets);
     RV.bus.on('busy', updateSel);
@@ -157,16 +166,16 @@ RV.panels = (function () {
     var cur = St.currentPhase();
     $('#ph-count').textContent = plural(S.phases.length, 'phase');
     phList.innerHTML = S.phases.map(function (ph, i) {
-      return '<div class="ds ph' + (cur === ph ? ' on' : '') + '" data-key="' + ph.key + '" role="option" aria-selected="' + (cur === ph) + '"><i class="sw" style="--dataset-color:' + RV.plots.phaseVar(i) + '"></i><span class="nm">' + esc(ph.name) + '</span><small>' + esc(ph.sg.symbol) + ' · ' + ph.atoms.length + ' atoms</small><button type="button" class="icon-btn" data-remove-phase="'+ph.key+'" aria-label="Remove phase '+esc(ph.name)+'" title="Remove phase '+esc(ph.name)+'"'+(S.busy?' disabled':'')+'>✕</button></div>';
-    }).join('') || '<p class="hint">Create or import a phase in the Phases tab.</p>';
+      return '<li class="ds ph' + (cur === ph ? ' on inspected' : '') + '" data-key="' + ph.key + '" ><i class="sw" style="--dataset-color:' + RV.plots.phaseVar(i) + '"></i><button type="button" class="nm dataset-name" data-inspect-phase="'+esc(ph.key)+'"'+(cur===ph?' aria-current="true"':'')+' aria-label="Inspect '+esc(ph.name)+'">' + esc(ph.name) + '</button><small>' + esc(ph.sg.symbol) + ' · ' + ph.atoms.length + ' atoms</small><button type="button" class="mini" data-edit-phase="'+esc(ph.key)+'" aria-label="Edit '+esc(ph.name)+'"'+(S.busy?' disabled':'')+'>Edit</button><button type="button" class="icon-btn" data-remove-phase="'+ph.key+'" aria-label="Remove phase '+esc(ph.name)+'" title="Remove phase '+esc(ph.name)+'"'+(S.busy?' disabled':'')+'>✕</button></li>';
+    }).join('') || '<li class="hint">Create or import a phase in the Phases tab.</li>';
   }
   function initPhases() {
     phList = $('#ph-list');
-    phList.addEventListener('click', function (e) {var remove=e.target.closest('[data-remove-phase]');if(remove){e.stopPropagation();if(!S.busy)RV.cmd.deletePhase(remove.dataset.removePhase);return;}if (e.target.closest('select, input')) return; var row = e.target.closest('.ph'); if (row) St.selectPhase(row.getAttribute('data-key')); });
+    phList.addEventListener('click', function (e) {var edit=e.target.closest('[data-edit-phase]');if(edit){if(!S.busy)RV.phasesTab.edit(St.phaseByKey(edit.dataset.editPhase));return;}var remove=e.target.closest('[data-remove-phase]');if(remove){e.stopPropagation();if(!S.busy)RV.cmd.deletePhase(remove.dataset.removePhase);return;}if (e.target.closest('select, input')) return; var row = e.target.closest('.ph'); if (row) St.selectPhase(row.getAttribute('data-key')); });
     phList.addEventListener('keydown', function (e) {
-      if (e.target.closest('select, input, button')) return;
+      if (e.target.closest('select, input, button:not([data-inspect-phase])')) return;
       var i = S.phases.indexOf(St.currentPhase());
-      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && S.phases.length) { e.preventDefault(); St.selectPhase(S.phases[Math.max(0, Math.min(S.phases.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))].key); }
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && S.phases.length) { e.preventDefault(); var key=S.phases[Math.max(0, Math.min(S.phases.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))].key;St.selectPhase(key);var button=phList.querySelector('[data-inspect-phase="'+key+'"]');if(button)button.focus(); }
     });
     ['phases', 'phaseStyle', 'phaseSel', 'tables', 'busy', 'selection', 'datasets'].forEach(function (ev) { RV.bus.on(ev, renderPhases); });
     renderPhases();
@@ -249,10 +258,7 @@ RV.panels = (function () {
   }
   function renderParams() {
     var copy=$('#dataset-copy .clone-bar'),source=editorDataset();copy.hidden=S.datasets.length<2 || !source;$('#dataset-copy').hidden=copy.hidden;$('#dataset-copy .sub').textContent=source?'Copy from '+source.name:'Copy';var target=$('#clone-target'),held=target.value;target.innerHTML='<option value="all">All other datasets</option>'+S.datasets.filter(function(d){return d!==source;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');if(Array.from(target.options).some(function(o){return o.value===held;}))target.value=held;
-    var host = $('#param-list'), ds = editorDataset(), head = $('#param-ds');
-    head.textContent = ds ? ds.name : '';
-    $('#param-more').textContent = '';
-    head.title = ds ? 'Values and refinement flags of '+ds.name+' only.' : '';
+    var host = $('#param-list'), ds = editorDataset();
     syncStep();
     host.querySelectorAll('[data-dataset-structure]').forEach(function(view){if(typeof WyckoffReport!=='undefined')WyckoffReport.dispose(view);});
     if (!ds) {
@@ -611,8 +617,8 @@ RV.panels = (function () {
     RV.bus.on('acc',renderDatasetStructures);
     RV.bus.on('tab',function(t){if(t==='datasets')renderDatasetStructures();});
     bindParams();
-    $('#param-prev').addEventListener('click', function () { stepDataset(-1); });
-    $('#param-next').addEventListener('click', function () { stepDataset(1); });
+    $('#param-prev').addEventListener('click', function (e) { e.preventDefault();e.stopPropagation();stepDataset(-1); });
+    $('#param-next').addEventListener('click', function (e) { e.preventDefault();e.stopPropagation();stepDataset(1); });
     $('#clone-all').addEventListener('click', function () { RV.cmd.cloneTo($('#clone-target').value,$('#clone-values').checked,$('#clone-flags').checked); });
 
     ['selection', 'datasetFocus', 'datasets', 'phases', 'phaseStyle', 'data', 'calculation'].forEach(function (ev) { RV.bus.on(ev, renderParams); });

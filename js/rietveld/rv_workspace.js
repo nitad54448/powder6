@@ -27,8 +27,9 @@ RV.workspace=(function(){
     RV.history.take('moving background anchor of '+d.name);
     St.moveBackgroundAnchor(d,k,x,d.p['bga'+k]);
   }
+  function selectionLed(el,d){var selected=!!d && S.sel.has(d.id);el.classList.toggle('selected',selected);el.setAttribute('aria-label',selected?'Dataset selected':'Dataset unselected');el.title=(d?d.name+': ':'')+(selected?'Included in plots and fitting':'Not included in plots or fitting');}
   function datasetEditor(){
-    var host=$('#dataset-values'),d=dataset(),nav=$('#dataset-tabs'),detail=$('#dataset-detail');
+    var d=dataset(),nav=$('#dataset-tabs'),detail=$('#dataset-detail');
     var editor=$('#dataset-editor'),accordions=$('#dataset-accordions');
     if(!accordions){accordions=document.createElement('div');accordions.id='dataset-accordions';editor.before(accordions);accordions.appendChild(editor);}
     accordions.querySelectorAll('[data-dataset-accordion]').forEach(function(el){el.remove();});
@@ -41,13 +42,13 @@ RV.workspace=(function(){
     });
     var tabs=S.datasets.map(function(item){var on=d && item.id===d.id;return '<button type="button" role="tab" id="dataset-tab-'+item.id+'" data-dataset-tab="'+item.id+'" aria-controls="dataset-detail" aria-selected="'+!!on+'" tabindex="'+(on?'0':'-1')+'" style="--dataset-color:'+RV.plots.colorVar(item)+'" title="'+esc(item.name)+(S.sel.has(item.id)?' · Included in fit and plots':' · Not selected for fit or plots')+'"><i class="sw" aria-hidden="true"></i><span>'+esc(item.name)+'</span></button>';}).join('');
     if(nav.innerHTML!==tabs)nav.innerHTML=tabs;
-    detail.hidden=!d;if(!d){host.innerHTML='';return;}
+    detail.hidden=!d;if(!d)return;
     detail.setAttribute('aria-labelledby','dataset-editor-name');
     $('#dataset-editor-name').textContent=d.name;
+    selectionLed($('#dataset-selection-led'),d);
     $('#dataset-editor-name').style.color=RV.plots.colorVar(d);
-    host.innerHTML='<p class="hint">'+esc(RVCore.METHOD_LABELS[S.calculation])+' · Values and refine/fixed controls apply only to this dataset. Choose a dataset in the Datasets list to inspect its values.</p><p>'+d.tth.length+' observations · '+(d.sig?'Imported Y uncertainties':'No imported Y uncertainties')+' · '+(d.weights?'Imported point weights':'Calculated point weights')+'</p>';
   }
-  function phaseEditor(){var body=$('#phase-body'),p=St.currentPhase();if(!body || !p || !$('#phase-select'))return;var extra=$('#phase-workspace');if(!extra){extra=document.createElement('section');extra.id='phase-workspace';extra.className='pblock phase-workspace';body.appendChild(extra);}var held=St.holdersOf(p);extra.innerHTML='<h2>Used in datasets</h2><p class="phase-members">'+held.map(function(d){return '<button class="mini" data-phase-dataset="'+d.id+'">'+esc(d.name)+'</button>';}).join('')+'</p><button data-phase-assign>Assign datasets…</button><p class="hint">Edit each dataset’s cell, atoms, sample broadening, preferred orientation and refinement flags in its Datasets tab. This view edits the shared phase definition and starting model.</p>'+(p.provenance?'<p class="hint">Structure source: '+esc(p.provenance.label || p.provenance.kind || 'imported solution')+' · '+esc(p.provenance.dataset || '')+'</p>':'');
+  function phaseEditor(){var body=$('#phase-body'),p=St.currentPhase();if(!body || !p || !$('#ph-sg'))return;var extra=$('#phase-workspace');if(!extra){extra=document.createElement('section');extra.id='phase-workspace';extra.className='pblock phase-workspace';body.appendChild(extra);}var held=St.holdersOf(p);extra.innerHTML='<h2>Used in datasets</h2><p class="phase-members">'+held.map(function(d){return '<button class="mini" data-phase-dataset="'+d.id+'">'+esc(d.name)+'</button>';}).join('')+'</p><button data-phase-assign>Assign datasets…</button><p class="hint">Edit each dataset’s cell, atoms, sample broadening, preferred orientation and refinement flags in its Datasets tab. This view edits the shared phase definition and starting model.</p>'+(p.provenance?'<p class="hint">Structure source: '+esc(p.provenance.label || p.provenance.kind || 'imported solution')+' · '+esc(p.provenance.dataset || '')+'</p>':'');
   }
   function emptyStates(){
     var noDatasets=!S.datasets.length,noPhases=!S.phases.length;

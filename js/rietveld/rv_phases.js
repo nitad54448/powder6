@@ -46,7 +46,7 @@ RV.phasesTab = (function () {
       S.phases.forEach(function (p) {
         var d = document.createElement('details'), sm = document.createElement('summary');
         d.className = 'acc dataset-accordion dataset-card phase-accordion'; d.dataset.phaseAccordion = p.key;
-        sm.innerHTML = '<span class="acc-t"></span><span class="acc-s"></span>';
+        sm.innerHTML = '<span class="acc-t"></span><span class="acc-s"></span><button type="button" class="help-q acc-help" data-acc-help data-help="Shared phase definition and starting model. Existing dataset values and refinement flags are edited only in Datasets." aria-label="About the phase starting model">?</button>';
         d.appendChild(sm);
         if (p === cur) {
           var wrap = document.createElement('div'); wrap.className = 'acc-body'; wrap.appendChild(body); d.appendChild(wrap);
@@ -65,15 +65,9 @@ RV.phasesTab = (function () {
     });
   }
   function renderBar() {
-    var bar = $('#phase-select'), cur = St.currentPhase();
     accordions();
-    if (!bar) return;
-    bar.innerHTML = S.phases.map(function (ph, i) {
-      return '<option value="' + ph.key + '" style="color:' + RV.plots.phaseColor(i) + '"' + (cur === ph ? ' selected' : '') + '>' + esc(ph.name) + '</option>';
-    }).join('');
-    bar.disabled = !cur || S.busy;
-    if (cur) $('#ph-color').value = RV.plots.phaseColor(S.phases.indexOf(cur));
   }
+
   function atomRow(at) {
     return '<tr data-atom="' + esc(at.label) + '"><td><input data-at="label" value="' + esc(at.label) + '" spellcheck="false" autocomplete="off" aria-label="Label"></td>' +
       '<td><input data-at="type" list="scat-list" value="' + esc(at.type) + '" spellcheck="false" autocomplete="off" aria-label="Scatterer of ' + esc(at.label) + '"></td>' +
@@ -109,10 +103,8 @@ RV.phasesTab = (function () {
     var cps = C.cellParams(ph.sg.system, ph.sg.uniqueAxis);
     var can = St.canRietveld(ph);
     body.innerHTML =
-      '<p class="hint phase-src" id="phase-src"></p>' +
       '<div class="phase-cols">' +
-        '<section class="pblock"><h2>Phase</h2><div class="form-grid">' +
-          '<label for="phase-select">Phase name</label><div><span class="phase-control-row phase-name-row"><select id="phase-select" aria-label="Phase name"></select><input type="color" id="ph-color" data-ph="color" aria-label="Phase colour" title="Change phase colour" value="' + RV.plots.phaseColor(S.phases.indexOf(ph)) + '"><button type="button" id="ph-rename" data-act="rename-phase" title="Rename this phase">Edit</button></span></div>' +
+        '<section class="pblock"><div class="form-grid">' +
           '<label for="ph-sg">Space group</label><div><span class="phase-control-row phase-sg-row"><input id="ph-sg" data-ph="sg" list="sg-list" value="' + esc(ph.sg.symbol) + '" spellcheck="false" autocomplete="off" title="Symbol, number or Hall symbol">' +
             '<button type="button" data-act="sg-convert" title="Describe this structure in another space group or setting: the cell, the atomic positions and the values of every dataset are transformed with it">Convert…</button>' +
             '<button type="button" data-act="sg-browse" title="Choose the space group and its setting by crystal system, centring, symbol or number">Browse…</button></span><small id="ph-sg-info"></small></div>' +
@@ -158,7 +150,7 @@ RV.phasesTab = (function () {
   // ---------------------------------------------------------------- values (inputs keep focus: only their content changes)
   function values() {
     var ph = St.currentPhase();
-    if (!ph || !$('#phase-select')) return;
+    if (!ph || !$('#ph-sg')) return;
     var s = src(), e = srcEsd(), act = document.activeElement, ds = srcDs(ph), list = St.selected(), n = list.filter(function (d) { return St.hasPhase(d, ph); }).length, k = ph.key + '.';
     var atoms = ds ? St.atomicValues(ds) : s, inactive = !!ds && S.calculation !== 'rietveld';
     function put(el, v, dec, esd) {
@@ -169,9 +161,7 @@ RV.phasesTab = (function () {
       el.title = esd > 0 ? (el.dataset.tip ? el.dataset.tip + '. ' : '') + 'Standard uncertainty ' + ui.fmt(esd, 2) : el.dataset.tip;
     }
     var held = St.holdersOf(ph), others = list.length - n;
-    $('#phase-src').textContent = 'Shared phase definition and starting model. Existing dataset values and refinement flags are edited only in Datasets.';
     $('#ph-atom-src').textContent = inactive ? 'Rietveld atomic model of '+ds.name+' · Unused by '+C.METHOD_LABELS[S.calculation]+'. Switch to Rietveld to edit or refine atomic values.' : ds ? 'Rietveld atomic model of '+ds.name+'. Atomic values are used and refined in Rietveld.' : 'Atomic starting model. Rietveld uses the atoms; Le Bail and WPPF use the cell and space group.';
-    if (act !== $('#ph-color')) $('#ph-color').value = RV.plots.phaseColor(S.phases.indexOf(ph));
     if (act !== $('#ph-sg')) { $('#ph-sg').value = ph.sg.symbol; $('#ph-sg').classList.remove('invalid'); }
     $('#ph-sg-info').textContent = 'No. ' + ph.sg.number + ', ' + ph.sg.system + (ph.sg.laue ? ', Laue class ' + ph.sg.laue : '') +
       (ph.sg.setting ? ', setting ' + ph.sg.setting : '') + ', ' + ph.ops.length + ' operators' + (ph.sg.hall ? ', Hall ' + ph.sg.hall : '');
@@ -305,7 +295,6 @@ RV.phasesTab = (function () {
   }
   function onChange(e) {
     var el = e.target, ph = St.currentPhase();
-    if (el.id === 'phase-select') { if (!busy()) St.selectPhase(el.value); return; }
     if (!ph || !el.matches('input, select')) return;
     if (busy()) return;
     if (el.hasAttribute('data-ph')) phaseField(ph, el);
@@ -313,10 +302,19 @@ RV.phasesTab = (function () {
     else if (el.hasAttribute('data-at')) atomField(ph, el.closest('tr').getAttribute('data-atom'), el);
   }
   async function renamePhase(ph) {
-    var key=ph.key,v=await ui.prompt('Rename phase',[{key:'name',label:'Phase name',type:'text',value:ph.name}],'Rename',null,{check:function(v){return v.name.trim()?'':'Enter a phase name.';}});
-    if(!v || busy())return;
-    ph=St.phaseByKey(key);if(!ph || v.name.trim()===ph.name)return;
-    RV.history.take('renaming phase '+ph.name);ph.name=v.name.trim();RV.bus.emit('phases');
+    if(!ph || S.busy)return;
+    var key=ph.key,v=await ui.prompt('Edit phase',[
+      {key:'name',label:'Name',type:'text',value:ph.name},
+      {key:'color',label:'Colour',type:'text',value:RV.plots.phaseColor(S.phases.indexOf(ph))},
+      {key:'automatic',label:'Use automatic theme colour',type:'checkbox',value:!ph.color}
+    ],'Apply','A custom colour is used in both themes.',{check:function(v){return v.name.trim()?'':'Enter a phase name.';},onOpen:function(body){
+      var color=body.querySelector('[data-key="color"]'),automatic=body.querySelector('[data-key="automatic"]');
+      color.type='color';color.addEventListener('input',function(){automatic.checked=false;});
+    }});
+    if(!v || S.busy || St.phaseByKey(key)!==ph)return;
+    var name=v.name.trim(),color=v.automatic?null:v.color;
+    if(!name || color && !/^#[0-9a-f]{6}$/i.test(color) || name===ph.name && color===(ph.color || null))return;
+    RV.history.take('edit phase '+ph.name);ph.name=name;ph.color=color;RV.bus.emit('phases');RV.bus.emit('phaseStyle');
   }
   function onClick(e) {
     var chip = e.target.closest('.chip[data-key]');
@@ -867,5 +865,5 @@ RV.phasesTab = (function () {
     build();
   }
 
-  return { init: init, build: build, values: values, content: content, findSymmetry:findSymmetryDialog, findSubgroups:findSubgroupsDialog };
+  return { edit: renamePhase, init: init, build: build, values: values, content: content, findSymmetry:findSymmetryDialog, findSubgroups:findSubgroupsDialog };
 })();

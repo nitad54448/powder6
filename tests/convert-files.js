@@ -21,10 +21,8 @@
     const conv=q('[data-act="sg-convert"]'),browse=q('[data-act="sg-browse"]');
     check(conv && browse && conv.nextElementSibling===browse && conv.textContent==='Convert…','Convert… is not just left of Browse…');
     const dl=[...q('#sg-list').options];check(dl.length===520 && dl.some(o=>o.value==='Fm-3m') && dl.some(o=>o.value==='P121/n1' && /14 · monoclinic/.test(o.label)),'The suggestion list must hold every setting as the fields write it');
-    // the space-group row shares the columns of the name row: field under field, Convert… under the colour, Browse… under Edit
-    const box=el=>el.getBoundingClientRect(),same=(a,b)=>Math.abs(a.left-b.left)<0.5 && Math.abs(a.width-b.width)<0.5;
-    const rows=[[q('#phase-select'),q('#ph-sg')],[q('#ph-color'),conv],[q('#ph-rename'),browse]];
-    check(rows.every(([a,b])=>same(box(a),box(b)) && box(b).top>box(a).bottom-1) && Math.abs(box(conv).top-box(browse).top)<0.5,'Phase controls are not aligned: '+JSON.stringify(rows.map(([a,b])=>[box(a).left,box(a).width,box(b).left,box(b).width])));
+    const box=el=>el.getBoundingClientRect();
+    check(!q('#phase-select,#ph-color,#ph-rename') && Math.abs(box(conv).top-box(browse).top)<0.5,'Space-group actions are misaligned or duplicate phase identity controls remain');
     // 2. the dialog: subgroup preview, convert, undo
     conv.click();await frame();
     const dlg=q('#dlg'),field=k=>dlg.querySelector('[data-key="'+k+'"]'),preview=()=>dlg.querySelector('[data-convert-preview]').textContent;

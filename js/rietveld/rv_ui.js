@@ -6,7 +6,7 @@
  *  'settings', 'theme', 'tab', 'tables', 'shared'.
  */
 var RV = window.RV || (window.RV = {});
-RV.version = '2.47.2 (27 oct 2026)';
+RV.version = '2.48.0 (27 oct 2026)';
 
 RV.bus = (function () {
   'use strict';
@@ -452,6 +452,7 @@ RV.ui = (function () {
       helpFor = null;
     }, delay || 0);
   }
+  document.addEventListener('click', function(e){if(e.target.closest && e.target.closest('[data-acc-help]'))e.preventDefault();});
   document.addEventListener('pointerover', function (e) { var b = e.target.closest && e.target.closest('.help-q,[data-help],[data-help-html]'); if (b) showHelp(b); });
   document.addEventListener('pointerout', function (e) { var b = e.target.closest && e.target.closest('.help-q,[data-help],[data-help-html]'); if (b && b === helpFor && !b.contains(e.relatedTarget)) hideHelp(150); });
   document.addEventListener('focusin', function (e) { var b = e.target.closest && e.target.closest('.help-q,[data-help],[data-help-html]'); if (b) showHelp(b); else if (helpFor && !(e.target.closest && e.target.closest('.help-pop'))) hideHelp(0); });

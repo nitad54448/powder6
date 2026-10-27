@@ -166,7 +166,7 @@
         <p class="sub" id="about-version"></p>
         <h1>About Powder 6</h1>
         <p><b>Commands</b> and <b>Results</b> have independent tabs. Each coloured <b>Datasets</b> tab contains that dataset’s values and refine/fixed controls, including background X/Y, resolution and phase contributions. Bounds, sharing and links are edited there too. <b>Phases</b> contains shared definitions and starting models; <b>Method</b> chooses the next calculation; <b>Settings</b> contains numerical conditions. Results has separate <b>Le Bail</b>, <b>WPPF</b> and <b>Rietveld</b> tabs showing one selected run. Choosing a previous run preserves the working setup; <b>Use as start</b> restores it explicitly. Press <b>FIT</b> or F9 from any view. Use <b>⇄ Panels</b> to swap the two panels.</p>
-        <p>The dataset checkboxes define both the fit and plot selection. Choose All datasets, or a range with Shift+click, for large batches. Clicking a selected dataset inspects it without changing that selection. Plots offers Overlay, Overview and Inspect one dataset. Anchors, Backgnd, Phases, Refl and Subtract have independent display controls.</p>
+        <p>The dataset checkboxes define both the fit and plot selection. Choose All datasets, or a range with Shift+click, for large batches. Click a dataset name to inspect it without changing the checked datasets. Shift-click selects a range; Ctrl-click toggles inclusion. Plots offers Overlay, Overview and Inspect one dataset. Anchors, Backgnd, Phases, Refl and Subtract have independent display controls.</p>
         <p>Background… chooses one background type for all datasets. Chebyshev points are estimated automatically; Fit to points fits and holds the polynomial coefficients. Their Use checkboxes select point targets, independently of the polynomial order. Anchors remains visible for both background types. With spline backgrounds, Ctrl+click places an anchor at both cursor coordinates; right-drag moves it, Escape cancels the move. Edit exact X (2θ), Y (intensity) and the Y refinement checkbox in <b>Datasets → dataset tab → Background</b>. Magenta filled anchors are refinable; grey hollow anchors are fixed. A yellow line identifies the anchor being edited. Ctrl+Shift+drag edits exclusions.</p>
         <p>Each method retains its own setup and current result. <b>History</b> stores completed fits by method, with grouped individual batches and complete global fits, and every charge-flipping and Wyckoff solution. For the chosen run it lists everything: settings, phases, statistics, every parameter with its uncertainty, instrument, and for solutions their sites. Set restores a record; Keep protects it from automatic pruning; Delete asks first. <b>Save History…</b> and the report buttons write the records, with all their results, as JSON or text. The default automatic budget is 100 MB, with 20 recent unkept records for each method and, separately, for charge flipping and for the Wyckoff search; current and kept results are protected. Ctrl+Z undoes recent editing. Log contains detailed messages.</p>
         <p>Save a compressed <b>.project</b> file (projects saved as .powder6 or .archive open too) to retain observations, model definitions, method states, groups, history and structure candidates. Observations, the WPPF precision block and each structure solution are stored once. Compact history and CF density-map inclusion are optional. A saved project is the state the page compares against: it asks before leaving only when something changed after it. Open the file later using File or drag and drop; this is how History is read back.</p>
@@ -250,12 +250,12 @@
             <button type="button" id="ds-phases" class="mini" title="Add or remove phases for each dataset">Phases…</button><button type="button" id="ds-resolution" class="mini" title="Instrument profile and calibration">Profile</button><button type="button" id="ds-inst" class="mini" title="Wavelength, radiation, polarisation and anomalous scattering">Instrument…</button><button type="button" id="ds-bkg" class="mini" title="Background type for all datasets; coefficients and anchors are dataset-specific">Background…</button>
           </div>
           <details class="acc dataset-accordion fit-selection" id="fit-selection" data-acc="dataset-selection">
-            <summary><span class="acc-t">Datasets</span> <span id="fit-selection-count"></span></summary>
+            <summary><span class="acc-t">Datasets</span> <span id="fit-selection-count"></span><span class="ds-step dataset-title-tools" role="group" aria-label="Show another dataset"><span class="dataset-selection-led" id="dataset-selection-led" role="img" aria-label="Dataset unselected" title="Not included in plots or fitting"></span><button type="button" id="param-prev" aria-label="Previous dataset">&#8592;</button><button type="button" id="param-next" aria-label="Next dataset">&#8594;</button></span><button type="button" class="help-q acc-help" data-acc-help data-help="Check datasets to include them in plots and fitting; click a name to inspect its parameters. Shift-click selects a range. Individual fits refine each dataset separately. Global fits tie parameters marked shared." aria-label="About dataset selection and fit modes">?</button></summary>
             <section class="side-data" id="sp-datasets">
               <div class="dataset-scope"></div>
               <div class="side-h"><span id="ds-count" class="sub"></span></div>
               <input type="search" id="dataset-search" placeholder="Find datasets…" aria-label="Find datasets">
-              <div id="ds-list" class="ds-list" tabindex="0" role="listbox" aria-multiselectable="true" aria-label="Datasets selected for plotting and fitting"></div>
+              <ul id="ds-list" class="ds-list dataset-list" tabindex="0" aria-label="Datasets"></ul>
             <div class="fit-line" data-fitmode-visibility hidden>
               <span class="fit-lbl">Mode</span>
               <div class="seg" role="group" aria-label="Batch fit mode">
@@ -265,19 +265,16 @@
             <div class="buttons">
               <span class="hint" id="dataset-summary"></span>
             </div>
-            <p class="hint">Individual fits refine each dataset separately. Global fits tie parameters marked shared.</p>
             </section>
           </details>
-          <details class="acc dataset-accordion dataset-card" id="dataset-editor" data-acc="dataset-editor" open>
-            <summary><span class="acc-t" id="dataset-editor-name">Dataset</span></summary>
+          <details class="acc dataset-accordion dataset-card dataset-editor" id="dataset-editor" data-acc="dataset-editor" open>
+            <summary><span class="acc-t" id="dataset-editor-name">Dataset</span><button type="button" class="help-q acc-help" id="dataset-info-help" data-acc-help aria-label="Dataset information">?</button></summary>
             <div class="acc-body">
             <nav id="dataset-tabs" class="dataset-tabs" role="tablist" aria-label="Dataset parameters" hidden></nav>
             <section id="dataset-detail" aria-labelledby="dataset-editor-name">
-              <div id="dataset-values"></div>
-              <div><div id="ds-info" class="ds-info param-stats"></div></div>
               <div>
                 <div class="fit-steps">
-                  <span class="fit-lbl">Refine parameter groups</span>
+                  <h3 class="fit-group-heading"><span>Refine parameter groups</span><button type="button" class="help-q" data-help="Each checkbox changes only its group in this dataset. Sample selects phase broadening; Resolution selects instrument broadening. A dash means some parameters are ticked. Edit individual values and flags below. FIT or F9 calculates the datasets checked in Datasets." aria-label="About refinement parameter groups">?</button></h3>
                   <div class="fit-groups" role="group" aria-label="Refinement parameter groups">
                     <label><input type="checkbox" data-fit-group="scale"><span id="fit-background-label">Background</span></label>
                     <label><input type="checkbox" data-fit-group="cell">Zero / lattice</label>
@@ -287,10 +284,8 @@
                     <label data-rietveld-only title="Isotropic displacement parameter B = 8π² Uiso"><input type="checkbox" data-fit-group="adp">B (Å²; Uiso × 8π²)</label>
                     <label data-rietveld-only><input type="checkbox" data-fit-group="occupancy">Fractional occupancies</label>
                   </div>
-                  <p class="hint">Each checkbox changes only its group in this dataset. Sample selects phase broadening; Resolution selects instrument broadening. A dash means some parameters are ticked. Edit individual values and flags below. FIT or F9 calculates the datasets checked in Datasets.</p>
                 </div>
                 <section class="dataset-parameters" id="sp-params">
-                  <div class="side-h param-head"><span class="sub">Values of</span><span id="param-ds" class="sub strong"></span><span id="param-more" class="sub"></span><span class="tool-gap"></span><span class="ds-step" role="group" aria-label="Show another dataset"><button type="button" id="param-prev" aria-label="Previous dataset">←</button><button type="button" id="param-next" aria-label="Next dataset">→</button></span></div>
                   <div id="param-list" class="param-list"></div>
                   <div id="param-stats" class="param-stats" hidden></div>
 
@@ -329,10 +324,10 @@
           <button type="button" data-act="simulate">Simulate…</button>
         </div>
         <details id="phase-selection" class="fit-selection" hidden>
-          <summary>Choose a phase</summary>
+          <summary>Phases</summary>
           <section class="side-phases">
             <div class="side-h"><span id="ph-count" class="sub"></span></div>
-            <div id="ph-list" class="ds-list" tabindex="0" role="listbox" aria-label="Phases"></div>
+            <ul id="ph-list" class="ds-list dataset-list" tabindex="0" aria-label="Phases"></ul>
             <p class="hint">Select a phase to edit its shared definition here. Dataset-specific phase values and assignments are edited in Datasets.</p>
           </section>
         </details>

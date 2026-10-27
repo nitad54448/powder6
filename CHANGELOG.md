@@ -2,6 +2,14 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.48.0 - 27 October 2026
+
+1. **Compact editor descriptions.** Move phase starting-model guidance and dataset observation/instrument details into title help tooltips, visible only for open accordions. Remove the redundant Phase heading. Align phase and dataset leading spacing and use consistent 13 px subsection headings at weight 600. Bold the refinement-group heading, move its guidance into title help, and remove the two separators above it. Remove the repeated Values of heading. Show navigation arrows and a labelled green/red indicator for the inspected dataset in the main Datasets title only while its selection accordion is closed. Shorten the empty-plot message and constrain it to the plotting frame.
+
+2. **Phases list.** Use native list items and inspection buttons, with name and colour in the row Edit dialog. Remove the duplicate Phase name, colour picker and Edit controls from the shared-model editor. Phase editing remains undoable.
+
+3. **Dataset list.** Use native list items with independent inclusion checkboxes, inspection name buttons and Edit/Remove actions. Inspecting an unchecked dataset preserves fitting membership. Mark the inspected dataset separately, retain range selection and keyboard shortcuts, and skip filtered-out rows during arrow navigation. Dataset inspection remains available while fitting.
+
 ## 2.47.2 - 27 October 2026
 
 1. **Report precision and project loading.** Preserve very small uncertainties using scientific notation. Validate WPPF precision entry sizes and account for their decoded allocations before reading binary columns.

@@ -197,7 +197,7 @@ RV.Plot2D = (function () {
     }
     if (!this.series.length && this.o.empty) {
       c.fillStyle = T.ink2; c.font = Math.round(T.titleSize * 13 / 12) + 'px ' + T.font; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillText(this.o.empty, (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
+      c.fillText(this.o.empty, (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, Math.max(1, b.x1 - b.x0 - 16));
     }
     this._legend(c, T);
     if (this.drag && this.drag.mode === 'region' && this.drag.moved) {

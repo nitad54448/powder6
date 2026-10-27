@@ -169,7 +169,7 @@ RV.plots = (function () {
       S.settings.plotMode==='overview' && list.length>1?'Choose Overlay or Inspect one dataset to display spline anchors.':'';
     anchorLabel.hidden=false;
     RV.ui.able(anchors,anchorWhy);anchorLabel.classList.toggle('disabled',!!anchorWhy);anchorLabel.title=anchorWhy || 'Show Chebyshev point targets or spline anchors independently of the background curve.';
-    var empty = S.datasets.length ? 'Select one or more datasets' : 'No data yet. Use File, drop files on this window, or type demo in the command line below.';
+    var empty = S.datasets.length ? 'Select one or more datasets' : 'No data. Read patterns or load the demo.';
     P.pat.o.empty = empty;
     P.pat.o.legendMax = 10 + S.phases.length;
     Object.assign(P.pat.o, yOpts(), { band: bandPx() });

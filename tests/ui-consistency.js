@@ -123,6 +123,65 @@
     for(const width of [1280,768,390]){iframe.style.width=width+'px';await frame();check(doc.documentElement.scrollWidth<=doc.documentElement.clientWidth+1,'Page overflows at '+width+'px');}
     iframe.style.width='1280px';doc.documentElement.dataset.theme='light';RV.theme.refresh();await frame();
     check(!errors.length,'Browser errors: '+errors.join('; '));record('Desktop, tablet and narrow layouts fit the viewport without browser errors');
+    RV.app.showTab('phases');q('#phase-selection').open=true;
+    const phaseOne=St.currentPhase(),phaseTwo=St.makePhase({name:'Second phase',sg:St.resolveSG(1),cell:{a:6,b:6,c:6}});St.addPhase(phaseTwo);await frame();
+    const selectedIds=Array.from(S.sel).join(',');q('[data-inspect-phase="'+phaseOne.key+'"]').click();await frame();
+    check(St.currentPhase().key===phaseOne.key && q('[data-inspect-phase="'+phaseOne.key+'"]').getAttribute('aria-current')==='true' && Array.from(S.sel).join(',')===selectedIds,'Phase inspection changed fit membership or failed to mark the current phase');
+    key(q('[data-inspect-phase="'+phaseOne.key+'"]'),'ArrowDown');await frame();
+    check(St.currentPhase().key===phaseTwo.key && doc.activeElement===q('[data-inspect-phase="'+phaseTwo.key+'"]'),'Phase arrow navigation lost selection or keyboard focus');
+    check(!q('#phase-select,#ph-color,#ph-rename') && q('#phase-workspace'),'Duplicate phase controls remain or dataset assignment disappeared');
+    q('[data-edit-phase="'+phaseTwo.key+'"]').click();await frame();q('#dlg .btns button').click();await frame();check(St.currentPhase().key===phaseTwo.key,'Cancelling phase appearance changed selection');
+    record('Native phase list supports inspection and keyboard navigation without duplicate editor controls');
+    const phaseCard=q('.phase-accordion[open]'),phaseHelp=phaseCard.querySelector('summary .acc-help');
+    check(!q('#phase-src') && !Array.from(q('#phase-body').querySelectorAll('h2')).some(h=>h.textContent==='Phase'),'Phase description or redundant heading remains');
+    phaseHelp.dispatchEvent(new w.Event('pointerover',{bubbles:true}));await frame();check(q('#help-pop').textContent.includes('Shared phase definition'),'Phase title help is missing');
+    phaseHelp.click();await frame();check(phaseCard.open,'Clicking phase help closed the accordion');phaseCard.open=false;await frame();check(w.getComputedStyle(phaseHelp).display==='none','Closed phase exposes its help icon');phaseCard.open=true;
+    RV.app.showTab('datasets');await frame();const datasetCard=q('#dataset-editor'),datasetHelp=q('#dataset-info-help');datasetCard.open=true;const selection=q('#fit-selection'),selectionHelp=selection.querySelector('summary .acc-help');selection.open=true;selectionHelp.dispatchEvent(new w.Event('pointerover',{bubbles:true}));await frame();check(q('#help-pop').textContent.includes('Shift-click selects a range'),'Dataset selection title help is missing');selectionHelp.click();check(selection.open,'Selection help closed the accordion');selection.open=false;await frame();check(w.getComputedStyle(selectionHelp).display==='none','Closed selection exposes its help icon');
+    check(!q('#dataset-values,#ds-info'),'Dataset description remains in the editor');datasetHelp.dispatchEvent(new w.Event('pointerover',{bubbles:true}));await frame();
+    const helpText=q('#help-pop').textContent;check(!helpText.includes(' ? ') && helpText.includes('\u00b7'),'Dataset tooltip separators are corrupted');check(helpText.includes('observations') && helpText.includes('Beam') && helpText.includes('Fitted') && helpText.includes('Background'),'Dataset title help lost measurement details');
+    datasetHelp.click();await frame();check(datasetCard.open,'Clicking dataset help closed the accordion');datasetCard.open=false;await frame();check(w.getComputedStyle(datasetHelp).display==='none','Closed dataset exposes its help icon');datasetCard.open=true;
+    record('Phase and dataset descriptions live in title help shown only for open accordions');
+    const groupHeading=q('.fit-group-heading'),groupHelp=groupHeading.querySelector('.help-q');
+    check(w.getComputedStyle(groupHeading).fontWeight===w.getComputedStyle(q('.pg-t')).fontWeight && w.getComputedStyle(q('.fit-steps')).borderTopWidth==='0px' && w.getComputedStyle(datasetCard.querySelector('summary')).borderBottomWidth==='0px','Refinement heading is not bold or redundant separators remain');
+    groupHelp.dispatchEvent(new w.Event('pointerover',{bubbles:true}));await frame();check(q('#help-pop').textContent.includes('Each checkbox changes only its group') && !q('.fit-steps > .hint'),'Refinement guidance did not move to title help');
+    record('Refinement groups have a bold heading, title help and no duplicate separators');
+    // Dataset inclusion and inspection are independent native controls.
+    RV.app.showTab('datasets');q('#fit-selection').open=true;await frame();
+    const ids=S.datasets.map(d=>d.id),nameButton=id=>q('[data-inspect-dataset="'+id+'"]'),checkbox=id=>q('[data-dataset-check="'+id+'"]');
+    check(q('#ds-list').tagName==='UL' && all('#ds-list > li.ds').length===ids.length && !q('#ds-list [role="option"]'),'Datasets must use native list items');
+    St.selectIds([ids[0]]);await frame();nameButton(ids[1]).click();await frame();
+    check(S.sel.size===1 && S.sel.has(ids[0]) && RV.workspace.dataset().id===ids[1],'Inspecting an unchecked dataset changed inclusion');
+    check(nameButton(ids[1]).getAttribute('aria-current')==='true' && !nameButton(ids[0]).hasAttribute('aria-current'),'Inspected dataset marker is stale');
+    checkbox(ids[1]).click();await frame();check(S.sel.size===2,'Checkbox failed to include a dataset');
+    nameButton(ids[0]).dispatchEvent(new w.MouseEvent('click',{bubbles:true,ctrlKey:true}));await frame();check(!S.sel.has(ids[0]) && S.sel.has(ids[1]),'Ctrl-click failed to toggle inclusion');
+    nameButton(ids[0]).dispatchEvent(new w.MouseEvent('click',{bubbles:true,shiftKey:true}));await frame();check(S.sel.size===1 && S.sel.has(ids[0]),'Shift-click did not use the selection anchor');
+    key(nameButton(ids[0]),'ArrowDown');await frame();check(S.sel.size===1 && S.sel.has(ids[1]) && doc.activeElement===nameButton(ids[1]),'Arrow navigation failed to move selection and focus');
+    nameButton(ids[1]).dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowUp',shiftKey:true,bubbles:true,cancelable:true}));await frame();check(S.sel.size===2,'Shift-arrow did not extend the range');
+    key(nameButton(ids[0]),'F2');const rename=q('#ds-list .rename');check(rename,'F2 on a dataset name did not open rename');rename.value='Renamed by keyboard';key(rename,'Enter');await frame();check(St.byId(ids[0]).name==='Renamed by keyboard','Keyboard rename failed');
+    record('Native dataset list separates inclusion from inspection and preserves range and keyboard controls');
+    St.selectIds([ids[0]]);await frame();St.setBusy(true,'Dataset inspection test');nameButton(ids[1]).dispatchEvent(new w.MouseEvent('click',{bubbles:true,ctrlKey:true}));await frame();
+    check(S.sel.size===1 && S.sel.has(ids[0]) && RV.workspace.dataset().id===ids[1],'Busy inspection changed inclusion or failed');St.setBusy(false);await frame();
+    const drag=new w.DataTransfer(),source=nameButton(ids[1]).closest('li'),destination=nameButton(ids[0]).closest('li');source.dispatchEvent(new w.DragEvent('dragstart',{bubbles:true,dataTransfer:drag}));destination.dispatchEvent(new w.DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:drag}));await frame();
+    check(S.datasets.findIndex(d=>d.id===ids[1])===S.datasets.findIndex(d=>d.id===ids[0])-1,'Drag reorder did not place the dataset before its target');
+    record('Dataset names remain inspectable during calculations and drag reordering remains available');
+    RV.workspace.inspectDataset(S.datasets[0].id);q('#dataset-editor').open=true;await frame();const beforeNavigation=Array.from(S.sel).join(',');
+    check(!q('#param-ds,#param-more,.param-head') && q('#param-next').closest('summary')===q('#fit-selection > summary') && q('#dataset-selection-led').closest('.dataset-title-tools'),'Dataset arrows or repeated heading are misplaced');
+    q('#fit-selection').open=true;await frame();check(w.getComputedStyle(q('.dataset-title-tools')).display==='none','Open Datasets exposes compact navigation');q('#fit-selection').open=false;await frame();check(w.getComputedStyle(q('.dataset-title-tools')).display!=='none','Closed Datasets hides compact navigation');q('#param-next').click();await frame();check(!q('#fit-selection').open && RV.workspace.dataset().id===S.datasets[1].id && q('#dataset-editor').open && Array.from(S.sel).join(',')===beforeNavigation,'Title navigation changed inclusion or collapsed the editor');
+    St.selectIds([ids[0]]);RV.workspace.inspectDataset(ids[1]);await frame();check(!q('#dataset-selection-led').classList.contains('selected') && q('#dataset-selection-led').getAttribute('aria-label')==='Dataset unselected','Unselected dataset indicator is incorrect');
+    RV.workspace.inspectDataset(ids[0]);await frame();check(q('#dataset-selection-led').classList.contains('selected') && q('#dataset-selection-led').getAttribute('aria-label')==='Dataset selected','Selected dataset indicator is incorrect');
+    record('Dataset title owns navigation and a labelled selection LED without a repeated Values of row');
+    const spacing=[];
+    for(const width of [1280,768,390]){
+      iframe.style.width=width+'px';RV.app.showTab('datasets');q('#dataset-editor').open=true;await frame();
+      const rect=el=>el.getBoundingClientRect(),style=el=>w.getComputedStyle(el),summary=q('#dataset-editor > summary'),heading=q('.fit-group-heading'),groups=q('.fit-groups'),firstGroup=q('#param-list .pgroup');
+      const titleGap=rect(heading).top-rect(summary).bottom,sectionGap=rect(firstGroup).top-rect(groups).bottom;
+      check(titleGap>=4 && titleGap<=12,'Unexpected title/refinement gap at '+width+': '+titleGap);
+      check(sectionGap>=16 && sectionGap<=28,'Unexpected checkbox/parameter gap at '+width+': '+sectionGap);
+      check(style(heading).fontSize===style(firstGroup.querySelector('.pg-t')).fontSize && style(heading).fontWeight===style(firstGroup.querySelector('.pg-t')).fontWeight,'Parameter headings have inconsistent typography at '+width);
+      RV.app.showTab('phases');await frame();const phase=q('.phase-accordion[open]'),block=q('#phase-body .pblock'),phaseGap=rect(block).top-rect(phase.querySelector('summary')).bottom;
+      check(phaseGap>=4 && phaseGap<=12,'Phase editor has excess leading space at '+width+': '+phaseGap);check(style(q('#phase-body .pblock h2')).fontSize===style(heading).fontSize && style(q('#phase-body .pblock h2')).fontWeight===style(heading).fontWeight,'Phase subsection typography differs from parameter headings');spacing.push({width,titleGap,sectionGap,phaseGap,parameterFont:style(heading).fontSize,phaseSectionFont:style(block.querySelector('h2') || q('#phase-body .pblock h2')).fontSize});
+    }
+    iframe.style.width='1280px';await frame();results.push({name:'Measured editor spacing and typography at desktop, tablet and mobile widths',pass:true,measurements:spacing});out.textContent=JSON.stringify(results,null,2);
     window.browserTestResult={ok:true,results};
   }catch(e){results.push({name:'failure',pass:false,error:String(e.stack||e)});out.textContent=JSON.stringify(results,null,2);window.browserTestResult={ok:false,results};}
 })();
