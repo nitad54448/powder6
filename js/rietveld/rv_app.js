@@ -195,6 +195,7 @@
   // ---------------------------------------------------------------- pattern toolbar
   function syncToolbar() {
     var subtract=RV.plots.backgroundSubtracted();
+    $('#show-phases').closest('label').hidden=S.phases.length<2;
     document.querySelectorAll('[data-yscale]').forEach(function (b) { var k=b.getAttribute('data-yscale');b.setAttribute('aria-pressed',String(k === (subtract ? 'lin' : S.settings.yscale)));b.disabled=subtract && k!=='lin'; });
     $('#show-anchors').checked=!!S.settings.showAnchors;$('#no-background').checked = !!S.settings.noBackground; $('#show-bkg').checked = !!S.settings.showBkg; $('#show-phases').checked = !!S.settings.showPhases; $('#show-ticks').checked = !!S.settings.showTicks;
   }
@@ -327,6 +328,7 @@
 
     $('#theme-toggle').addEventListener('click', function () { St.setSetting('theme', isDark() ? 'light' : 'dark'); });
     if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () { if (S.settings.theme !== 'dark' && S.settings.theme !== 'light') applyTheme(); });
+    RV.bus.on('phases', syncToolbar);
     RV.bus.on('settings', function (k) {
       if (k === '*' || k === 'theme') applyTheme();
       if (k === '*' || /^(yscale|showAnchors|showBkg|showPhases|showTicks|noBackground)$/.test(k)) { syncToolbar(); RV.plots.refresh(false); }

@@ -2,6 +2,10 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.49.0 - 27 October 2026
+
+1. **Phase plot control.** Hide the Phases checkbox when the project has fewer than two phases. Restore it when another phase is added, preserving its saved setting.
+
 ## 2.48.1 - 27 October 2026
 
 1. **Project isolation and phase identities.** Clear Fourier results when replacing a project and restore the bundled absorption table when the new project has no custom table. Allocate unused phase keys, enforce uniqueness when adding phases, and reject ambiguous duplicate phase keys before opening a project.
