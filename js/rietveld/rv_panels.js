@@ -148,7 +148,7 @@ RV.panels = (function () {
     RV.bus.on('datasetFocus', renderInfo);
     RV.bus.on('stats', renderDatasets);
     RV.bus.on('data', renderDatasets);
-    RV.bus.on('busy', function(){renderInfo();updateSel();});
+    RV.bus.on('busy', updateSel);
     renderDatasets();
   }
 
@@ -254,6 +254,7 @@ RV.panels = (function () {
     $('#param-more').textContent = '';
     head.title = ds ? 'Values and refinement flags of '+ds.name+' only.' : '';
     syncStep();
+    host.querySelectorAll('[data-dataset-structure]').forEach(function(view){if(typeof WyckoffReport!=='undefined')WyckoffReport.dispose(view);});
     if (!ds) {
       shownGroups = null;
       host.innerHTML = '<p class="hint">' + (S.datasets.length ? 'Select a dataset to see and edit its parameters.' : 'Read a powder pattern first: each dataset holds its own values of the parameters of its phases.') + '</p>';
@@ -261,7 +262,6 @@ RV.panels = (function () {
     }
     var groups = groupsFor(ds), dis = S.busy ? ' disabled' : '';
     shownGroups = groups;
-    host.querySelectorAll('[data-dataset-structure]').forEach(function(view){if(typeof WyckoffReport!=='undefined')WyckoffReport.dispose(view);});
     host.innerHTML = groups.map(function (g) {
       var closed = !!collapsed[g.key], anchors = g.key === 'ds' && ds.inst.bkgType === 'spline';
       // One phase per group (its own key; ':prof' and ':Atom' groups carry the same phase's other rows), so its
@@ -408,7 +408,10 @@ RV.panels = (function () {
     });
     host.querySelectorAll('.cheb-points input, .cheb-points button').forEach(function(el){el.disabled=!!S.busy;});
     host.querySelectorAll('.pgroup').forEach(function (gr) {
-      var rows = gr.nextElementSibling.querySelectorAll('.prow:not(.dep)'), on = 0, tot = rows.length;
+      var rows = Array.from(gr.nextElementSibling.querySelectorAll('.prow:not(.dep)')).filter(function (r) {
+        var pf = r.querySelector('.pf');
+        return pf && !pf.disabled;
+      }), on = 0, tot = rows.length;
       rows.forEach(function (r) { if (ds.fit[r.getAttribute('data-name')]) on++; });
       var cb = gr.querySelector('.pg-fit');if(!cb)return;
       cb.checked = tot > 0 && on === tot; cb.indeterminate = on > 0 && on < tot;
@@ -514,7 +517,7 @@ RV.panels = (function () {
       var n = e.target.closest('.prow').getAttribute('data-name');
       if (e.key === 'Enter') { e.preventDefault(); commitInput(e.target); e.target.select(); }
       else if (e.key === 'Escape') { editing = null; renderValues(); e.target.blur(); }
-      else if (!e.target.readOnly && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); step(n, e.key === 'ArrowUp' ? 1 : -1, e); editing = n; }
+      else if (!e.target.readOnly && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); commitInput(e.target); step(n, e.key === 'ArrowUp' ? 1 : -1, e); editing = n; }
     });
     host.addEventListener('wheel', function (e) {
       // Hovering a row must scroll the panel. Only the focused value input
@@ -798,7 +801,7 @@ RV.panels = (function () {
     if (e.target.hasAttribute('data-shared')) { if(canShareParameter(n,ds))St.setShared(n, e.target.checked); return; }
     var w = e.target.getAttribute('data-lim');
     if (w == null) return;
-    var L = St.limitsOf(n, ds && ds.p[n]), raw = e.target.value.trim().toLowerCase(), v = /^-?inf/.test(raw) ? (raw.charAt(0) === '-' ? -Infinity : Infinity) : ui.parseNum(raw);
+    var L = St.limitsOf(n, ds && ds.p[n]), raw = e.target.value.trim().toLowerCase(), v = /^[+-]?inf(?:inity)?$/.test(raw) ? (raw.charAt(0) === '-' ? -Infinity : Infinity) : ui.parseNum(raw);
     if (St.isSizeParam(n) && Number.isFinite(v) && !Number.isInteger(v)) { ui.toast('Size limits use whole nanometres.', 'warn'); renderLimits(); return; }
     v = St.fromDisplay(n,v);
     L[+w] = v;
