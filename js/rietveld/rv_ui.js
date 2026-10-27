@@ -6,7 +6,7 @@
  *  'settings', 'theme', 'tab', 'tables', 'shared'.
  */
 var RV = window.RV || (window.RV = {});
-RV.version = '2.47.1 (26 oct 2026)';
+RV.version = '2.47.2 (27 oct 2026)';
 
 RV.bus = (function () {
   'use strict';
@@ -80,7 +80,12 @@ RV.ui = (function () {
   function withEsd(v, e) {
     if (!isFinite(v)) return '—';
     if (!(e > 0) || !isFinite(e)) return fmt(v);
-    var dec = Math.max(0, Math.min(8, 1 - Math.floor(Math.log10(e))));
+    var required = 1 - Math.floor(Math.log10(e));
+    if (required > 8) {
+      var places = v ? Math.max(0, Math.min(100, Math.floor(Math.log10(Math.abs(v))) + required)) : 0;
+      return v.toExponential(places) + ' \u00b1 ' + e.toExponential(1);
+    }
+    var dec = Math.max(0, required);
     var u = Math.round(e * Math.pow(10, dec));
     if (u >= 20 && dec > 0) { dec--; u = Math.round(e * Math.pow(10, dec)); }
     return v.toFixed(dec) + '(' + u + ')';

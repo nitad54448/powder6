@@ -552,6 +552,7 @@ RV.panels = (function () {
       var n = pl.closest('.prow').getAttribute('data-name');
       if (!St.shareable(n)) return;
       var sh = !St.isShared(n);
+      RV.history.take('sharing ' + n);
       St.setShared(n, sh);
       var so = St.shareOf(n, St.selected());
       ui.toast(n + (sh ? ' shared: one value for all the datasets of the global fit that hold it' + (so.alone.length && so.shared.length ? ', but ' + dsNames(so.alone) + ' (own value; Sharing… to change).' : '.') : ' local: one value per dataset in the global fit.'), 'info');
@@ -626,8 +627,13 @@ RV.panels = (function () {
 
   // ================================================================ Solve
   // What a fit of ds refines, grouped so it reads at a glance: [label, items] rows.
-  function fitGroups(ds) {
-    var names = St.fitNames(ds), phaseName = {}, rows = [], index = {};
+  function fitGroups(ds, list) {
+    list = list || [ds];
+    var names = [], seen = new Set(), phaseName = {}, rows = [], index = {};
+    list.forEach(function(d){var fitted=new Set(St.fitNames(d));Object.keys(d.p).forEach(function(n){
+      if(C.classify(n).kind==='instrument' && !St.instrumentParamsFor(d).some(function(p){return 'inst.'+p[0]===n;}))return;
+      if(seen.has(n))return;seen.add(n);if(fitted.has(n))names.push(n);
+    });});
     S.phases.forEach(function (p) { phaseName[p.key] = p.name; });
     function add(label, item) { if (!(label in index)) { index[label] = rows.length; rows.push([label, []]); } if (item && rows[index[label]][1].indexOf(item) < 0) rows[index[label]][1].push(item); }
     names.forEach(function (n) {
@@ -648,8 +654,8 @@ RV.panels = (function () {
       }
     });
     S.phases.forEach(function (p) {
-      if (p.method === 'wppf' && St.hasPhase(ds, p) && S.disabledPhases.indexOf(p.key) < 0) add(p.name + ' · intensities', 'every reflection (WPPF)');
-      else if (p.method === 'lebail' && St.hasPhase(ds, p) && S.disabledPhases.indexOf(p.key) < 0 && names.length) add(p.name + ' · intensities', 'partitioned again each Le Bail cycle');
+      if (p.method === 'wppf' && list.some(function(d){return St.hasPhase(d,p);}) && S.disabledPhases.indexOf(p.key) < 0) add(p.name + ' · intensities', 'every reflection (WPPF)');
+      else if (p.method === 'lebail' && list.some(function(d){return St.hasPhase(d,p);}) && S.disabledPhases.indexOf(p.key) < 0 && names.length) add(p.name + ' · intensities', 'partitioned again each Le Bail cycle');
     });
     // "position: Fe1 x, Fe1 z, C1 x" reads better as "Fe1 (x, z), C1 (x)"
     rows.forEach(function (r) {
@@ -661,9 +667,9 @@ RV.panels = (function () {
     return { count: names.length, rows: rows };
   }
   function fitListHTML(ds, g, n) {
-    var fg = fitGroups(ds);
-    if (!fg.rows.length) return '<br>Nothing ticked in ' + esc(ds.name) + '.';
-    return '<br>' + (fg.count ? plural(fg.count, 'parameter') + ' ticked' : 'No parameter ticked') + (g && n > 1 ? ' in ' + esc(ds.name) + ' (used for all that hold them)' : n > 1 ? ' in ' + esc(ds.name) + ' (each selected dataset uses its own ticks)' : '') + '; the fit refines:' +
+    var fg = fitGroups(ds, g ? St.selected() : [ds]);
+    if (!fg.rows.length) return '<br>Nothing ticked in ' + (g ? 'the selected datasets' : esc(ds.name)) + '.';
+    return '<br>' + (fg.count ? plural(fg.count, 'parameter') + ' ticked' : 'No parameter ticked') + (g && n > 1 ? ' across the selected datasets (ticks from the first selected holder of each parameter)' : n > 1 ? ' in ' + esc(ds.name) + ' (each selected dataset uses its own ticks)' : '') + '; the fit refines:' +
       '<ul class="fit-list">' + fg.rows.map(function (r) { return '<li><b>' + esc(r[0]) + '</b>' + (r[1].length ? ': ' + esc(r[1].join(', ')) : '') + '</li>'; }).join('') + '</ul>';
   }
   function syncFitTarget() {
@@ -775,15 +781,15 @@ RV.panels = (function () {
     if (f.type === 'int') v = Number.isInteger(v) ? v : NaN;
     if (!St.setSetting(k, v)) { el.classList.add('invalid'); ui.toast(f.label + ': value not accepted.', 'warn'); return; }
     el.classList.remove('invalid');
-    if (k === 'weight') { St.invalidateAll(); RV.bus.emit('data'); }
+    if (k === 'weight') RV.bus.emit('data');
   }
   function renderLimits() {
     var host = $('#limits'), ds = editorDataset();
-    if (!ds) { host.innerHTML = '<p class="hint">No dataset yet.</p>'; return; }
-    var names = St.namesFor(ds).filter(St.isVariable),sharing=names.some(function(n){return canShareParameter(n,ds);});
+    var names = ds ? St.namesFor(ds).filter(St.isVariable) : [],sharing=names.some(function(n){return canShareParameter(n,ds);});
     var sharingButton=$('#fit-sharing'),reset=$('#lim-reset');if(sharingButton)sharingButton.hidden=!sharing;
     if(reset)reset.textContent=sharing?'All limits and shared flags to their defaults':'All limits to their defaults';
     var help=$('#dataset-limits-group summary .acc-help');if(help)help.setAttribute('data-help','A refinement keeps every parameter between its limits (type inf for none).'+(sharing?' Shared parameters use one value across selected datasets in the global fit; unticked parameters keep separate values. Sharing… chooses which datasets take part.':''));
+    if (!ds) { host.innerHTML = '<p class="hint">No dataset yet.</p>'; return; }
     host.innerHTML = '<table class="grid compact limits-table"><colgroup><col style="width:26%"><col style="width:22%"><col style="width:16%"><col style="width:16%">' + (sharing?'<col style="width:11%">':'') + '<col style="width:9%"></colgroup><thead><tr><th>Parameter</th><th title="Value in ' + esc(ds.name) + '">Value</th><th>Min</th><th>Max</th>' +
       (sharing?'<th title="Global fit: one value for all datasets (ticked) or one value per dataset">Shared</th>':'') + '<th></th></tr></thead><tbody>' +
       names.map(function (n) {
@@ -798,7 +804,7 @@ RV.panels = (function () {
     var tr = e.target.closest('tr');
     if (!tr) return;
     var n = tr.getAttribute('data-name'), ds = editorDataset();
-    if (e.target.hasAttribute('data-shared')) { if(canShareParameter(n,ds))St.setShared(n, e.target.checked); return; }
+    if (e.target.hasAttribute('data-shared')) { if(canShareParameter(n,ds) && St.isShared(n)!==e.target.checked){RV.history.take('sharing '+n);St.setShared(n, e.target.checked);} return; }
     var w = e.target.getAttribute('data-lim');
     if (w == null) return;
     var L = St.limitsOf(n, ds && ds.p[n]), raw = e.target.value.trim().toLowerCase(), v = /^[+-]?inf(?:inity)?$/.test(raw) ? (raw.charAt(0) === '-' ? -Infinity : Infinity) : ui.parseNum(raw);
@@ -807,6 +813,9 @@ RV.panels = (function () {
     L[+w] = v;
     if (!(L[0] < L[1]) || isNaN(v)) { e.target.classList.add('invalid'); ui.toast('Limits of ' + n + ': min must be below max (inf for none).', 'warn'); return; }
     e.target.classList.remove('invalid');
+    var previous=St.limitsOf(n,ds && ds.p[n]);
+    if(previous[0]===L[0] && previous[1]===L[1])return;
+    RV.history.take('limits '+n);
     St.setLimit(n, L[0], L[1]);
     ui.toast('Limits of ' + n + ': ' + ui.fmt(St.toDisplay(n,L[0]), 6) + ' to ' + ui.fmt(St.toDisplay(n,L[1]), 6) + (St.isSizeParam(n) ? ' nm' : '') + '.', 'info');
     renderLimits();
@@ -818,6 +827,8 @@ RV.panels = (function () {
     $('#limits').addEventListener('click', function (e) {
       if (!e.target.closest('[data-lim-reset]')) return;
       var n = e.target.closest('tr').getAttribute('data-name');
+      if(!S.limits[n])return;
+      RV.history.take('reset limits '+n);
       St.clearLimit(n); renderLimits();
       ui.toast('Limits of ' + n + ' back to the default.', 'info');
     });
@@ -826,6 +837,8 @@ RV.panels = (function () {
     });
     $('#lim-reset').addEventListener('click', function () {
       var sharing=St.namesFor(editorDataset()).some(function(n){return canShareParameter(n,editorDataset());});
+      if(!Object.keys(S.limits).length && (!sharing || !Object.keys(S.shared).length))return;
+      RV.history.take(sharing?'reset limits and sharing':'reset limits');
       S.limits = {}; if(sharing)S.shared = {}; renderLimits(); RV.bus.emit('shared', {});
       ui.toast(sharing?'All limits and shared flags back to their defaults.':'All limits back to their defaults.', 'info');
     });

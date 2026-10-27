@@ -142,3 +142,20 @@ test('decoded allocation budget counts repeated references and temporary copies'
   const zip=await JSZip.loadAsync(bytes),jsonSize=zip.file('project.json')._data.uncompressedSize;
   await assert.rejects(()=>limited({decoded:jsonSize*4+100})(bytes),/decoded observations.*memory limit/);
 });
+
+function precisionArchive(edit) {
+  return archive((doc, files) => {
+    doc.version=4;
+    doc.solutionState={ints:{pre:{n:2,Q:{path:'q',length:4},index:{path:'ix',length:2}}}};
+    files.q=f64([1,0,0,1]);files.ix=i32([0,1]);
+    if(edit)edit(doc.solutionState.ints.pre);
+  });
+}
+test('precision allocations count against the decoded budget alongside observations',async()=>{
+  const bytes=await precisionArchive(),zip=await JSZip.loadAsync(bytes),jsonSize=zip.file('project.json')._data.uncompressedSize;
+  await assert.rejects(()=>limited({decoded:jsonSize*4+96+100})(bytes),/decoded precision block.*memory limit/);
+});
+test('precision index sizes and signed lengths are validated before decoding',async()=>{
+  for(const length of [-1,1.5,1e15])await assert.rejects(()=>precisionArchive(pre=>{pre.index.length=length;}).then(bytes=>RV.project.unpack(bytes)),/Invalid WPPF precision block/);
+  await assert.rejects(()=>precisionArchive(pre=>{pre.index.length=3;}).then(bytes=>RV.project.unpack(bytes)),/precision index length mismatch/);
+});

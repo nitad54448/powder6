@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.47.2 - 27 October 2026
+
+1. **Report precision and project loading.** Preserve very small uncertainties using scientific notation. Validate WPPF precision entry sizes and account for their decoded allocations before reading binary columns.
+2. **Refinement controls.** Include phases held only by later selected datasets in global-fit summaries. Make limit and sharing edits and resets undoable; clear stale sharing controls without datasets. Avoid duplicate weight invalidation.
+3. **Startup and help.** Allow startup without JSZip, with compression features reporting their existing unavailable-library errors. Make dataset-selection help independent of panel position. Dataset list behavior is unchanged.
+
 ## 2.47.1 - 26 October 2026
 
 1. **Third-party licensing.** Add an explicit scope notice to LICENCE: original Powder 6 material uses CC BY-NC-ND 4.0, while bundled third-party components retain their own terms. Identify @spglib/moyo-wasm 0.21.0, its MIT licence option, copyright and retained permission notice. Preserve the Creative Commons legal text and the upstream MIT file unchanged. Add the same scope and links to README and the documentation.

@@ -86,6 +86,18 @@ RV.project = (function(){
         var file=zip.file(field.path);if(!file)throw new Error('Missing observation column '+field.path);var declared=declaredSize(file);if(declared!==null && declared!==field.length*8)throw new Error('Observation column length mismatch.');
         decoded+=field.length*16;if(decoded>LIMITS.decoded)throw new Error('Project decoded observations exceed the memory limit.');
       }}
+    // Validate precision entries and their peak allocations before decoding any binary columns.
+    var pre=doc.solutionState && plain(doc.solutionState.ints) && doc.solutionState.ints.pre;
+    if(plain(pre) && plain(pre.Q) && typeof pre.Q.path==='string'){
+      var qf=zip.file(pre.Q.path),xf=plain(pre.index) && typeof pre.index.path==='string'?zip.file(pre.index.path):null;
+      if(!qf || !xf)throw new Error('Missing the WPPF precision block.');
+      if(!Number.isSafeInteger(pre.Q.length) || pre.Q.length<0 || pre.Q.length*8>LIMITS.column || !Number.isSafeInteger(pre.index.length) || pre.index.length<0 || pre.index.length*4>LIMITS.column)throw new Error('Invalid WPPF precision block.');
+      if(declaredSize(qf)!==pre.Q.length*8)throw new Error('WPPF precision block length mismatch.');
+      if(declaredSize(xf)!==pre.index.length*4)throw new Error('WPPF precision index length mismatch.');
+      // Inflated bytes, typed output and boxed-array conversion (conservative allowance).
+      decoded+=pre.Q.length*32+pre.index.length*24;
+      if(decoded>LIMITS.decoded)throw new Error('Project decoded precision block exceeds the memory limit.');
+    }
     for(var row of rows){var raw={key:row.key};for(var c of columns){var field=row.columns[c];if(!field){raw[c]=null;continue;}var file=zip.file(field.path);
         var array=values(await file.async('uint8array'));if(array.length!==field.length)throw new Error('Observation column length mismatch.');raw[c]=array;}
       if(!raw.tth || !raw.y || raw.tth.length!==raw.y.length)throw new Error('Invalid powder observations.');
@@ -94,12 +106,8 @@ RV.project = (function(){
       pool[row.key]=raw;}
     doc.datasets.forEach(function(d){var raw=plain(d) && typeof d.dataKey==='string'?pool[d.dataKey]:null;if(!raw)throw new Error('Missing observations for '+(plain(d) && d.name || 'a dataset'));columns.forEach(function(c){d[c]=raw[c] || null;});});
     if(doc.fitHistory)doc.fitHistory.observations=Object.values(pool).map(function(raw){var o={key:raw.key};columns.forEach(function(c){o[c]=raw[c] || null;});return o;});
-    // The precision block of a saved extraction, back as the flat matrix and index RV.sgtest.inputFrom reads.
-    var pre=doc.solutionState && plain(doc.solutionState.ints) && doc.solutionState.ints.pre;
-    if(plain(pre) && plain(pre.Q) && typeof pre.Q.path==='string'){
-      var qf=zip.file(pre.Q.path),xf=plain(pre.index)?zip.file(pre.index.path):null;
-      if(!qf || !xf)throw new Error('Missing the WPPF precision block.');
-      if(!Number.isSafeInteger(pre.Q.length) || pre.Q.length<0 || pre.Q.length>LIMITS.column || !Number.isSafeInteger(pre.index.length))throw new Error('Invalid WPPF precision block.');
+    // The validated precision block, restored as the arrays RV.sgtest reads.
+    if(qf && xf){
       var q=values(await qf.async('uint8array'));if(q.length!==pre.Q.length)throw new Error('WPPF precision block length mismatch.');
       var xi=int32s(await xf.async('uint8array'));if(xi.length!==pre.index.length)throw new Error('WPPF precision index length mismatch.');
       pre.Q=Array.from(q);pre.index=Array.from(xi);

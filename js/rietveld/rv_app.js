@@ -6,7 +6,7 @@
   'use strict';
   // The modules share globals and load as ordered deferred scripts (index.html): a missing or misordered
   // file must say so instead of failing later on an undefined property.
-  var REQUIRED = ['JSZip', 'RVCore', 'CFAdaptive', 'SGConvert','RV.bus', 'RV.ui', 'RV.state', 'RV.history', 'RV.plots', 'RV.phasesTab', 'RV.panels', 'RV.results',
+  var REQUIRED = ['RVCore', 'CFAdaptive', 'SGConvert','RV.bus', 'RV.ui', 'RV.state', 'RV.history', 'RV.plots', 'RV.phasesTab', 'RV.panels', 'RV.results',
                   'RV.cmd', 'RV.pool', 'RV.sgtest', 'RV.solve', 'RV.pdf', 'RV.datasets', 'RV.fitHistory', 'RV.project', 'RV.workspace', 'RV.layout', 'RV.restraints', 'RV.wyHelper', 'AtomRestraints', 'MoleculeRules', 'RV.fourier', 'FourierMap'];
   var missing = REQUIRED.filter(function (name) { return !name.split('.').reduce(function (o, k) { return o && o[k]; }, window); });
   if (missing.length) {
