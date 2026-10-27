@@ -3,7 +3,7 @@
   var iframe=document.getElementById('app'),out=document.getElementById('results'),results=[];
   try{
     var w=iframe.contentWindow,deadline=Date.now()+20000;
-    while(!w.RV || !w.RV.state.S.sgReady || !w.RV.state.S.tables){if(Date.now()>deadline)throw Error('Startup timeout');await new Promise(function(r){setTimeout(r,30);});}
+    while(!w.RV || !w.RV.state || !w.RV.state.S.sgReady || !w.RV.state.S.tables){if(Date.now()>deadline)throw Error('Startup timeout');await new Promise(function(r){setTimeout(r,30);});}
     var RV=w.RV,doc=w.document,errors=[];
     w.addEventListener('error',function(e){errors.push(e.message);});
     var frame=function(){return new Promise(function(r){w.requestAnimationFrame(function(){w.requestAnimationFrame(r);});});};

@@ -111,7 +111,8 @@
     check(RV.solve.state.opts.formula==='Ca Ti O3' && RV.solve.state.opts.wy.rhoMin===3.2,'Structure search settings did not restore');
     check(!Object.values(RV.solve.state.extractions).some(e=>e.I.lambda===1.788965),'Old extraction cache survived project load');
     RV.app.showTab('datasets');await wait(100);
-    check(w.document.querySelector('#dataset-detail').textContent.includes('0.71073'),'Dataset inspector shows old wavelength');
+    const datasetHelp=w.document.querySelector('#dataset-info-help');datasetHelp.dispatchEvent(new w.Event('pointerover',{bubbles:true}));await wait(50);
+    check(w.document.querySelector('#help-pop').textContent.includes('0.71073'),'Dataset inspector tooltip shows old wavelength');
     record('Opening a project replaces instrument, fit/search options, defaults and extraction caches');
     const legacy=JSON.parse(St.projectJSON([]));delete legacy.solutionState;delete legacy.fitmode;
     await RV.cmd.readFiles([{name:'legacy.json',arrayBuffer:async()=>new w.TextEncoder().encode(JSON.stringify(legacy)).buffer}]);

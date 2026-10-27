@@ -792,8 +792,18 @@ RV.state = (function () {
   /* o = { name, sg (from resolveSG), cell {a ... gamma}, atoms [{label, type, x, y, z, occ, B}], profileType, poDir, color }
      The positions are put exactly on their sites: a coordinate typed as 0.3333 becomes 1/3 where the site says so.
      The internal method field mirrors the active calculation; it is not a phase setting. */
+  var allocatedPhaseKeys=new Set();
+  function validPhaseKey(key) { return typeof key==='string' && /^p\d+$/.test(key) && Number.isSafeInteger(+key.slice(1)) && +key.slice(1)>0; }
+  function checkPhaseKeys(phases) {
+    var keys=new Set();phases.forEach(function(ph){if(!ph || !validPhaseKey(ph.key))throw new Error('Invalid phase key.');if(keys.has(ph.key))throw new Error('Duplicate phase key '+ph.key+'.');keys.add(ph.key);});
+  }
+  function nextPhaseKey() {
+    var next=Number.isSafeInteger(S.nextPhase) && S.nextPhase>0 ? S.nextPhase : 1;
+    while(allocatedPhaseKeys.has('p'+next) || phaseByKey('p'+next)){next++;if(!Number.isSafeInteger(next))next=1;}
+    var key='p'+next;allocatedPhaseKeys.add(key);S.nextPhase=next+1;return key;
+  }
   function makePhase(o) {
-    var key = 'p' + S.nextPhase++, sg = o.sg, atoms = o.atoms || [];
+    var key = nextPhaseKey(), sg = o.sg, atoms = o.atoms || [];
     var method = S.calculation || 'lebail';
     var ph = { key: key, color: /^#[0-9a-f]{6}$/i.test(o.color || '') ? o.color : null, name: o.name || ('phase ' + key.slice(1)), method: method, sg: { number: sg.number, symbol: sg.symbol, hall: sg.hall, system: sg.system, laue: sg.laue, setting: sg.setting, uniqueAxis: sg.uniqueAxis },
                ops: sg.ops, wyckoff: sg.wyckoff, profileType: o.profileType || 'gsas_cw', separatedProfile: o.separatedProfile === true || !o.profileType || o.profileType==='gsas_cw', broadening: RVCore.broadeningConfig(o.broadening), poDir: (o.poDir || [0, 0, 1]).slice(), constraints:JSON.parse(JSON.stringify(o.constraints || [])), restraints:RV.restraintsOf(o.restraints), atoms: [], v: {}, fit: {} };
@@ -848,6 +858,10 @@ RV.state = (function () {
   }
   // ids: the datasets that hold the new phase (default: every dataset)
   function addPhase(ph, ids) {
+    checkPhaseKeys(S.phases.concat([ph]));
+    // Explicit/imported phases reserve their numeric identity as well as generated phases.
+    allocatedPhaseKeys.add(ph.key);
+    S.nextPhase=Math.max(Number.isSafeInteger(S.nextPhase)?S.nextPhase:1,+ph.key.slice(1)+1);
     S.phases.push(ph);
     S.phaseSel = ph.key;
     S.version++;
@@ -1488,11 +1502,17 @@ RV.state = (function () {
     var v1 = doc.format === PROJECT_V1;
     if (v1 ? (doc.version != null && doc.version !== 1) : ![2,3,4].includes(doc.version)) throw new Error('project version ' + doc.version + ' is not supported');
     if (!S.sgReady) throw new Error('the space-group database is not loaded, so the phases cannot be rebuilt');
-    var phases = (doc.phases || []).map(function (p, i) {
+    var phaseRows=doc.phases || [],reservedKeys=new Set();
+    if(!Array.isArray(phaseRows))bad('phases');
+    phaseRows.forEach(function(p,i){
+      if(!isObj(p))bad('phase '+(i+1));
+      if(p.key!=null){if(!validPhaseKey(p.key))bad('phase '+(i+1)+': invalid phase key');if(reservedKeys.has(p.key))bad('duplicate phase key '+p.key);reservedKeys.add(p.key);}
+    });
+    var phases = phaseRows.map(function (p, i) {
       if (!isObj(p)) bad('phase ' + (i + 1));
       var sg = resolveSG(p.number, p.hall) || resolveSG(p.symbol);
       if (!sg) bad('phase ' + (i + 1) + ': unknown space group ' + (p.symbol || p.number));
-      var key = /^p\d+$/.test(p.key) ? p.key : 'p' + (i + 1);
+      var key=p.key;if(key==null){var ordinal=i+1;while(reservedKeys.has('p'+ordinal))ordinal++;key='p'+ordinal;reservedKeys.add(key);}
       var ph = { key: key, color: /^#[0-9a-f]{6}$/i.test(p.color || '') ? p.color : null, name: String(p.name || key), method: C.METHODS.indexOf(p.method) >= 0 ? p.method : 'rietveld',
                  sg: { number: sg.number, symbol: sg.symbol, hall: sg.hall, system: sg.system, laue: sg.laue, setting: sg.setting, uniqueAxis: sg.uniqueAxis },
                  ops: sg.ops, wyckoff: sg.wyckoff, profileType: C.PROFILE_PARAMS[p.profileType] ? p.profileType : 'simple_pvoigt', separatedProfile: p.separatedProfile === true, broadening: RVCore.broadeningConfig(p.broadening),
@@ -1542,6 +1562,7 @@ RV.state = (function () {
     return { fitmode:doc.fitmode, phaseSelection:doc.phaseSelection, presetDefaults:isObj(doc.presetDefaults)?doc.presetDefaults:{}, calculation: C.METHODS.indexOf(doc.calculation) >= 0 ? doc.calculation : (phases[0] ? phases[0].method : 'lebail'), calculationOptions: isObj(doc.calculationOptions) ? doc.calculationOptions : {}, settings: cleanSettings(doc.settings), shared: isObj(doc.shared) ? doc.shared : {}, limits: limits, phases: phases, raws: raws, log: log, disabledPhases:doc.disabledPhases || [],  parameterLinks:doc.parameterLinks || [],selection:doc.selection,focus:doc.focus,fitHistory:RV.fitHistory?RV.fitHistory.validate(doc.fitHistory,raws.map(function(r){return r.dataKey;}).filter(Boolean)):null };
   }
   function commitProject(pj) {
+    checkPhaseKeys(pj.phases);
     // A project replaces the start values too: nothing of the session before it survives (openProject waits for the
     // bundled preset files first, so they cannot land after this and refill what the project left empty).
     S.nextId=1; S.anchor=null; S.presetDefaults=cloneCalculation(pj.presetDefaults || {});
@@ -1549,6 +1570,7 @@ RV.state = (function () {
     S.calculation = pj.calculation; S.calculationOptions = pj.calculationOptions;
     S.settings = pj.settings; store('settings', S.settings);
     S.phases = pj.phases; S.phases.forEach(function (ph) { ph.method = S.calculation; }); S.shared = Object.assign({}, pj.shared); S.limits = pj.limits;
+    allocatedPhaseKeys=new Set(S.phases.map(function(ph){return ph.key;}));
     S.nextPhase = 1 + S.phases.reduce(function (m, p) { return Math.max(m, +p.key.slice(1)); }, 0);
     S.phaseSel = S.phases.some(function(p){return p.key===pj.phaseSelection;}) ? pj.phaseSelection : S.phases.length ? S.phases[0].key : null;
     S.datasets = []; S.sel.clear(); S.focus = null; S.version++;
@@ -1577,6 +1599,7 @@ RV.state = (function () {
       var b=d.calculations && d.calculations[S.calculation];
       if(b && b.ints && b.signature===calculationSignature(d))d.ints=cloneCalculation(b.ints);
     });
+    RV.bus.emit('project');
     RV.bus.emit('settings', '*'); RV.bus.emit('calculation',S.calculation); RV.bus.emit('fitmode'); RV.bus.emit('phases'); RV.bus.emit('phaseSel'); RV.bus.emit('datasets');
     RV.bus.emit('selection');
   }

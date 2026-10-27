@@ -18,12 +18,17 @@ RV.panels = (function () {
     var on = S.sel.has(d.id), current = editorDataset() === d;
     return '<li class="ds'+(on?' on':'')+(current?' inspected':'')+'" data-id="'+d.id+'" style="--dataset-color:'+RV.plots.colorVar(d)+'" draggable="true"><input type="checkbox" data-dataset-check="'+d.id+'" aria-label="Include '+esc(d.name)+' in plots and fit"'+(on?' checked':'')+'><button type="button" class="nm dataset-name" data-inspect-dataset="'+d.id+'" aria-label="Inspect '+esc(d.name)+'"'+(current?' aria-current="true"':'')+' title="Inspect '+esc(d.name)+'">'+esc(d.name)+'</button><button type="button" class="mini" data-edit-dataset="'+d.id+'" aria-label="Edit '+esc(d.name)+'"'+(S.busy?' disabled':'')+'>Edit</button><button type="button" class="icon-btn" data-remove-dataset="'+d.id+'" aria-label="Remove dataset '+esc(d.name)+'" title="Remove dataset '+esc(d.name)+'"'+(S.busy?' disabled':'')+'>✕</button></li>';
   }
+  function filterDatasets() {
+    var search=$('#dataset-search'),needle=search?search.value.toLowerCase():'';
+    if(!dsList)return;
+    dsList.querySelectorAll('.ds').forEach(function(row){var d=St.byId(+row.dataset.id);row.hidden=!d || d.name.toLowerCase().indexOf(needle)<0;});
+  }
   function renderDatasets() {
     if (!S.datasets.length) {
       dsList.innerHTML = '<li class="empty-list"><p>No datasets yet.</p><p>Use File, drop powder patterns on this window, or ' +
         '<button type="button" class="link" data-act="demo">load the demo</button> (NaCl and Si, measured with Cu and Co radiation).</p></li>';
     } else dsList.innerHTML = S.datasets.map(dsRow).join('');
-    countDatasets(); renderInfo();
+    filterDatasets();countDatasets(); renderInfo();
   }
   function countDatasets() { $('#ds-count').textContent = S.datasets.length ? S.sel.size + ' of ' + S.datasets.length + ' selected' : ''; }
   function updateSel() {
@@ -163,11 +168,18 @@ RV.panels = (function () {
 
   // ================================================================ Phases
   function renderPhases() {
-    var cur = St.currentPhase();
+    var cur = St.currentPhase(),active=document.activeElement,row=active && phList.contains(active)?active.closest('.ph'):null;
+    var focusKey=row?row.dataset.key:null,focusIndex=row?Array.prototype.indexOf.call(phList.children,row):-1;
+    var action=row && active.matches('[data-edit-phase]')?'data-edit-phase':row && active.matches('[data-remove-phase]')?'data-remove-phase':'data-inspect-phase';
     $('#ph-count').textContent = plural(S.phases.length, 'phase');
     phList.innerHTML = S.phases.map(function (ph, i) {
       return '<li class="ds ph' + (cur === ph ? ' on inspected' : '') + '" data-key="' + ph.key + '" ><i class="sw" style="--dataset-color:' + RV.plots.phaseVar(i) + '"></i><button type="button" class="nm dataset-name" data-inspect-phase="'+esc(ph.key)+'"'+(cur===ph?' aria-current="true"':'')+' aria-label="Inspect '+esc(ph.name)+'">' + esc(ph.name) + '</button><small>' + esc(ph.sg.symbol) + ' · ' + ph.atoms.length + ' atoms</small><button type="button" class="mini" data-edit-phase="'+esc(ph.key)+'" aria-label="Edit '+esc(ph.name)+'"'+(S.busy?' disabled':'')+'>Edit</button><button type="button" class="icon-btn" data-remove-phase="'+ph.key+'" aria-label="Remove phase '+esc(ph.name)+'" title="Remove phase '+esc(ph.name)+'"'+(S.busy?' disabled':'')+'>✕</button></li>';
     }).join('') || '<li class="hint">Create or import a phase in the Phases tab.</li>';
+    if(focusKey){
+      var nextRow=phList.querySelector('.ph[data-key="'+focusKey+'"]'),button=nextRow && nextRow.querySelector('['+action+']');
+      if(!button || button.disabled){nextRow=nextRow || phList.children[Math.min(focusIndex,phList.children.length-1)];button=nextRow && nextRow.querySelector('[data-inspect-phase]');}
+      if(button)button.focus();else {var fallback=$('#pane-phases [data-act="new"]');(fallback || phList).focus();}
+    }
   }
   function initPhases() {
     phList = $('#ph-list');
@@ -854,5 +866,5 @@ RV.panels = (function () {
   }
 
   function init() { initDatasets(); initPhases(); initParams(); initFit(); initSettings(); }
-  return { init: init, fmtVal: fmtVal, fmtEsd: fmtEsd, syncFitMode: syncFitMode, renderLimits: renderLimits,groupsFor:groupsFor };
+  return { init: init, filterDatasets:filterDatasets, fmtVal: fmtVal, fmtEsd: fmtEsd, syncFitMode: syncFitMode, renderLimits: renderLimits,groupsFor:groupsFor };
 })();

@@ -13,19 +13,30 @@ RV.pool = (function () {
   var workers = [], broken = false;
   function size() { return Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1)); }
   function make() { try { return new Worker('js/rietveld_worker.js'); } catch (e) { return null; } }
+  function watchIdle(wk) {
+    var w=wk.w;
+    w.onmessage=null;
+    w.onerror=function(ev){
+      if(ev && ev.preventDefault)ev.preventDefault();
+      if(wk.w!==w || wk.busy)return;
+      console.warn('a refinement worker failed before dispatch:',ev && ev.message);
+      try{w.terminate();}catch(e){ /* already stopped */ }
+      var i=workers.indexOf(wk);if(i>=0)workers.splice(i,1);
+    };
+  }
   function init() {
     if (workers.length || broken) return;
     for (var i = 0; i < size(); i++) {
       var w = make();
       if (!w) { broken = true; workers.forEach(function (x) { x.w.terminate(); }); workers = []; console.warn('Web Workers unavailable, refining in this window.'); return; }
-      workers.push({ w: w, busy: false, token: null });
+      var wk={w:w,busy:false,token:null};watchIdle(wk);workers.push(wk);
     }
   }
   function restart(wk) {
     try { wk.w.terminate(); } catch (e) { /* */ }
     wk.busy = false; wk.token = null;
     var w = make();
-    if (w) wk.w = w; else workers.splice(workers.indexOf(wk), 1);
+    if (w) {wk.w=w;watchIdle(wk);} else workers.splice(workers.indexOf(wk), 1);
   }
   function run(jobs, onResult, onProgress, onIter, opts) {
     opts=opts||{};
@@ -53,7 +64,7 @@ RV.pool = (function () {
       function feed(wk) {
         if (state.cancelled) return;
         var k = retry.length ? retry.shift() : (nextJob < jobs.length ? nextJob++ : -1);
-        if (k < 0) { wk.busy = false; if (!inflight) resolve(results); return; }
+        if (k < 0) { wk.busy = false; wk.token=null;watchIdle(wk);if (!inflight) resolve(results); return; }
         var token = {};
         inflight++; wk.busy = true; wk.token = token;
         wk.w.onmessage = function (e) {
@@ -105,14 +116,32 @@ RV.cmd = (function () {
 
   // ---------------------------------------------------------------- reading files
   // powder patterns (every format the readers of Le Bail · WPPF know), structure CIFs (phases) and project files, sorted by content
-  async function readFiles(files) {
-    if (!idle()) return;
+  var importQueue=Promise.resolve();
+  function importContext() { return {datasets:S.datasets,phases:S.phases,cancelled:false}; }
+  function importReady(context) {
+    if(context.cancelled)return false;
+    if(context.datasets===S.datasets && context.phases===S.phases && !S.busy)return true;
+    context.cancelled=true;
+    ui.toast(S.busy?'Import stopped: a calculation started while the files were being read. Read the files again when it finishes.':'Import stopped: the project changed while the files were being read. Read them again in the current project.','warn');
+    return false;
+  }
+  function enqueueImport(read) {
+    if(!idle())return Promise.resolve();
+    var context=importContext(),next=importQueue.then(function(){if(importReady(context))return read(context);});
+    importQueue=next.catch(function(){});
+    return next;
+  }
+  function readFiles(files) { return enqueueImport(function(context){return readFilesNow(files,context);}); }
+  async function readFilesNow(files,context) {
+    if (!importReady(context)) return;
     var data = [], structures = [], project = null, presets = [];
     for (var i = 0; i < files.length; i++) {
       var f = files[i], buf;
       try { buf = await ui.readBuffer(f); } catch (e) { ui.toast(f.name + ': ' + e.message, 'err'); continue; }
+      if(!importReady(context))return;
       // a project: saved as .project (also read: .archive, and .powder6 from earlier versions), or any zip holding project.json
-      if(RV.project.isProjectName(f.name) || await RV.project.isProjectArchive(buf)){try{project={name:f.name,document:await RV.project.unpack(buf)};}catch(e){ui.toast(f.name+': '+e.message,'err');}continue;}
+      var isProject=RV.project.isProjectName(f.name) || await RV.project.isProjectArchive(buf);if(!importReady(context))return;
+      if(isProject){try{var document=await RV.project.unpack(buf);if(!importReady(context))return;project={name:f.name,document:document};}catch(e){ui.toast(f.name+': '+e.message,'err');}continue;}
       var head = '';
       try { head = new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(buf, 0, Math.min(buf.byteLength, 65536))); } catch (e) { head = ''; }
       if (/^\s*\{/.test(head) && (head.indexOf('"powder6-project"') >= 0)) { project = { name: f.name, text: new TextDecoder().decode(buf) }; continue; }
@@ -131,10 +160,11 @@ RV.cmd = (function () {
       }
       data.push({ name: f.name, buf: buf });
     }
+    if(!importReady(context))return;
     if (project) { try { await openProject(project.document || project.text); } catch (e) { ui.toast(project.name + ': ' + e.message, 'err'); } return; }
     var importedPhases = structures.length ? readStructures(structures) : [];
-    if (data.length) await readData(data, importedPhases);
-    for (var preset of presets) await applyPresetText(preset.text, preset.name);
+    if (data.length) await readData(data, importedPhases,context);
+    for (var preset of presets) {if(!importReady(context))return;await applyPresetText(preset.text, preset.name);}
   }
   function instFromFile(pd) {
     var inst = {}, base = S.settings.inst;
@@ -150,12 +180,12 @@ RV.cmd = (function () {
     if (pd.radiation === 'neutron') { inst.anode = ''; inst.pol = 'none'; }
     return inst;
   }
-  async function readData(items, importedPhases) {
+  async function readData(items, importedPhases,context) {
     var raws = [], failed = 0, warnings = [];
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
       try {
-        var parsed = await detectAndParseBuffer(it.name, it.buf), patterns = parsed.patterns || [parsed], fileRaws = [];
+        var parsed = await detectAndParseBuffer(it.name, it.buf);if(!importReady(context))return;var patterns = parsed.patterns || [parsed], fileRaws = [];
         patterns.forEach(function (pattern) {
           var pd = normalizeParsedData(pattern, it.name);
           (pd.warnings || []).forEach(function(warning){warnings.push(it.name+': '+warning);});
@@ -171,7 +201,7 @@ RV.cmd = (function () {
         Array.prototype.push.apply(raws, fileRaws);
       } catch (e) { failed++; ui.toast(it.name + ': ' + ((e && e.message) || e), 'err'); }
     }
-    if (!raws.length) return;
+    if (!raws.length || !importReady(context)) return;
     snapshot('reading ' + plural(raws.length, 'file'));
     var made = St.addDatasets(raws);
     if(RV.app)RV.app.showTab('pattern');
@@ -229,9 +259,14 @@ RV.cmd = (function () {
     if (!idle() || !haveSG()) return;
     var fs = await ui.pickFiles({ multiple: true, accept: '.cif,.pdcif' });
     if (!fs.length) return;
-    var items = [];
-    for (var i = 0; i < fs.length; i++) { try { items.push({ name: fs[i].name, text: new TextDecoder().decode(await ui.readBuffer(fs[i])) }); } catch (e) { ui.toast(fs[i].name + ': ' + e.message, 'err'); } }
-    readStructures(items);
+    await enqueueImport(async function(context){
+      var items=[];
+      for(var i=0;i<fs.length;i++){
+        try{var buffer=await ui.readBuffer(fs[i]);if(!importReady(context))return;items.push({name:fs[i].name,text:new TextDecoder().decode(buffer)});}
+        catch(e){ui.toast(fs[i].name+': '+e.message,'err');}
+      }
+      if(importReady(context))readStructures(items);
+    });
   }
 
   // ---------------------------------------------------------------- phases
@@ -1157,13 +1192,13 @@ RV.cmd = (function () {
     return out;
   }
   async function applyPreset(pr, from) {
-    var current=St.currentPhase();if(!current || !idle())return;
+    var current=St.currentPhase();if(!current || !idle())return;var context=importContext();
     RV.app.showTab('datasets');
     if(!pr.separatedProfile)throw new Error('Use an instrument-resolution calibration or a sample-broadening preset.');
     var fields=[{key:'phase',label:'Destination phase',type:'select',value:current.key,options:S.phases.map(function(p){return [p.key,p.name];})}];
     if(RV.workspace)fields.push(RV.workspace.targetField());
     var result=await ui.prompt('Load sample broadening',fields,'Apply sample values','Source: '+ui.esc(from)+'. This updates sample size/strain values for the chosen phase in the target datasets. Instrument resolution and refinement flags are kept.');
-    if(!result)return;var ph=St.phaseByKey(result.phase),list=(RV.workspace?RV.workspace.targets(result.targets):sel()).filter(function(d){return St.hasPhase(d,ph);});
+    if(!result || !importReady(context))return;var ph=St.phaseByKey(result.phase);if(!ph)return;var list=(RV.workspace?RV.workspace.targets(result.targets):sel()).filter(function(d){return St.hasPhase(d,ph);});
     snapshot('sample broadening of '+ph.name);ph.separatedProfile=true;ph.broadening=C.broadeningConfig(pr.broadening);St.phaseChanged(ph);
     Object.keys(pr.values).forEach(function(n){St.setParam(ph.key+'.'+n,pr.values[n],list,true);});
     RV.bus.emit('params',{});ui.toast('Loaded sample broadening for '+ph.name+' in '+list.length+' dataset(s).','ok');
@@ -1478,7 +1513,7 @@ RV.cmd = (function () {
     if(RV.fitHistory)RV.fitHistory.complete(historyTicket,list,false);
     ui.log('Refinement algorithm: ' + (S.settings.algorithm === 'pt' ? 'parallel tempering + LM finish' : 'Levenberg–Marquardt') + '.');
     ui.toast('Global fit (' + C.METHOD_LABELS[S.calculation] + ') of ' + plural(list.length, 'dataset') + ': ' + job.nShared + ' shared and ' + job.nLocal + ' local parameters, χ² ' + fmt(res.chi2red) + ', ' +
-      res.iter + ' iterations, ' + res.msg + ', ' + ((performance.now() - t0) / 1000).toFixed(2) + ' s.' + (job.mixed.length ? ' Ticks of ' + first.name + ' used for all.' : ''), St.fitStatus(res.msg));
+      res.iter + ' iterations, ' + res.msg + ', ' + ((performance.now() - t0) / 1000).toFixed(2) + ' s.' + (job.mixed.length ? ' Ticks from the first selected holder of each parameter were used.' : ''), St.fitStatus(res.msg));
   }
   function fit() { var el=document.activeElement;if(el && el.matches && el.matches('input,select,textarea'))el.blur(); if (RV.app.fitMode() === 'global') return globalFit(); else return fitSelected(); }
   function stop() { if (running) running.cancel(); if (RV.solve) RV.solve.stop(); }
@@ -1492,14 +1527,16 @@ RV.cmd = (function () {
     ui.toast('Saved the project: ' + plural(S.phases.length, 'phase') + ', ' + plural(S.datasets.length, 'dataset') + ', settings and the Log.', 'ok');
   }
   async function openProject(text) {
-    if (!idle()) return;
+    if (!idle()) return;var context=importContext();
     // The bundled preset files are part of the document: let them land first, so the project's own start values are
     // merged over a settled state and the saved-state mark taken below is the one the file describes.
     await defaultPresetsReady();
+    if(!importReady(context))return;
     var doc;
     try { doc = typeof text==='object'?text:JSON.parse(text); } catch (e) { throw new Error('the project file is not valid JSON'); }
     var pj = St.prepareProject(doc);
     if ((S.datasets.length || S.phases.length) && !(await ui.confirm('Reading a project replaces the ' + plural(S.phases.length, 'phase') + ' and the ' + plural(S.datasets.length, 'dataset') + ' in memory and clears their restore points: it cannot be undone. Save the current project first if you need it.', 'Read project', false, 'Read project'))) return;
+    if(!importReady(context))return;
     // a project is read as it was saved: nothing of the session before it can be restored into it
     if (RV.history && RV.history.clear) RV.history.clear();
     if(RV.solve && RV.solve.restoreArchive)RV.solve.restoreArchive(null,{silent:true});

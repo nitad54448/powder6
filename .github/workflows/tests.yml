@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        page: [ui-consistency, ui-interactions, file-readers, pattern-only, project-save, solve-fixes]
+        page: [ui-consistency, ui-interactions, file-readers, pattern-only, project-save, project-symmetry, rc-boundaries, solve-fixes]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

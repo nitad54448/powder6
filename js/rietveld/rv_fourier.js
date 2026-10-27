@@ -182,14 +182,16 @@ RV.fourier = (function(){
     }
     saveOpts();
   }
+  function reset(){FO.result=null;FO.opts.negative=false;render();var note=$('#sv-fo-status');if(note)note.textContent='';}
   function init(){
     document.addEventListener('click',onClick);document.addEventListener('change',onChange);
     RV.bus.on('tab',function(){if(RV.app.resultTab()==='structure-results'&&RV.layout.structureKind()==='fo')show();});
     RV.bus.on('theme',function(){if(typeof Density3D!=='undefined'&&FO.result&&RV.layout.structureKind()==='fo')Density3D.applyTheme();});
+    RV.bus.on('project',reset);
     RV.bus.on('phases',function(){if(FO.result&&!St.phaseByKey(FO.result.phaseKey)){FO.result=null;render();}});
     // the button says what is missing: the atoms of the phase, or its WPPF intensities. Both change with the
     // data (an atom added, a fit, another phase or dataset chosen), so the state follows those events.
     ['phases','params','stats','datasets','selection','tables'].forEach(function(ev){RV.bus.on(ev,function(){sync();});});
   }
-  return {init:init,html:html,render:render,show:show,state:FO,run:run,sync:sync};
+  return {init:init,reset:reset,html:html,render:render,show:show,state:FO,run:run,sync:sync};
 })();

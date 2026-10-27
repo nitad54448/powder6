@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.48.1 - 27 October 2026
+
+1. **Project isolation and phase identities.** Clear Fourier results when replacing a project and restore the bundled absorption table when the new project has no custom table. Allocate unused phase keys, enforce uniqueness when adding phases, and reject ambiguous duplicate phase keys before opening a project.
+2. **Asynchronous imports and workers.** Prevent pending imports from changing a project during a calculation or after the working project changes. Handle fit-worker startup failures immediately and retain CPU fitting when the optional GPU module is unavailable.
+3. **List refreshes and release validation.** Keep dataset searches applied after list refreshes and preserve keyboard focus when phase controls are rebuilt. Correct global-fit tick-source messaging, update the project-symmetry tooltip assertion, and include that suite in browser CI. Add regression coverage for the RC findings.
+
 ## 2.48.0 - 27 October 2026
 
 1. **Compact editor descriptions.** Move phase starting-model guidance and dataset observation/instrument details into title help tooltips, visible only for open accordions. Remove the redundant Phase heading. Align phase and dataset leading spacing and use consistent 13 px subsection headings at weight 600. Bold the refinement-group heading, move its guidance into title help, and remove the two separators above it. Remove the repeated Values of heading. Show navigation arrows and a labelled green/red indicator for the inspected dataset in the main Datasets title only while its selection accordion is closed. Shorten the empty-plot message and constrain it to the plotting frame.

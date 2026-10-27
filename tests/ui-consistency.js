@@ -125,12 +125,14 @@
     check(!errors.length,'Browser errors: '+errors.join('; '));record('Desktop, tablet and narrow layouts fit the viewport without browser errors');
     RV.app.showTab('phases');q('#phase-selection').open=true;
     const phaseOne=St.currentPhase(),phaseTwo=St.makePhase({name:'Second phase',sg:St.resolveSG(1),cell:{a:6,b:6,c:6}});St.addPhase(phaseTwo);await frame();
-    const selectedIds=Array.from(S.sel).join(',');q('[data-inspect-phase="'+phaseOne.key+'"]').click();await frame();
+    const selectedIds=Array.from(S.sel).join(',');q('[data-inspect-phase="'+phaseOne.key+'"]').focus();q('[data-inspect-phase="'+phaseOne.key+'"]').click();await frame();
+    check(doc.activeElement===q('[data-inspect-phase="'+phaseOne.key+'"]'),'Native phase-name activation lost keyboard focus');
     check(St.currentPhase().key===phaseOne.key && q('[data-inspect-phase="'+phaseOne.key+'"]').getAttribute('aria-current')==='true' && Array.from(S.sel).join(',')===selectedIds,'Phase inspection changed fit membership or failed to mark the current phase');
     key(q('[data-inspect-phase="'+phaseOne.key+'"]'),'ArrowDown');await frame();
     check(St.currentPhase().key===phaseTwo.key && doc.activeElement===q('[data-inspect-phase="'+phaseTwo.key+'"]'),'Phase arrow navigation lost selection or keyboard focus');
     check(!q('#phase-select,#ph-color,#ph-rename') && q('#phase-workspace'),'Duplicate phase controls remain or dataset assignment disappeared');
-    q('[data-edit-phase="'+phaseTwo.key+'"]').click();await frame();q('#dlg .btns button').click();await frame();check(St.currentPhase().key===phaseTwo.key,'Cancelling phase appearance changed selection');
+    q('[data-edit-phase="'+phaseTwo.key+'"]').focus();RV.bus.emit('phaseStyle');await frame();check(doc.activeElement===q('[data-edit-phase="'+phaseTwo.key+'"]'),'Phase appearance refresh lost Edit focus');
+    q('[data-edit-phase="'+phaseTwo.key+'"]').click();await frame();const dialogFocus=doc.activeElement;RV.bus.emit('phaseStyle');await frame();check(doc.activeElement===dialogFocus,'Phase refresh stole dialog focus');q('#dlg .btns button').click();await frame();check(St.currentPhase().key===phaseTwo.key,'Cancelling phase appearance changed selection');
     record('Native phase list supports inspection and keyboard navigation without duplicate editor controls');
     const phaseCard=q('.phase-accordion[open]'),phaseHelp=phaseCard.querySelector('summary .acc-help');
     check(!q('#phase-src') && !Array.from(q('#phase-body').querySelectorAll('h2')).some(h=>h.textContent==='Phase'),'Phase description or redundant heading remains');
@@ -182,6 +184,17 @@
       check(phaseGap>=4 && phaseGap<=12,'Phase editor has excess leading space at '+width+': '+phaseGap);check(style(q('#phase-body .pblock h2')).fontSize===style(heading).fontSize && style(q('#phase-body .pblock h2')).fontWeight===style(heading).fontWeight,'Phase subsection typography differs from parameter headings');spacing.push({width,titleGap,sectionGap,phaseGap,parameterFont:style(heading).fontSize,phaseSectionFont:style(block.querySelector('h2') || q('#phase-body .pblock h2')).fontSize});
     }
     iframe.style.width='1280px';await frame();results.push({name:'Measured editor spacing and typography at desktop, tablet and mobile widths',pass:true,measurements:spacing});out.textContent=JSON.stringify(results,null,2);
+    RV.app.showTab('phases');q('#phase-selection').open=true;const disposable=St.makePhase({name:'Temporary focus check',sg:St.resolveSG(1),cell:{a:7,b:7,c:7}});St.addPhase(disposable);await frame();
+    q('[data-remove-phase="'+disposable.key+'"]').focus();St.removePhase(disposable.key);await frame();check(doc.activeElement.matches('[data-inspect-phase]'),'Removing a focused phase failed to focus a remaining phase');
+    record('Phase refreshes preserve action focus and leave open dialogs in control');
+    RV.app.showTab('datasets');q('#fit-selection').open=true;
+    while(S.datasets.length<10)St.insertDatasets([St.makeDataset({name:'Filter target '+S.datasets.length,tth:[10,20,30],y:[1,2,1]})],{estimate:false});
+    await frame();const search=q('#dataset-search'),visibleDatasets=()=>all('#ds-list .ds').filter(row=>!row.hidden);
+    search.value='Filter target 9';search.dispatchEvent(new w.Event('input',{bubbles:true}));check(visibleDatasets().length===1,'Dataset search did not find the named dataset');
+    for(const event of ['stats','data','datasets']){RV.bus.emit(event);await frame();check(search.value==='Filter target 9' && visibleDatasets().length===1 && visibleDatasets()[0].querySelector('.nm').textContent==='Filter target 9','Dataset refresh discarded the active search after '+event);}
+    search.value='Edit';search.dispatchEvent(new w.Event('input',{bubbles:true}));check(!visibleDatasets().length,'Dataset search matched action labels rather than names');
+    search.value='';search.dispatchEvent(new w.Event('input',{bubbles:true}));
+    record('Dataset name filtering survives statistics, data and dataset refreshes');
     window.browserTestResult={ok:true,results};
   }catch(e){results.push({name:'failure',pass:false,error:String(e.stack||e)});out.textContent=JSON.stringify(results,null,2);window.browserTestResult={ok:false,results};}
 })();

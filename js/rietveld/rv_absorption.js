@@ -7,7 +7,7 @@
  */
 RV.absorption = (function () {
   'use strict';
-  var St=RV.state, S=St.S, ui=RV.ui, table=null, label='', error='', loading=false, revision=0, builtin=false;
+  var St=RV.state, S=St.S, ui=RV.ui, table=null, label='', error='', loading=false, builtin=false, builtinTable=null, builtinError='', builtinRequest=null;
   var HC_EV_ANGSTROM=12398.419843320025, AMU_DENSITY=1.66053906660;
   // The table rules -- units, element keys, ordering, the refusal to interpolate across an edge -- live in
   // js/absorption_table.js, which holds no state and is covered by tests/absorption.test.cjs.
@@ -18,7 +18,8 @@ RV.absorption = (function () {
   // isBuiltin: the absorption.json beside index.html, which every session reads itself and a project does not carry
   function loadDocument(doc,name,defaultUnit,isBuiltin) {
     var next=normalize(doc,defaultUnit); // validate completely before replacing a usable table
-    table=next;label=String(name || 'absorption.json');error='';loading=false;revision++;builtin=!!isBuiltin;
+    table=next;label=String(name || 'absorption.json');error='';loading=false;builtin=!!isBuiltin;
+    if(builtin){builtinTable=next;builtinError='';}
     RV.bus.emit('absorption');return Object.keys(table).length;
   }
   // a table the user loaded, as a document loadDocument reads back (energies in eV), for the project; null otherwise
@@ -27,9 +28,13 @@ RV.absorption = (function () {
     var elements={};Object.keys(table).forEach(function(el){elements[el]={mu:table[el].rows.map(function(r){return [r[0],r[1]];}),unit:'cm2/g',source:table[el].source};});
     return {label:label,energyUnit:'eV',elements:elements};
   }
+  function restoreBuiltin() {
+    builtin=true;table=builtinTable;label='absorption.json';error=builtinError;loading=!table && !!builtinRequest;
+    RV.bus.emit('absorption');if(!table && !builtinRequest)init();
+  }
   function restoreUser(doc) {
-    if(!doc)return;
-    try{loadDocument(doc,doc.label || 'project absorption table','eV');}catch(e){ui.toast('The absorption table saved with the project could not be read: '+e.message,'warn');}
+    if(!doc){restoreBuiltin();return;}
+    try{loadDocument(doc,doc.label || 'project absorption table','eV');}catch(e){restoreBuiltin();ui.toast('The absorption table saved with the project could not be read: '+e.message,'warn');}
   }
   function phaseComposition(ph,ds) {
     var counts={},pre=ph.key+'.';
@@ -115,10 +120,20 @@ RV.absorption = (function () {
     }catch(e){ui.toast('Absorption table: '+e.message,'err');}
   }
   async function init() {
+    if(builtinTable || builtinRequest)return builtinRequest;
     if(typeof fetch!=='function')return;
-    var token=revision;loading=true;
-    try{var r=await fetch('absorption.json');if(!r.ok)throw new Error('absorption.json is unavailable. Place it beside index.html and reload.');var doc=await r.json();if(token===revision)loadDocument(doc,'absorption.json','eV',true);}
-    catch(e){if(token===revision){loading=false;error=e.message;RV.bus.emit('absorption');}}
+    if(!table)builtin=true;
+    loading=builtin && !table;
+    builtinRequest=(async function(){
+      try{
+        var r=await fetch('absorption.json');if(!r.ok)throw new Error('absorption.json is unavailable. Place it beside index.html and reload.');
+        builtinTable=normalize(await r.json(),'eV');builtinError='';
+        // A late startup load can cache the default, but never replace a custom project table.
+        if(builtin){table=builtinTable;label='absorption.json';error='';loading=false;RV.bus.emit('absorption');}
+      }catch(e){builtinError=e.message;if(builtin){loading=false;error=e.message;RV.bus.emit('absorption');}}
+      finally{builtinRequest=null;}
+    })();
+    return builtinRequest;
   }
   return {init:init,loadFile:loadFile,loadDocument:loadDocument,exportUser:exportUser,restoreUser:restoreUser,normalize:normalize,coefficient:coefficient,sample:sample,predict:predict,tip:tip,status:status};
 })();
