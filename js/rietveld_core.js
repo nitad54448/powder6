@@ -634,7 +634,7 @@ function Model(problem) {
         return { def: p, method: method, reps: cs.reps, nCent: cs.nCentring, prefix: p.key + '.', cellNames: cellParams(p.system, p.uniqueAxis),
                  profNames: usesSeparatedProfile(p) ? sampleProfileNames(p.system,p.uniqueAxis,p.broadening,p.ops) : (PROFILE_PARAMS[p.profileType] || PROFILE_PARAMS.simple_pvoigt).map(function (q) { return q[0]; }) };
     });
-    this.datasets = problem.datasets.map(function (d) {
+    this.datasets = problem.datasets.map(function (d, di) {
         if (!(d.tth && d.tth.length >= 2)) throw new Error('a dataset has fewer than two points in its fitted range');
         var n = d.tth.length, lo = d.tth[0], hi = d.tth[n - 1], T = [], spline = d.bkgType === 'spline';
         for (var k = 0; k < (spline ? 0 : (d.bkgN || 0)); k++) T.push(new Float64Array(n));
@@ -655,7 +655,10 @@ function Model(problem) {
         // the phases in the dataset: a phase absent from it has no reflections there and adds nothing
         var has = self.phases.map(function (P) { return !Array.isArray(d.phases) || d.phases.indexOf(P.def.key) >= 0; });
         self.phases.forEach(function (P, pi) {
-            if (!has[pi] || P.method !== 'rietveld') return;
+            if (!has[pi]) return;
+            var cell=cellOf(P.def.system,P.def.uniqueAxis,function(c){return problem.values[di][P.prefix+c];});
+            if(!cell || !(cellVolume(cell)>0) || !buildInvDsq(cell))throw new Error('Invalid unit-cell metric for '+P.def.key+'. Check the cell lengths and angles.');
+            if (P.method !== 'rietveld') return;
             (P.def.atoms || []).forEach(function (at) {
                 var ff = at.ff, x = ff && ff.xray, neutron = d.radiation === 'neutron';
                 var valid = neutron ? ff && Number.isFinite(ff.neutron) : x && x.a && x.b && x.a.length > 0 && x.a.length === x.b.length && Array.from(x.a).every(Number.isFinite) && Array.from(x.b).every(Number.isFinite) && Number.isFinite(x.c);
@@ -1828,7 +1831,7 @@ function* refineSteps(problem, opts) {
         var values = problem.values.map(function (v) { return Object.assign({}, v); });
         // soft geometric restraints of the Rietveld phases (atom_restraints.js): extra observations in chi^2
         var restr = typeof AtomRestraints !== 'undefined' && problem.phases.some(function (p) { return p.method === 'rietveld' && AtomRestraints.active(p.restraints); })
-            ? AtomRestraints.prepare(problem, { cellOf: cellOf, sitePosition: sitePosition }) : null;
+            ? AtomRestraints.prepare(problem, { cellOf: cellOf, sitePosition: sitePosition, parameterKey: restraintParameterKey }) : null;
         // WPPF intensities are variables of their own, solved exactly at every evaluation, so a WPPF fit with nothing
         // else ticked is a refinement of the intensities at the current cell and profile.
         var freeIntensities = model.phases.some(function (P) { return P.method === 'wppf'; });
@@ -1848,6 +1851,12 @@ function* refineSteps(problem, opts) {
             var out = values.map(function (v) { return Object.assign({}, v); });
             vars.forEach(function (vr, j) { info[j].ds.forEach(function (d) { out[d][vr.name] = xv[j]; }); });
             return constraints ? constraints.apply(out,xv) : out;
+        }
+        function restraintParameterKey(d,name) {
+            var link=constraints && constraints.links.find(function(l){return l.d===d && l.name===name;});
+            if(link)return [link.offset,link.terms.slice().sort(function(a,b){return a[0]-b[0];})];
+            var j=vars.findIndex(function(v,j){return v.name===name && info[j].ds.indexOf(d)>=0;});
+            return j>=0?[0,[[j,1]]]:[values[d][name],[]];
         }
         // The uniaxial harmonic formula has no unique differential at (0,0).
         // Seed both free components together; fixed values and evaluate-only
@@ -1870,6 +1879,7 @@ function* refineSteps(problem, opts) {
             if(constraints && !constraints.valid(vals))return Infinity;
             var s = 0, costModel = engine || model;
             for (var d = 0; d < nd; d++) {
+                if(costModel.phases.some(function(P,pi){var c=cellOf(P.def.system,P.def.uniqueAxis,function(n){return vals[d][P.prefix+n];});return costModel.datasets[d].has[pi] && (!c || !(cellVolume(c)>0) || !buildInvDsq(c));}))return Infinity;
                 var ev = costModel.evalDataset(d, vals[d], { held: held ? held[d] : null }), y = costModel.datasets[d].def.y, w = costModel.datasets[d].def.w;
                 if (ev.failed) return Infinity;
                 for (var i = 0; i < ev.y.length; i++) { if (!(w[i] > 0)) continue; var r = y[i] - ev.y[i]; s += w[i] * r * r; }
@@ -2303,7 +2313,7 @@ function* refineSteps(problem, opts) {
         // of Le Bail and WPPF phases counted among the parameters)
         var fin = normal(x, null, true, true), nInt = 0;
         fin.evs.forEach(function (ev) { nInt += intensityCount(ev); });
-        var nRes = restr ? restr.eval(apply(x)).length : 0, dof = Math.max(1, nPts + nRes - nv - nInt), chi2red = fin.f / dof, esdX = new Float64Array(nv).fill(NaN), idxE = [], inactive = [], onBounds = [], inv = null;
+        var nRes = restr ? restr.count(apply(x)) : 0, dof = Math.max(1, nPts + nRes - nv - nInt), chi2red = fin.f / dof, esdX = new Float64Array(nv).fill(NaN), idxE = [], inactive = [], onBounds = [], inv = null;
         for (j = 0; j < nv; j++) {
             var onB = x[j] <= info[j].lo + 1e-9 * (1 + Math.abs(info[j].lo)) || x[j] >= info[j].hi - 1e-9 * (1 + Math.abs(info[j].hi));
             onBounds[j]=onB;

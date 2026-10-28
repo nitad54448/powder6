@@ -13,7 +13,7 @@
     // data from NaCl (Na and Cl), then a model that has only Na
     St.setCalculation('rietveld');
     const ph=St.makePhase({name:'NaCl',sg:St.resolveSG(225),cell:{a:5.64},atoms:[{label:'Na1',type:'Na',x:0,y:0,z:0,B:0.8,occ:1},{label:'Cl1',type:'Cl',x:.5,y:0,z:0,B:0.8,occ:1}]});St.addPhase(ph);
-    const ds=St.insertDatasets([St.makeDataset({name:'NaCl pattern',tth:Array.from({length:1200},(_,i)=>15+i*.06),y:Array(1200).fill(100),inst:{bkgN:1,lambda2:0,ratio:0}})])[0];
+    const ds=St.insertDatasets([St.makeDataset({name:'NaCl pattern',tth:Array.from({length:1200},(_,i)=>15+i*.06),y:Array(1200).fill(100),inst:{bkgN:1,lambda2:0,ratio:0,anomalousEnabled:false}})])[0];
     ds.p[ph.key+'.scale']=.0004;ds.p.bkg0=10;ds.y=w.RVCore.evaluate(St.problemFor([ds]),0).ycalc;
     St.removeAtom(ph,'Cl1');
     St.setCalculation('wppf');Object.keys(ds.fit).forEach(n=>ds.fit[n]=false);St.setSetting('maxIter',10);
@@ -47,6 +47,13 @@
     RV.fourier.state.opts.type='obs';RV.fourier.state.opts.dmin='1.2';RV.fourier.run();await frame();
     check(RV.fourier.state.result.res.dmin>=1.2 && RV.fourier.state.result.res.peaks.length>=1,'Observed map failed');
     record('observed map at a chosen resolution');
+
+    ds.inst.anomalousEnabled=true;RV.fourier.sync();
+    check(q('[data-fo="run"]').disabled && /anomalous scattering/.test(q('[data-fo="run"]').title),'Anomalous Fourier maps must be refused with a reason');
+    const previous=RV.fourier.state.result;RV.fourier.run();
+    check(RV.fourier.state.result===previous && /do not support anomalous scattering/.test(q('#sv-fo-status').textContent),'The unsupported correction was silently dropped');
+    ds.inst.anomalousEnabled=false;RV.fourier.sync();
+    record('enabled anomalous corrections disable map computation with an explicit reason');
 
     // no atoms: refused with a reason, and the button says so before it is pressed
     const empty=St.makePhase({name:'Empty',sg:St.resolveSG(225),cell:{a:5}});St.addPhase(empty);sv.phaseKey=empty.key;RV.fourier.run();await frame();

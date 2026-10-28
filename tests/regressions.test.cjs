@@ -71,6 +71,123 @@ function fitted(a = model()) {
   return a;
 }
 
+test('Fourier maps retain independent observations with the extraction group sentinel', () => {
+  const FM=require('../js/fourier_map.js'), identity={r:[1,0,0,0,1,0,0,0,1],t:[0,0,0]};
+  const opts={cell:{a:5,b:5,c:5,alpha:90,beta:90,gamma:90},ops:[identity],
+    atoms:[{label:'A',pos:[0,0,0],occ:1,B:0,ff:{}}],formFactor:()=>1,radiation:'xray',type:'diff',dmin:2,
+    refl:[{h:1,k:0,l:0,m:2,lp:1,area:2,inRange:true,group:-1},{h:0,k:1,l:0,m:2,lp:1,area:18,inRange:true,group:-1}]};
+  const first=FM.build(opts), independent=FM.build({...opts,refl:opts.refl.map(({group,...r})=>r)});
+  assert.deepEqual(first.map,independent.map);
+  const swapped=FM.build({...opts,refl:opts.refl.map(r=>({...r,area:20-r.area}))});
+  assert.ok(first.map.some((v,i)=>Math.abs(v-swapped.map[i])>.02),'map must respond to measured intensity ratios');
+  const overlap=FM.build({...opts,refl:opts.refl.map(r=>({...r,group:0}))});
+  const overlapSwap=FM.build({...opts,refl:opts.refl.map(r=>({...r,group:0,area:20-r.area}))});
+  assert.deepEqual(overlap.map,overlapSwap.map,'a genuine unresolved group retains its total observed area');
+});
+
+test('GSAS imports every bank and keeps STD counter-dependent uncertainties', async () => {
+  const a=app(),field=(n,y)=>String(n).padStart(2,' ')+String(y).padStart(6,' ');
+  const text='Bank of samples\nBANK 1 2 1 CONST 1000 100 0 0 STD\n'+field(2,100)+field(10,400)+
+    '\nBANK 2 2 1 CONST 2000 100 0 0 ESD\n200 5 300 6\n';
+  a.context.bankText=text;
+  const parsed=a.run("detectAndParseFile('banks.gsa',bankText)");
+  assert.equal(parsed.patterns.length,2);
+  assert.deepEqual(Array.from(parsed.patterns[0].intensity),[100,400]);
+  assert.deepEqual(Array.from(parsed.patterns[0].sig),[Math.sqrt(50),Math.sqrt(40)]);
+  assert.deepEqual(Array.from(parsed.patterns[1].tth),[20,21]);
+  assert.deepEqual(Array.from(parsed.patterns[1].sig),[5,6]);
+  await a.context.RV.cmd.readFiles([file('banks.gsa',text)]);
+  assert.equal(a.S.datasets.length,2);
+  assert.ok(Math.abs(a.state.pointWeight(a.S.datasets[0],0)-.02)<1e-15);
+  assert.ok(Math.abs(a.state.pointWeight(a.S.datasets[0],1)-.025)<1e-15);
+  assert.deepEqual(Array.from(a.S.datasets[1].y),[200,300]);
+  // Blank counter means one, including an intensity that fills all six columns.
+  a.context.bankText='title\nBANK 1 2 1 CONST 1000 100 0 0 STD\n'+field('',123456)+field(1,0);
+  const blank=a.run("detectAndParseFile('one.xra',bankText)");
+  assert.deepEqual(Array.from(blank.intensity),[123456,0]);
+  assert.deepEqual(Array.from(blank.sig),[Math.sqrt(123456),1]);
+});
+
+test('GSAS-II XYE export preserves small and widely scaled observations', () => {
+  const a=app(),xs=[10.123456789123,10.123456789124,11],ys=[1e-7,1e12,-1e-9],sig=[1e-8,1e-5,1e-12];
+  const ds=a.state.makeDataset({name:'rescaled',tth:xs,y:ys,sig});
+  const rows=a.context.RV.gsas2.xyeOf(ds).split('\n').filter(r=>r && !r.startsWith('#')).map(r=>r.split(' ').map(Number));
+  for(let i=0;i<rows.length;i++){
+    assert.equal(rows[i][0],xs[i]);assert.equal(rows[i][1],ys[i]);
+    assert.ok(rows[i][2]>0 && Math.abs(rows[i][2]/sig[i]-1)<1e-14);
+  }
+});
+
+test('cell contraction requires a repeating atomic model and conversion rejects invalid plans', () => {
+  const a=app(),K=a.context.SGConvert,sg=a.state.resolveSG(1),cell={a:10,b:10,c:10,alpha:90,beta:90,gamma:90};
+  const P=[.5,0,0,0,1,0,0,0,1],origin=[0,0,0],atom={label:'C1',type:'C',x:.75,y:.1,z:.1,occ:1,B:.5};
+  assert.equal(K.relation(sg.ops,sg.ops,P,origin),'supergroup');
+  const ph=a.state.makePhase({name:'contraction',sg,cell,atoms:[atom]});a.state.addPhase(ph);
+  const bad=K.convertStructure([atom],sg.ops,sg.ops,cell,P,origin,{tol:.1});
+  assert.ok(bad.violations.length>0);
+  assert.throws(()=>a.state.convertPhase(ph,sg,bad,P,origin),/Cannot convert/);
+  assert.equal(ph.atoms.length,1);assert.equal(ph.v[ph.key+'.a'],10);
+  const good=K.convertStructure([{...atom,x:.25},{...atom,label:'C2'}],sg.ops,sg.ops,cell,P,origin,{tol:.1});
+  assert.deepEqual(Array.from(good.violations),[]);assert.equal(good.atoms.length,1);assert.equal(good.contentNew,good.contentExpected);
+  const wrongSpecies=K.convertStructure([{...atom,x:.25,type:'O'},{...atom,label:'C2'}],sg.ops,sg.ops,cell,P,origin,{tol:.1});
+  assert.ok(wrongSpecies.violations.length>0,'matching total atom count cannot replace matching species');
+  const supercell=K.convertStructure([atom],sg.ops,sg.ops,cell,[2,0,0,0,1,0,0,0,1],origin,{tol:.1});
+  assert.deepEqual(Array.from(supercell.violations),[]);assert.equal(supercell.atoms.length,2);
+});
+
+test('invalid triclinic metrics are rejected at import, model creation and refinement', () => {
+  const a=app(),sg=a.state.resolveSG(1),cell={a:10,b:10,c:10,alpha:10,beta:10,gamma:170};
+  a.context.badCell=cell;
+  assert.ok(Number.isNaN(a.run('cellVolume(badCell)')));
+  assert.throws(()=>a.state.makePhase({sg,cell}),/Invalid unit-cell metric/);
+  const text='data_bad\n_space_group_IT_number 1\n_cell_length_a 10\n_cell_length_b 10\n_cell_length_c 10\n_cell_angle_alpha 10\n_cell_angle_beta 10\n_cell_angle_gamma 170\n';
+  assert.throws(()=>a.context.RV.cmd.phaseFromCif(text,'bad.cif'),/Invalid unit-cell metric/);
+  const ph=a.state.makePhase({sg,cell:{...cell,alpha:90,beta:90,gamma:90}});a.state.addPhase(ph);
+  const ds=a.state.makeDataset({name:'bad metric',tth:[10,20],y:[100,100]});a.S.datasets.push(ds);
+  ds.p[ph.key+'.alpha']=10;ds.p[ph.key+'.beta']=10;ds.p[ph.key+'.gamma']=170;
+  const job=a.state.problemFor([ds]);job.vars=[];
+  const result=a.core.refine(job,{evaluateOnly:true});assert.equal(result.ok,false);assert.match(result.msg,/Invalid unit-cell metric/);
+});
+
+test('global restraint counts distinguish shared, linked and local geometries', () => {
+  const a=app(),AR=a.context.AtomRestraints,sg=a.state.resolveSG(1);
+  a.S.calculation='rietveld';
+  const ph=a.state.makePhase({sg,cell:{a:10,b:10,c:10,alpha:90,beta:90,gamma:90},atoms:[
+    {label:'A',type:'C',x:0,y:0,z:0,occ:1,B:.5},{label:'B',type:'C',x:.3,y:0,z:0,occ:1,B:.5}]});a.state.addPhase(ph);
+  ph.restraints={text:'A B - 1/2',weight:1,sigmaD:1};
+  for(let i=0;i<3;i++)a.S.datasets.push(a.state.makeDataset({name:'restraint '+i,tth:[10,20,30],y:[100,100,100],inst:{anomalousEnabled:false}}));
+  const job=a.state.problemFor(a.S.datasets),name=ph.key+'.B.x';
+  job.vars=[{d:-1,name}];
+  const ctx={cellOf:a.core.cellOf,sitePosition:a.core.sitePosition};
+  const shared=AR.prepare(job,ctx);assert.equal(shared.eval(job.values).length,3);assert.equal(shared.count(job.values),1);assert.ok(Math.abs(shared.cost(job.values)-1)<1e-12);
+  const result=a.core.refine(job,{evaluateOnly:true});assert.equal(result.ok,true,result.msg);assert.equal(result.restraints.n,1);assert.equal(result.dof,result.nPts+1-result.nVar-result.nInt);
+  job.vars=[{d:0,name},{d:1,name},{d:2,name}];
+  assert.equal(AR.prepare(job,ctx).count(job.values),3,'local variables are distinct even at equal starting values');
+  const local=a.core.refine(job,{evaluateOnly:true});assert.equal(local.ok,true,local.msg);assert.equal(local.restraints.n,3);
+  job.parameterLinks=[1,2].map(d=>({source:{datasetId:job.datasets[0].id,name},target:{datasetId:job.datasets[d].id,name},factor:1,offset:0}));
+  const linked=a.core.refine(job,{evaluateOnly:true});assert.equal(linked.ok,true,linked.msg);assert.equal(linked.restraints.n,1,'affine links must collapse identical geometry');
+  a.state.addAtomTo(ph,{label:'D',type:'C',x:.4,y:.1,z:.1,occ:1,B:.5},a.state.cellOf(ph,ph.v));a.state.phaseChanged(ph);
+  const partial=a.state.problemFor(a.S.datasets),localName=ph.key+'.D.x';
+  partial.vars=[{d:0,name:localName},{d:1,name:localName},{d:2,name:localName}];
+  assert.equal(AR.prepare(partial,ctx).count(partial.values),1,'an unrelated local atom does not duplicate a shared restraint');
+  partial.phases[0].restraints={text:'A B - 1/2\nA D - 1/2',weight:1,sigmaD:1};
+  assert.equal(AR.prepare(partial,ctx).count(partial.values),4,'shared and local rules count independently');
+});
+
+test('Fourier UI refuses enabled anomalous corrections instead of silently dropping them', () => {
+  const a=app(),sg=a.state.resolveSG(1),ph=a.state.makePhase({sg,cell:{a:5,b:5,c:5,alpha:90,beta:90,gamma:90},atoms:[{label:'C1',type:'C',x:0,y:0,z:0,occ:1,B:.5}]});a.state.addPhase(ph);
+  const ds=a.state.makeDataset({name:'anomalous',tth:[10,20],y:[100,100]});a.S.datasets.push(ds);
+  const I={phaseKey:ph.key,dsId:ds.id,refl:[],stale:false};
+  a.context.RV.solve={state:{phaseKey:ph.key,dsId:ds.id,ints:I}};
+  a.context.FourierMap=require('../js/fourier_map.js');
+  a.context.RV.ui.able=()=>{};a.context.RV.ui.parseNum=Number;
+  let reason='';a.context.document.querySelector=()=>({set textContent(v){reason=v;},classList:{toggle(){}}});
+  vm.runInContext(read('js/rietveld/rv_fourier.js'),a.context);
+  a.context.RV.fourier.run();assert.match(reason,/do not support anomalous scattering/);assert.equal(a.context.RV.fourier.state.result,null);
+  ds.inst.anomalousEnabled=false;
+  a.context.RV.fourier.run();assert.doesNotMatch(reason,/anomalous scattering/);
+});
+
 test('the positive width continuation retains negative-tail precision and avoids overflow', () => {
   const a=app();
   assert.ok(Math.abs(a.run('softPositive(-1e10,1e-3)')/1e-16-1)<1e-14);

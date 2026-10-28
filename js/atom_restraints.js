@@ -217,6 +217,7 @@ var AtomRestraints = (function () {
      readable message when a rule does not fit its phase.
        eval(vals)       Float64Array of residuals (sqrt(weight / holders) applied); its length never changes
        cost(vals)       the sum of squares
+       count(vals)      independent geometric rows (shared copies count once)
        details(vals)    [{phase, dataset, rows}] for the report
        prefixes         the parameter-name prefixes ("p1.") the residuals depend on */
   function prepare(problem, ctx) {
@@ -236,8 +237,31 @@ var AtomRestraints = (function () {
       each(vals, function (e, d, rs) { rs.forEach(function (r) { out.push(r.dev / r.sigma * e.scale); }); });
       return Float64Array.from(out);
     }
+    function count(vals) {
+      var total=0;
+      list.forEach(function(e){
+        var seen=new Set(),prefix=e.def.key+'.';
+        e.holders.forEach(function(d){
+          rowsOf(e.def,e.rs,e.rules,vals[d],ctx).forEach(function(row){
+            var rule=e.rules[row.rule],names=Object.keys(vals[d]).filter(function(n){
+              return n.indexOf(prefix)===0 && (/\.(?:a|b|c|alpha|beta|gamma)$/.test(n) ||
+                /\.[xyz]$/.test(n) && (n.indexOf(prefix+rule.a+'.')===0 || n.indexOf(prefix+rule.b+'.')===0));
+            }).sort();
+            var parameters=names.map(function(n){
+              if(ctx.parameterKey)return [n,ctx.parameterKey(d,n)];
+              var j=(problem.vars||[]).findIndex(function(v){return v.name===n && (v.d>=0?v.d===d:!v.ds || !v.ds.length || v.ds.indexOf(d)>=0);});
+              return [n,j>=0?['variable',j]:['constant',vals[d][n]]];
+            });
+            var signature=JSON.stringify([row.rule,row.kind,row.text,parameters]);
+            if(!seen.has(signature)){seen.add(signature);total++;}
+          });
+        });
+      });
+      return total;
+    }
     return {
       eval: evaluate,
+      count: count,
       cost: function (vals) { var s = 0, r = evaluate(vals); for (var i = 0; i < r.length; i++) s += r[i] * r[i]; return s; },
       details: function (vals) { var out = []; each(vals, function (e, d, rs) { out.push({ phase: e.def.key, dataset: d, rows: rs, scale: e.scale }); }); return out; },
       prefixes: list.map(function (e) { return e.def.key + '.'; })

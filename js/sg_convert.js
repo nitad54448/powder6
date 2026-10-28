@@ -136,9 +136,10 @@
   /** How the groups relate in the transformation: 'same', 'subgroup' (the new one is a subgroup of the old one), 'supergroup', or ''. */
   function relation(fromOps, toOps, P, p) {
     var Pi = inv3(P), oldIdx = index(fromOps), newIdx = index(toOps);
-    var sub = toOps.every(function (o) { return member(opToOld(o, P, p, Pi), oldIdx); });
-    // the old group is inside the new one only if its lattice is: the old lattice vectors are whole vectors of the new axes
-    var sup = Pi.every(isInt) && fromOps.every(function (o) { return member(opToNew(o, P, p, Pi), newIdx); });
+    function latticeIn(M, idx) { return [0,1,2].every(function(j){return member({r:I3,t:[M[j],M[3+j],M[6+j]]},idx);}); }
+    // Include the infinite translation lattices, not just the finite operator lists.
+    var sub = latticeIn(P, oldIdx) && toOps.every(function (o) { return member(opToOld(o, P, p, Pi), oldIdx); });
+    var sup = latticeIn(Pi, newIdx) && fromOps.every(function (o) { return member(opToNew(o, P, p, Pi), newIdx); });
     return sub && sup ? 'same' : sub ? 'subgroup' : sup ? 'supergroup' : '';
   }
 
@@ -249,6 +250,18 @@
       contentOld += pts.length * (Number.isFinite(a.occ) ? a.occ : 1);
       full = full.concat(pts);
     });
+    // A fractional new lattice vector is allowed only if the atomic structure
+    // actually repeats under it. Cropping a smaller cell cannot establish that.
+    var violations = [];
+    [0,1,2].forEach(function(j){
+      var shift=[P[j],P[3+j],P[6+j]];
+      if(shift.every(isInt))return;
+      full.forEach(function(q){
+        var image=q.y.map(function(v,k){return v+shift[k];});
+        if(!full.some(function(s){return keys[s.ai]===keys[q.ai] && dist(Gold,s.y,image)<=2*tol;}) && violations.length<50)
+          violations.push(atoms[q.ai].label+': the structure does not repeat under the proposed new lattice translation '+shift.map(fracText).join(', ')+'.');
+      });
+    });
     // 2. carried into the new cell, every lattice translation that lands inside it
     var corners = [];
     for (var i = 0; i < 8; i++) corners.push(mulv(P, [i & 1, (i >> 1) & 1, (i >> 2) & 1]));
@@ -266,7 +279,7 @@
       }
     });
     // 3. the orbits of the new group; each demanded image must find an atom of the same kind
-    var violations = [], out = [], perLabel = {}, merged = [], maxShift = 0;
+    var out = [], perLabel = {}, merged = [], maxShift = 0;
     var invOps = toOps.map(inverseOp);
     pts.forEach(function (q) {
       if (q.used) return;
@@ -317,6 +330,13 @@
     var count = {};
     out.forEach(function (a) { if (perLabel[a.base] > 1) { count[a.base] = (count[a.base] || 0) + 1; a.label = a.base + String.fromCharCode(96 + Math.min(26, count[a.base])); } });
     var contentNew = out.reduce(function (s, a) { return s + a.mult * a.occ; }, 0), split = {};
+    var expectedByKind=Object.create(null), actualByKind=Object.create(null), volumeRatio=Math.abs(det3(P));
+    full.forEach(function(q){var kind=keys[q.ai];expectedByKind[kind]=(expectedByKind[kind]||0)+occOf(atoms[q.ai])*volumeRatio;});
+    out.forEach(function(a){var kind=keys[a.from.index];actualByKind[kind]=(actualByKind[kind]||0)+a.mult*a.occ;});
+    Object.keys(expectedByKind).forEach(function(kind){
+      if(Math.abs((actualByKind[kind]||0)-expectedByKind[kind])>1e-6*Math.max(1,expectedByKind[kind]) && violations.length<50)
+        violations.push('Cell content is not preserved for '+kind.split('|')[0]+': the proposed cell cannot represent all of the original atoms.');
+    });
     Object.keys(perLabel).forEach(function (l) { if (perLabel[l] > 1) split[l] = perLabel[l]; });
     return { cell: newCell, atoms: out, violations: violations, maxShift: maxShift, contentOld: contentOld, contentExpected: contentOld * Math.abs(det3(P)), contentNew: contentNew, split: split, merged: merged };
   }

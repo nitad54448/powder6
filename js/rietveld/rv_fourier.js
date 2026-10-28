@@ -60,6 +60,9 @@ RV.fourier = (function(){
     if(!ph||!ds)return 'Choose a phase and a dataset above.';
     if(!ph.atoms.length)return ph.name+' has no atoms: a Fourier map takes its phases from the model. Add atoms, or solve the structure first.';
     if(!I||I.stale||I.phaseKey!==ph.key||I.dsId!==ds.id)return 'No WPPF intensities for '+ph.name+' in '+ds.name+': fit it by WPPF first (they are prepared automatically).';
+    var an=St.anomalousFor(ds,[ph.key]);
+    if(an.error)return 'Anomalous scattering: '+an.error;
+    if(an.enabled && Object.keys(an.map).length)return 'Fourier maps do not support anomalous scattering. Disable that correction and refit WPPF before computing a map.';
     return '';
   }
   function sync(){var b=$('[data-fo="run"]');if(b)ui.able(b,blocker());}

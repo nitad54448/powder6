@@ -808,6 +808,7 @@ RV.state = (function () {
     var ph = { key: key, color: /^#[0-9a-f]{6}$/i.test(o.color || '') ? o.color : null, name: o.name || ('phase ' + key.slice(1)), method: method, sg: { number: sg.number, symbol: sg.symbol, hall: sg.hall, system: sg.system, laue: sg.laue, setting: sg.setting, uniqueAxis: sg.uniqueAxis },
                ops: sg.ops, wyckoff: sg.wyckoff, profileType: o.profileType || 'gsas_cw', separatedProfile: o.separatedProfile === true || !o.profileType || o.profileType==='gsas_cw', broadening: RVCore.broadeningConfig(o.broadening), poDir: (o.poDir || [0, 0, 1]).slice(), constraints:JSON.parse(JSON.stringify(o.constraints || [])), restraints:RV.restraintsOf(o.restraints), atoms: [], v: {}, fit: {} };
     var cell = normaliseCell(o.cell || { a: 5 }, sg.system, sg.uniqueAxis) || normaliseCell({ a: 5 }, sg.system, sg.uniqueAxis), k = key + '.';
+    if(!(cellVolume(cell)>0) || !buildInvDsq(cell))throw new Error('Invalid unit-cell metric: check the lengths and angles.');
     C.cellParams(sg.system, sg.uniqueAxis).forEach(function (c) { ph.v[k + c] = cell[c]; ph.fit[k + c] = false; });
     ph.v[k + 'scale'] = 1e-3; ph.fit[k + 'scale'] = true;
     profileNames(ph).forEach(function (n) { ph.v[k + n] = profileDefault(ph, n); ph.fit[k + n] = false; });
@@ -988,6 +989,7 @@ RV.state = (function () {
      cleared, and atomic constraints and parameter links of the old atoms are removed, since their atoms no longer exist.
      Returns what was changed, for the message. */
   function convertPhase(ph, sg, conv, P, p) {
+    if(!conv || conv.violations && conv.violations.length)throw new Error('Cannot convert the structure: '+(conv && conv.violations[0] || 'invalid conversion plan.'));
     var K = SGConvert, k = ph.key + '.', oldOps = ph.ops, oldLabels = ph.atoms.map(function (a) { return a.label; });
     var CELLS = ['a', 'b', 'c', 'alpha', 'beta', 'gamma'], free = C.cellParams(sg.system, sg.uniqueAxis);
     var maps = [{ v: ph.v, fit: ph.fit, template: true }], nDatasets = 0, nBanks = 0;

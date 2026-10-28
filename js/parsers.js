@@ -311,7 +311,7 @@ const detectAndParseBuffer = async (fileName, buffer) => {
                     test: (name, content, firstLine, upper, allLines) => allLines.some(line => /^BANK\s+\d+\s/i.test(line.trim())),
                     fatal: () => true,
                     parser: (content, allLines) => {
-                        const bankLine = allLines.find(line => line.trim().toUpperCase().startsWith('BANK'));
+                        const bankLine = allLines.find(line => /^BANK\s+\d+\s/i.test(line.trim()));
                         if (bankLine.toUpperCase().includes('STD')) {
                             return parseGsasXraFile(content);
                         }
@@ -737,16 +737,28 @@ const detectAndParseBuffer = async (fileName, buffer) => {
             return onePattern(read);
         };
 
-        // GSAS constant-step scans. Read one bank and honour its channel count;
+        // GSAS constant-step scans. Read every bank and honour its channel count;
         // padding in the last fixed-width record is not measured data.
         const parseGsasBankFile = (text, defaultType) => {
+            const lines = text.trim().split(/\r?\n/);
+            const banks = [];
+            lines.forEach((line, i) => { if (/^BANK\s+\d+\s/i.test(line.trim())) banks.push(i); });
+            if (!banks.length) throw new Error('GSAS Parse Error: No BANK header found.');
+            const preamble = lines.slice(0, banks[0]).join('\n');
+            return onePattern(banks.map((start, i) => {
+                const pattern = parseGsasSingleBank(preamble + '\n' + lines.slice(start, banks[i + 1] ?? lines.length).join('\n'), defaultType);
+                pattern.blockName = 'bank ' + lines[start].trim().split(/\s+/)[1];
+                return pattern;
+            }));
+        };
+        const parseGsasSingleBank = (text, defaultType) => {
             const lines = text.trim().split(/\r?\n/);
             let wavelength = null;
             for (const line of lines) {
                 const match = line.match(/wavelength\s+([0-9.eE+\-]+)/i);
                 if (match && isFinite(parseFloat(match[1]))) wavelength = parseFloat(match[1]);
             }
-            const bankIndex = lines.findIndex(line => /^BANK\b/i.test(line.trim()));
+            const bankIndex = lines.findIndex(line => /^BANK\s+\d+\s/i.test(line.trim()));
             if (bankIndex < 0) throw new Error('GSAS Parse Error: No BANK header found.');
             const header = lines[bankIndex].trim().split(/\s+/);
             const count = Number(header[2]);
@@ -763,9 +775,9 @@ const detectAndParseBuffer = async (fileName, buffer) => {
             const numeric = /^[+\-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+\-]?\d+)?$/;
             for (let i = bankIndex + 1; i < lines.length && intensity.length < count; i++) {
                 const line = lines[i];
-                if (/^BANK\b/i.test(line.trim())) break;
+                if (/^BANK\s+\d+\s/i.test(line.trim())) break;
                 if (!line.trim() || /^[#!;]/.test(line.trim())) continue;
-                let fields = line.trim().split(/\s+/);
+                let fields = line.trim().split(/\s+/), counters = null;
                 // STD uses 10I8 and ESD uses 10F8. Adjacent full-width values
                 // need slicing; whitespace alone would merge them into one.
                 // STD is 10(I2,F6.0): each 8-character field holds a counter
@@ -775,13 +787,17 @@ const detectAndParseBuffer = async (fileName, buffer) => {
                 // trailing blanks an editor removed are padded back to fields.
                 if (type !== 'FXYE') {
                     const body = line.replace(/\s+$/, '');
-                    const fixed = (body.padEnd(Math.ceil(body.length / 8) * 8).match(/.{8}/g) || []).map(v => {
+                    const chunks = body.padEnd(Math.ceil(body.length / 8) * 8).match(/.{8}/g) || [];
+                    const fixed = chunks.map(v => {
                         const t = v.trim();
-                        if (!t || numeric.test(t)) return t;
                         if (type === 'STD' && /^[ \d]{2}$/.test(v.slice(0, 2)) && numeric.test(v.slice(2).trim())) return v.slice(2).trim();
+                        if (!t || numeric.test(t)) return t;
                         return null;
                     });
-                    if (fixed.length && fixed.every(v => v !== null)) fields = fixed;
+                    if (fixed.length && fixed.every(v => v !== null)) {
+                        fields = fixed;
+                        if (type === 'STD') counters = chunks.map(v => Math.max(1, Number(v.slice(0, 2)) || 1));
+                    }
                 }
                 if (type === 'FXYE') {
                     const x = Number(fields[0]), y = Number(fields[1]), s = Number(fields[2]);
@@ -804,7 +820,7 @@ const detectAndParseBuffer = async (fileName, buffer) => {
                             const s = Number(fields[j + 1]);
                             if (!(s > 0 && Number.isFinite(s))) throw new Error('GSAS Parse Error: Invalid standard uncertainty.');
                             sig.push(s);
-                        }
+                        } else sig.push(y > 0 ? Math.sqrt(y / (counters ? counters[j] : 1)) : 1);
                     }
                 }
             }
@@ -817,7 +833,7 @@ const detectAndParseBuffer = async (fileName, buffer) => {
                 [`GSAS BANK declares ${count} channels, but ${intensity.length} complete points were read. Imported only those points, without padding. Check whether the file is incomplete or its header count is incorrect.`] : [];
             return {
                 tth: type === 'FXYE' ? tth : Array.from({ length: intensity.length }, (_, i) => start + i * step),
-                intensity, wavelength, sig: type === 'STD' ? null : sig, warnings
+                intensity, wavelength, sig, warnings
             };
         };
         const parseGsasEsdFile = (text) => parseGsasBankFile(text, 'ESD');

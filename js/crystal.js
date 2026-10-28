@@ -199,14 +199,16 @@ function fracDistance(G, dx, dy, dz) {
 /**
  * Unit-cell volume.
  * @param {Cell} cell
- * @returns {number} Volume, angstrom^3.
+ * @returns {number} Volume, angstrom^3; NaN for a nonphysical cell.
  */
 function cellVolume(cell) {
     const ca = Math.cos((cell.alpha ?? 90) * DEG2RAD);
     const cb = Math.cos((cell.beta  ?? 90) * DEG2RAD);
     const cg = Math.cos((cell.gamma ?? 90) * DEG2RAD);
     const t = 1 - ca * ca - cb * cb - cg * cg + 2 * ca * cb * cg;
-    return cell.a * cell.b * cell.c * Math.sqrt(Math.max(1e-12, t));
+    if (![cell.a, cell.b, cell.c].every(v => Number.isFinite(v) && v > 0) ||
+        ![cell.alpha ?? 90, cell.beta ?? 90, cell.gamma ?? 90].every(v => Number.isFinite(v) && v > 0 && v < 180) || !(t > 0)) return NaN;
+    return cell.a * cell.b * cell.c * Math.sqrt(t);
 }
 
 /**
@@ -223,8 +225,7 @@ function cellBasis(cell) {
     const be = (cell.beta  ?? 90) * DEG2RAD;
     const ga = (cell.gamma ?? 90) * DEG2RAD;
     const ca = Math.cos(al), cb = Math.cos(be), cg = Math.cos(ga), sg = Math.sin(ga);
-    const vol = Math.sqrt(Math.max(1e-12,
-        1 - ca * ca - cb * cb - cg * cg + 2 * ca * cb * cg));
+    const vol = cellVolume(cell) / (a * b * c);
     return {
         av: [a, 0, 0],
         bv: [b * cg, b * sg, 0],

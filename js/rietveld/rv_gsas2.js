@@ -99,7 +99,8 @@ RV.gsas2 = (function () {
       var w = St.pointWeight(ds, i);
       if (!(w > 0)) continue;
       s = 1 / Math.sqrt(w);
-      L.push(num(ds.tth[i], 5) + ' ' + trim(ds.y[i], 4) + ' ' + trim(s, 6));
+      // Round-trip finite observations and positive sigma, including rescaled data.
+      L.push(String(ds.tth[i]) + ' ' + String(ds.y[i]) + ' ' + String(s));
       n++;
     }
     if (!n) throw new Error('dataset ' + ds.name + ' has no points');

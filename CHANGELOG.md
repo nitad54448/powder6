@@ -2,6 +2,16 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.49.1 - 28 October 2026
+
+1. **Fourier observations.** Keep independent extracted reflections separate instead of merging their `group=-1` markers into one overlap group. Observed, difference and 2Fo−Fc maps now respond to their measured intensity ratios. Refuse Fourier calculation with enabled anomalous corrections, which the map engine does not support, and explain how to select an uncorrected model.
+2. **GSAS file exchange.** Import every supported constant-wavelength BANK as a separate dataset. Preserve STD counter-dependent uncertainties (variance I/n), and retain the numerical precision of XYE observations and positive standard uncertainties during GSAS-II export.
+3. **Cell safety.** Validate the translation lattice and atomic repetition before contracting a cell, and reject conversions that do not preserve each species' cell content. Conversion cannot apply a plan with violations. Reject nonphysical triclinic metrics during phase creation, CIF import and refinement; volume and basis helpers no longer manufacture a positive volume from a negative metric determinant.
+4. **Global restraint statistics.** Count shared copies of each geometric restraint once in the degrees of freedom, including geometry shared through parameter links. Local geometries remain separate, and an unrelated local atom does not duplicate a shared restraint. The restraint objective and weighting are unchanged. Refit restrained global results before using updated reduced chi-square or uncertainties.
+5. **Validation.** Add numerical regressions for Fourier intensity sensitivity, multi-bank GSAS import and weights, small-value export, invalid cells, safe contractions, and shared/local/linked restraint counts. Browser Fourier checks also verify the anomalous-correction guard.
+
+No surface roughness, absorption intensity correction, anisotropic atomic displacement or TOF feature was added. The audit's lower-priority secondary-wavelength size-width approximation and extreme-skew minimum-image search remain outside this correction.
+
 ## 2.49.0 - 27 October 2026
 
 1. **Phase plot control.** Hide the Phases checkbox when the project has fewer than two phases. Restore it when another phase is added, preserving its saved setting.

@@ -135,7 +135,9 @@ var FourierMap = (function () {
       var key = canonical(r.h, r.k, r.l, rots);
       if (cls[key] !== i || idx[key] == null) return;
       fc2[i] = amp2[idx[key]];
-      var g = groups[r.group == null ? 'r' + i : r.group] || (groups[r.group == null ? 'r' + i : r.group] = { A: 0, W: 0, members: [] });
+      // Extraction uses -1 for an independent reflection, not an overlap ID.
+      var groupKey = Number.isInteger(r.group) && r.group >= 0 ? 'g' + r.group : 'r' + i;
+      var g = groups[groupKey] || (groups[groupKey] = { A: 0, W: 0, members: [] });
       g.A += Math.max(0, r.area); g.W += r.m * r.lp * (fc2[i] + eps); g.members.push(i);
     });
     var sumA = 0, sumW = 0;
