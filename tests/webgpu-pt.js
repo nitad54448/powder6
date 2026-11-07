@@ -57,6 +57,13 @@
             const ctx=await context(problem('rietveld','simple_pvoigt',options)),gpu=await RVPTGPU.create(ctx,{device});
             try{const costs=await gpu.costs([ctx.x]);const cpu=ctx.cost(ctx.x),relative=Math.abs(costs[0]-cpu)/Math.max(1,cpu);check(relative<.001,'Broadening/spline cost mismatch '+relative);record('extra '+JSON.stringify(options),{pass:true,relativeError:relative});}finally{gpu.close();}
         }
+        // The second line's size width follows its own wavelength. A distant
+        // line and a small size make the term large enough for the cost to see.
+        {
+            const job=problem('rietveld','tch_aniso',{separated:true});job.datasets[0].lambda2=1.9;job.values[0]['p1.size']=.02;
+            const ctx=await context(job),gpu=await RVPTGPU.create(ctx,{device});
+            try{const costs=await gpu.costs([ctx.x]),cpu=ctx.cost(ctx.x),relative=Math.abs(costs[0]-cpu)/Math.max(1,cpu);check(relative<.001,'Doublet size width mismatch '+relative);record('doublet size width',{pass:true,relativeError:relative});}finally{gpu.close();}
+        }
         // Negative trial variances must use the same stable continuation on
         // the CPU and GPU, including well beyond float32 cancellation.
         for(const U of [3.96361,-1e5]){

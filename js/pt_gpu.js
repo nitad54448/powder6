@@ -75,7 +75,7 @@
                     })).map(t => product(get(t.name), sum(t.coeff.flatMap((v,i) => v ? [product(f(v),mono(GSAS_QUARTIC[i]))] : []))));
                     code += `strain=spacing*spacing*sqrt(max(0.0,${sum(terms)}));\n`;
                 }
-                code += `let sg=1.8*${f(D.def.lambda1)}*invSize/(PI*ct); let eg=0.018*strain*tt/PI; let sm=clamp(${get('sizeMix',1)},0.0,1.0); let em=clamp(${get('strainMix',1)},0.0,1.0);\n`;
+                code += `let sg=1.8*lam*invSize/(PI*ct); let eg=0.018*strain*tt/PI; let sm=clamp(${get('sizeMix',1)},0.0,1.0); let em=clamp(${get('strainMix',1)},0.0,1.0);\n`;
                 sigma = `${get('U'+suffix)}*tt*tt+${get('V'+suffix)}*tt+${get('W'+suffix)}+(sq(sg*(1.0-sm))+sq(eg*(1.0-em)))/(8.0*log(2.0))`;
                 gamma = `${get('X'+suffix)}/ct+${split ? '0.0' : get('Y')+'*tt+'+get('Z')}+sg*sm+eg*em`;
             } else {
@@ -90,7 +90,7 @@
                     ['400','040','004','220','202','022'].map(n => product(get('S'+n),mono(n))).join('+');
                 code += `let ag=${f(STEPHENS_PREFACTOR)}*spacing*spacing*sqrt(max(0.0,${quartic}))/1000.0*tt; let ae=clamp(${get('eta_aniso',STEPHENS_DEFAULT_ETA)},0.0,1.0); hl+=ag*ae; hg=sqrt(hg*hg+sq(ag*(1.0-ae)));\n`;
             }
-            functions.push(`fn ${name}(c:u32,tc:f32,h:vec3<f32>,spacing:f32,g:Metric)->vec2<f32>{
+            functions.push(`fn ${name}(c:u32,tc:f32,h:vec3<f32>,spacing:f32,g:Metric,lam:f32)->vec2<f32>{
                 let theta=min(tc*RAD*0.5,PI*0.5-1e-6); if(theta<1e-6){return vec2<f32>(${f(D.def.minFwhm)});}
                 let tt=tan(theta); let cs=cos(theta); let ct=max(1e-9,cs); ${code}
                 return vec2<f32>(softFloor(hg,${f(D.def.minFwhm)}),softFloor(hl,${f(D.def.minFwhm)}));
@@ -160,15 +160,15 @@
                         if(pr>0.0 && abs(pr-1.0)>1e-12 && hh>0.0){po=0.0; for(var j=0u;j<u32(dat[rr+5u]);j++){let o=u32(dat[rr+4u])+3u*j; let e=vec3<f32>(dat[o],dat[o+1u],dat[o+2u]); let c2=min(1.0,sq(dot(e,g.g*direction))/max(1e-30,dot(e,g.g*e)*hh)); po+=pow(pr*pr*c2+(1.0-c2)/pr,-1.5);} po/=dat[rr+5u];}
                         height=${par('scale')}*dat[rr+3u]*lp(tc,${f(D.def.polK)})*po*(fr*fr+fi*fi+gr*gr+gi*gi)/pk.area;`;
                 }
-                const mk = (angle,centre) => `makePeak(${angle},${centre},width_${pair.index}(c,${angle},h,spacing,g),${type===2?`left_${pair.index}(c,${angle},h,spacing,g)`:'vec2<f32>(0.0)'},${type===2?`right_${pair.index}(c,${angle},h,spacing,g)`:'vec2<f32>(0.0)'},${u(type)},${get(type===2?'eta_split':'eta',0.5)},${type===3?`(${get('SL')}/tan(${angle}*RAD*0.5)+${get('HL')})`:'0.0'})`;
+                const mk = (angle,centre,lam) => `makePeak(${angle},${centre},width_${pair.index}(c,${angle},h,spacing,g,${f(lam)}),${type===2?`left_${pair.index}(c,${angle},h,spacing,g,${f(lam)})`:'vec2<f32>(0.0)'},${type===2?`right_${pair.index}(c,${angle},h,spacing,g,${f(lam)})`:'vec2<f32>(0.0)'},${u(type)},${get(type===2?'eta_split':'eta',0.5)},${type===3?`(${get('SL')}/tan(${angle}*RAD*0.5)+${get('HL')})`:'0.0'})`;
                 functions.push(`fn phase_${pair.index}(c:u32,ri:u32){
                     let rr=${u(pair.refs)}+6u*(ri-${u(pair.start)}); let h=vec3<f32>(dat[rr],dat[rr+1u],dat[rr+2u]); let g=${g}; let q=dot(h,g.g*h); let idx=(c*NR+ri)*2u;
                     peaks[idx]=Peak(); peaks[idx+1u]=Peak();
                     if(q<=0.0 || q>${f(1/(dmin*dmin)*(1+1e-9))} || g.valid<0.5){return;}
                     let sint=${f(D.def.lambda1*0.5)}*sqrt(q); if(sint>=1.0){return;} let spacing=inverseSqrt(q);
                     let bragg=2.0*asin(sint)/RAD; let tth=bragg+shift(bragg,${param(d,'disp')},${param(d,'transp')}); let tc=tth+${param(d,'zero')};
-                    var pk=${mk('tc','tc')}; ${struct} pk.height=height; peaks[idx]=pk;
-                    ${D.def.ratio>1e-6 && D.def.lambda2>1e-6 && Math.abs(D.def.lambda1-D.def.lambda2)>1e-6 ? `let st2=sin(bragg*RAD*0.5)*${f(D.def.lambda2/D.def.lambda1)}; if(abs(st2)<1.0){let bragg2=2.0*asin(st2)/RAD;let tc2=bragg2+shift(bragg2,${param(d,'disp')},${param(d,'transp')})+${param(d,'zero')}; var pk2=${mk('tc2','tc2')}; pk2.height=pk.area/pk2.area*lp(tc2,${f(D.def.polK)})/lp(tc,${f(D.def.polK)}); peaks[idx+1u]=pk2;}` : ''}
+                    var pk=${mk('tc','tc',D.def.lambda1)}; ${struct} pk.height=height; peaks[idx]=pk;
+                    ${D.def.ratio>1e-6 && D.def.lambda2>1e-6 && Math.abs(D.def.lambda1-D.def.lambda2)>1e-6 ? `let st2=sin(bragg*RAD*0.5)*${f(D.def.lambda2/D.def.lambda1)}; if(abs(st2)<1.0){let bragg2=2.0*asin(st2)/RAD;let tc2=bragg2+shift(bragg2,${param(d,'disp')},${param(d,'transp')})+${param(d,'zero')}; var pk2=${mk('tc2','tc2',D.def.lambda2)}; pk2.height=pk.area/pk2.area*lp(tc2,${f(D.def.polK)})/lp(tc,${f(D.def.polK)}); peaks[idx+1u]=pk2;}` : ''}
                 }`);
             });
             ds.m=ds.free.length;

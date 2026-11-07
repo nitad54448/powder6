@@ -1041,6 +1041,12 @@ test('PT reflection envelope covers expanded and oblique trial cells', () => {
   }
 });
 
+test('site symmetry keeps the identity and the atom position in a cell with no real metric', () => {
+  const a = model(), ops = [{ r: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }];
+  const site = a.core.siteSymmetry(ops, [.13, .21, .32], { a: 5, b: 5, c: 5, alpha: 125, beta: 125, gamma: 125 });
+  assert.deepEqual(Array.from(site.pos), [.13, .21, .32]);
+});
+
 test('missing WebGPU uses CPU PT, while LM and extraction never request a GPU', async () => {
   const a = model(), job = a.state.jobFor(a.ds);
   vm.runInContext(read('js/pt_gpu.js'), a.context);

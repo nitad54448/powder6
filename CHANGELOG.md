@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.49.2 - 7 November 2026
+
+1. **Minimum-image distances.** Replace the fixed translation shell with a metric-bounded lattice search so highly skewed, non-reduced cells retain their closest atomic images. The search has a fixed budget, so an almost singular cell returns the closest image found instead of freezing the page. A metric that describes no real cell keeps the rounded image, so its distances stay finite and site symmetry keeps the identity.
+2. **Doublet size broadening.** Prepare the secondary line with its own wavelength, preserving the primary parameters and integrated source ratio, in the CPU model and in WebGPU parallel tempering. This changes the calculated pattern of a Kα1/Kα2 dataset with a refined size: refit older projects, because their saved sizes and History records are not comparable until then.
+3. **Validation.** Add regressions for the skew-cell example in every axis order, translated and inverted separations, 60 exhaustive oblique-cell comparisons, a strongly skewed non-reduced cell, metrics with no real cell, the bounded search, both doublet size widths, and GPU against CPU cost for a doublet size width. All 262 Node tests pass.
+
 ## 2.49.1 - 28 October 2026
 
 1. **Fourier observations.** Keep independent extracted reflections separate instead of merging their `group=-1` markers into one overlap group. Observed, difference and 2Fo−Fc maps now respond to their measured intensity ratios. Refuse Fourier calculation with enabled anomalous corrections, which the map engine does not support, and explain how to select an uncorrected model.

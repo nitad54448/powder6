@@ -1,5 +1,10 @@
 # GSAS-II comparison: peak profiles and instrument/sample corrections
 
+## Update — 7 November 2026
+
+The secondary-line crystallite-size broadening issue below is fixed. `buildPeakContributions` now prepares the secondary component with its own wavelength, without mutating the primary parameters, and the WebGPU parallel-tempering kernel passes each line's wavelength to its width functions. A numerical regression checks both line widths against the pure-size formula and verifies that the integrated source ratio is preserved. The historical finding below describes the pre-fix behavior.
+
+
 Reviewed 28 October 2026. Review only: application files were not changed.
 
 ## Findings and limits

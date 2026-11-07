@@ -1059,6 +1059,7 @@ function buildPeakContributions(tthAxis, hklList, params) {
     }
 
     if (doubletEnabled) {
+        const secondaryParams = { ...params, lambda: lambda2 };
         for (let j = 0; j < hklList.length; j++) {
             const peak = hklList[j];
             if (!hasRenderablePosition(peak)) continue;
@@ -1067,7 +1068,7 @@ function buildPeakContributions(tthAxis, hklList, params) {
             const tth2 = 2 * Math.asin(sinTheta2) / deg2rad;
             const basePos2 = shifted(tth2) + zeroShift;
             const peakPos2 = basePos2 + calculatePeakShift(basePos2, params);
-            const prep2=prepareVoigt(basePos2, peakPos2, peak, params), prep1=reference[j];
+            const prep2=prepareVoigt(basePos2, peakPos2, peak, secondaryParams), prep1=reference[j];
             // The radiation weight is an area/source ratio, independent of width.
             const lpRatio=Number.isFinite(params.polK) && typeof sharkoLp==='function'
                 ? sharkoLp(basePos2,{K:params.polK})/sharkoLp(prep1.x0,{K:params.polK}):1;

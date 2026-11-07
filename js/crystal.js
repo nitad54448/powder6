@@ -138,7 +138,11 @@ function metricTensor(cell) {
 
 /**
  * Distance in angstrom between two points given their FRACTIONAL separation,
- * reduced to the shortest lattice image on each axis.
+ * reduced to the shortest lattice image in the full metric. A metric that is
+ * not positive definite describes no cell: the rounded image is returned, so
+ * the result stays finite and a zero separation stays zero. In an almost
+ * singular cell the search stops at a fixed budget and returns the closest
+ * image found so far.
  *
  * @param {number[][]} G Real-space metric tensor from metricTensor().
  * @param {number} dx Fractional separation along a.
@@ -153,46 +157,53 @@ function fracDistance(G, dx, dy, dz) {
                          + y * (G[1][0] * x + G[1][1] * y + G[1][2] * z)
                          + z * (G[2][0] * x + G[2][1] * y + G[2][2] * z);
 
-    // ROUNDING EACH COMPONENT INTO [-1/2, 1/2) IS NOT THE MINIMUM IMAGE.
-    //
-    // It is exact for an orthogonal cell and only for an orthogonal cell. When
-    // the axes are oblique the shortest lattice vector between two points can
-    // lie in a neighbouring translation that componentwise rounding never
-    // visits, and the error is always in the same direction: the distance
-    // comes out TOO LONG. So a real clash reads as a comfortable separation, a
-    // symmetry image reads as a distinct atom, and two peaks that are the same
-    // peak survive deduplication -- all silently, and all only in cells that
-    // are not orthorhombic or higher.
-    //
-    // The off-diagonal terms of the metric tensor are exactly zero for an
-    // orthogonal cell, so the cheap path is taken whenever they are, which is
-    // most of the time. Only an oblique cell pays for the 27-point search,
-    // and it is the only one that needs it.
-    // Tested RELATIVE to the diagonal: G entries scale as a*b, so on a 100 A
-    // cell the residual off-diagonal from floating-point rounding is far
-    // larger than any fixed absolute epsilon would allow.
-    const scale = Math.abs(G[0][0]) + Math.abs(G[1][1]) + Math.abs(G[2][2]);
-    const eps = 1e-12 * (scale > 0 ? scale : 1);
-    const oblique = Math.abs(G[0][1]) > eps ||
-                    Math.abs(G[0][2]) > eps ||
-                    Math.abs(G[1][2]) > eps;
-    if (!oblique) return Math.sqrt(Math.max(0, q(dx, dy, dz)));
+    // Componentwise rounding is sufficient only for an orthogonal metric.
+    const rounded = () => Math.sqrt(Math.max(0, q(dx, dy, dz)));
+    const orthogonal = Math.abs(G[0][1]) <= 1e-14 * Math.sqrt(G[0][0]*G[1][1]) &&
+                       Math.abs(G[0][2]) <= 1e-14 * Math.sqrt(G[0][0]*G[2][2]) &&
+                       Math.abs(G[1][2]) <= 1e-14 * Math.sqrt(G[1][1]*G[2][2]);
+    if (orthogonal) return rounded();
 
-    // +/-2, not +/-1. One shell still missed about one oblique case in 200,
-    // and the ones it missed were the badly wrong ones -- a shortest vector
-    // two translations away turns up exactly when the cell is most skewed.
-    // 125 metric evaluations sounds like a lot but only an oblique cell ever
-    // reaches this branch, and the alternative is a Niggli reduction that
-    // would have to be threaded through every caller.
-    let best = Infinity;
-    for (let a = -2; a <= 2; a++) {
-        for (let b = -2; b <= 2; b++) {
-            for (let c = -2; c <= 2; c++) {
-                const s = q(dx + a, dy + b, dz + c);
-                if (s < best) best = s;
-            }
+    // G = R^T R. Enumerate lattice images inside the sphere defined by an
+    // existing image, from the last triangular row upwards. Each partial
+    // squared norm is a lower bound, so pruning cannot discard a closer image.
+    // Unlike a fixed translation shell, these bounds also cover non-reduced cells.
+    const r00 = Math.sqrt(G[0][0]), r01 = G[0][1]/r00, r02 = G[0][2]/r00;
+    const r11 = Math.sqrt(G[1][1]-r01*r01), r12 = (G[1][2]-r01*r02)/r11;
+    const r22 = Math.sqrt(G[2][2]-r02*r02-r12*r12);
+    if (![r00,r11,r22].every(v => Number.isFinite(v) && v > 0)) return rounded();
+    const R = [[r00,r01,r02],[0,r11,r12],[0,0,r22]], d = [dx,dy,dz], v = d.slice();
+    const norm = () => Math.pow(r00*v[0]+r01*v[1]+r02*v[2],2) +
+                       Math.pow(r11*v[1]+r12*v[2],2) + Math.pow(r22*v[2],2);
+    // A nearest-plane image provides a tighter initial radius than rounding.
+    for (let k=2;k>=0;k--) {
+        let tail=0; for(let j=k+1;j<3;j++) tail+=R[k][j]*v[j];
+        v[k]=d[k]+Math.round(-d[k]-tail/R[k][k]);
+    }
+    let best=norm();
+    if (!(best<Infinity)) return Infinity;   // non-finite separation: never within any cutoff
+    // The number of images in the sphere grows without limit as a cell flattens.
+    // Real cells use a few dozen; this keeps a degenerate one from freezing the page.
+    let budget=4096;
+    function search(k, partial) {
+        let tail=0; for(let j=k+1;j<3;j++) tail+=R[k][j]*v[j];
+        const centre=-d[k]-tail/R[k][k];
+        if (k===0) {
+            v[0]=d[0]+Math.round(centre);
+            best=Math.min(best,partial+Math.pow(R[0][0]*v[0]+tail,2));
+            return;
+        }
+        const radius=Math.sqrt(Math.max(0,best-partial))/R[k][k];
+        const slack=1e-12*(1+Math.abs(centre)+radius);
+        const lo=Math.ceil(centre-radius-slack), hi=Math.floor(centre+radius+slack);
+        for(let n=lo;n<=hi && budget>0;n++) {
+            budget--;
+            v[k]=d[k]+n;
+            const next=partial+Math.pow(R[k][k]*v[k]+tail,2);
+            if(next<=best+1e-12*Math.max(best,Number.MIN_VALUE)) search(k-1,next);
         }
     }
+    search(2,0);
     return Math.sqrt(Math.max(0, best));
 }
 
