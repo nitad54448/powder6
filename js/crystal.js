@@ -136,6 +136,43 @@ function metricTensor(cell) {
     ];
 }
 
+// The upper-triangular factor R of G = R^T R, or null for a metric that is not
+// positive definite and so describes no cell.
+function metricFactor(G) {
+    const r00 = Math.sqrt(G[0][0]), r01 = G[0][1]/r00, r02 = G[0][2]/r00;
+    const r11 = Math.sqrt(G[1][1]-r01*r01), r12 = (G[1][2]-r01*r02)/r11;
+    const r22 = Math.sqrt(G[2][2]-r02*r02-r12*r12);
+    return [r00,r11,r22].every(v => Number.isFinite(v) && v > 0) ? [[r00,r01,r02],[0,r11,r12],[0,0,r22]] : null;
+}
+
+// The number of images in a sphere grows without limit as a cell flattens. Real
+// cells use a few dozen; this keeps a degenerate one from freezing the page.
+const IMAGE_SEARCH_BUDGET = 4096;
+
+// Walks the lattice images d+n inside the sphere of squared radius `limit`, from
+// the last triangular row upwards. Each partial squared norm is a lower bound, so
+// pruning cannot discard an image inside the sphere, and unlike a fixed translation
+// shell the bounds also cover non-reduced cells. visit(n, squaredLength) returns
+// the limit to go on with, so a minimum search tightens the sphere as it walks.
+function walkImages(R, d, limit, visit) {
+    const n = [0,0,0], v = d.slice();
+    let budget = IMAGE_SEARCH_BUDGET;
+    (function level(k, partial) {
+        let tail=0; for(let j=k+1;j<3;j++) tail+=R[k][j]*v[j];
+        const centre=-d[k]-tail/R[k][k];
+        const radius=Math.sqrt(Math.max(0,limit-partial))/R[k][k];
+        const slack=1e-12*(1+Math.abs(centre)+radius);
+        const lo=Math.ceil(centre-radius-slack), hi=Math.floor(centre+radius+slack);
+        for(let m=lo;m<=hi && budget>0;m++) {
+            budget--;
+            n[k]=m; v[k]=d[k]+m;
+            const next=partial+Math.pow(R[k][k]*v[k]+tail,2);
+            if(next>limit*(1+1e-12)) continue;
+            if(k) level(k-1,next); else limit=visit(n,next);
+        }
+    })(2,0);
+}
+
 /**
  * Distance in angstrom between two points given their FRACTIONAL separation,
  * reduced to the shortest lattice image in the full metric. A metric that is
@@ -153,58 +190,51 @@ function metricTensor(cell) {
 function fracDistance(G, dx, dy, dz) {
     dx -= Math.round(dx); dy -= Math.round(dy); dz -= Math.round(dz);
 
-    const q = (x, y, z) => x * (G[0][0] * x + G[0][1] * y + G[0][2] * z)
-                         + y * (G[1][0] * x + G[1][1] * y + G[1][2] * z)
-                         + z * (G[2][0] * x + G[2][1] * y + G[2][2] * z);
+    const rounded = () => Math.sqrt(Math.max(0,
+        dx * (G[0][0] * dx + G[0][1] * dy + G[0][2] * dz) +
+        dy * (G[1][0] * dx + G[1][1] * dy + G[1][2] * dz) +
+        dz * (G[2][0] * dx + G[2][1] * dy + G[2][2] * dz)));
 
     // Componentwise rounding is sufficient only for an orthogonal metric.
-    const rounded = () => Math.sqrt(Math.max(0, q(dx, dy, dz)));
     const orthogonal = Math.abs(G[0][1]) <= 1e-14 * Math.sqrt(G[0][0]*G[1][1]) &&
                        Math.abs(G[0][2]) <= 1e-14 * Math.sqrt(G[0][0]*G[2][2]) &&
                        Math.abs(G[1][2]) <= 1e-14 * Math.sqrt(G[1][1]*G[2][2]);
     if (orthogonal) return rounded();
 
-    // G = R^T R. Enumerate lattice images inside the sphere defined by an
-    // existing image, from the last triangular row upwards. Each partial
-    // squared norm is a lower bound, so pruning cannot discard a closer image.
-    // Unlike a fixed translation shell, these bounds also cover non-reduced cells.
-    const r00 = Math.sqrt(G[0][0]), r01 = G[0][1]/r00, r02 = G[0][2]/r00;
-    const r11 = Math.sqrt(G[1][1]-r01*r01), r12 = (G[1][2]-r01*r02)/r11;
-    const r22 = Math.sqrt(G[2][2]-r02*r02-r12*r12);
-    if (![r00,r11,r22].every(v => Number.isFinite(v) && v > 0)) return rounded();
-    const R = [[r00,r01,r02],[0,r11,r12],[0,0,r22]], d = [dx,dy,dz], v = d.slice();
-    const norm = () => Math.pow(r00*v[0]+r01*v[1]+r02*v[2],2) +
-                       Math.pow(r11*v[1]+r12*v[2],2) + Math.pow(r22*v[2],2);
+    const R = metricFactor(G);
+    if (!R) return rounded();
+
     // A nearest-plane image provides a tighter initial radius than rounding.
+    const d = [dx,dy,dz], v = d.slice();
+    let best = 0;
     for (let k=2;k>=0;k--) {
         let tail=0; for(let j=k+1;j<3;j++) tail+=R[k][j]*v[j];
         v[k]=d[k]+Math.round(-d[k]-tail/R[k][k]);
+        best+=Math.pow(R[k][k]*v[k]+tail,2);
     }
-    let best=norm();
     if (!(best<Infinity)) return Infinity;   // non-finite separation: never within any cutoff
-    // The number of images in the sphere grows without limit as a cell flattens.
-    // Real cells use a few dozen; this keeps a degenerate one from freezing the page.
-    let budget=4096;
-    function search(k, partial) {
-        let tail=0; for(let j=k+1;j<3;j++) tail+=R[k][j]*v[j];
-        const centre=-d[k]-tail/R[k][k];
-        if (k===0) {
-            v[0]=d[0]+Math.round(centre);
-            best=Math.min(best,partial+Math.pow(R[0][0]*v[0]+tail,2));
-            return;
-        }
-        const radius=Math.sqrt(Math.max(0,best-partial))/R[k][k];
-        const slack=1e-12*(1+Math.abs(centre)+radius);
-        const lo=Math.ceil(centre-radius-slack), hi=Math.floor(centre+radius+slack);
-        for(let n=lo;n<=hi && budget>0;n++) {
-            budget--;
-            v[k]=d[k]+n;
-            const next=partial+Math.pow(R[k][k]*v[k]+tail,2);
-            if(next<=best+1e-12*Math.max(best,Number.MIN_VALUE)) search(k-1,next);
-        }
-    }
-    search(2,0);
+    walkImages(R,d,best,(n,s) => { if(s<best) best=s; return best; });
     return Math.sqrt(Math.max(0, best));
+}
+
+/**
+ * Every lattice image of a FRACTIONAL separation within a cutoff, for contact
+ * lists that need all the neighbours and not only the closest. The separation
+ * is not wrapped first: image n is the separation (dx,dy,dz) plus n. Empty for a
+ * metric that describes no cell; an almost singular cell stops at the same
+ * budget as fracDistance.
+ *
+ * @param {number[][]} G Real-space metric tensor from metricTensor().
+ * @param {number} dx Fractional separation along a.
+ * @param {number} dy Fractional separation along b.
+ * @param {number} dz Fractional separation along c.
+ * @param {number} cutoff Longest distance, angstrom.
+ * @returns {{n:number[], d:number}[]} Integer translations and their distances, unsorted.
+ */
+function fracImages(G, dx, dy, dz, cutoff) {
+    const R = metricFactor(G), out = [], limit = cutoff*cutoff;
+    if (R) walkImages(R,[dx,dy,dz],limit,(n,s) => { out.push({n:n.slice(),d:Math.sqrt(s)}); return limit; });
+    return out;
 }
 
 /**
@@ -503,7 +533,7 @@ if (typeof module !== 'undefined' && module.exports) {
         DEG2RAD,
         MONOCLINIC_ANGLE_FOR_AXIS,
         normaliseCell,
-        metricTensor, fracDistance, cellVolume, cellBasis, fracToCart,
+        metricTensor, fracDistance, fracImages, cellVolume, cellBasis, fracToCart,
         buildInvDsq, invDsq, dSpacing,
         SHARKO_POLARIZATION_DEFAULTS, sharkoPolarizationK, sharkoLorentzFactor,
         sharkoPolarizationFactor, sharkoLorentzPolarization, sharkoLp, sharkoLpStrict

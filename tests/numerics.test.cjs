@@ -156,6 +156,33 @@ test('almost singular cells return a real image within a bounded search', () => 
   }
 });
 
+test('lattice images within a cutoff match an exhaustive search, beyond the nearest cells', () => {
+  const cases=[[{a:1.5,b:10,c:10,alpha:90,beta:90,gamma:90},[.2,.1,-.05],3.2],[{a:2,b:20,c:7,alpha:85,beta:86,gamma:3},[1.31,-.27,.11],4],[{a:5,b:6,c:7,alpha:80,beta:100,gamma:110},[.4,.45,-.3],8]];
+  for(const [cell,d,cutoff] of cases){
+    const G=crystal.metricTensor(cell), sq=v=>v.reduce((s,x,i)=>s+x*v.reduce((t,y,j)=>t+G[i][j]*y,0),0), want=[];
+    for(let i=-40;i<=40;i++)for(let j=-8;j<=8;j++)for(let k=-8;k<=8;k++)if(sq([d[0]+i,d[1]+j,d[2]+k])<=cutoff*cutoff)want.push([i,j,k].join());
+    const got=crystal.fracImages(G,...d,cutoff);
+    assert.deepEqual(got.map(g=>g.n.join()).sort(),want.sort());
+    for(const g of got)near(g.d,Math.sqrt(sq(d.map((x,i)=>x+g.n[i]))),1e-10,'image distance');
+  }
+  assert.deepEqual(crystal.fracImages([[1,2,0],[2,1,0],[0,0,1]],.1,.2,.3,5),[]);
+});
+
+test('the contact report lists every neighbour within the cutoff, however far its cell', () => {
+  Object.assign(globalThis,crystal);require(path.resolve(__dirname,'..','js','wyckoff_report.js'));
+  const report=cell=>globalThis.WyckoffReport.analyse({cell,sites:[{rank:1,element:'Cu',x:0,y:0,z:0,wyckoff:'a',multiplicity:1}],spaceGroup:{number:1,symbol:'P1'},opMatrices:[{r:[1,0,0,0,1,0,0,0,1],t:[0,0,0],xyz:'x,y,z'}]},{cutoff:3.2}).report[0].contacts;
+  assert.deepEqual(report({a:1.5,b:10,c:10,alpha:90,beta:90,gamma:90}).map(c=>c.d),[1.5,1.5,3,3]);
+  // the shortest lattice vector is 20 sin(gamma/2) = 0.175 A, under the 0.2 A self limit, so twice that comes first
+  near(report({a:1,b:10,c:10,alpha:90,beta:90,gamma:1})[0].d,40*Math.sin(Math.PI/360),1e-9,'skewed cell contact');
+});
+
+test('distance helpers share the lattice search instead of keeping their own shells', () => {
+  const source=f=>require('node:fs').readFileSync(path.resolve(__dirname,'..','js',f),'utf8');
+  for(const f of ['fourier_map.js','sg_convert.js'])assert.match(source(f),/latticeDistance\(\[G\.slice/,f);
+  assert.doesNotMatch(source('sg_convert.js'),/quickDist/);
+  assert.doesNotMatch(source('wyckoff_worker.js'),/minImage\(/);
+});
+
 test('doublet size broadening uses each line wavelength and preserves the source area ratio', () => {
   const profile=js('profile.js');
   const p={profileType:'tch_aniso',separated:true,U:0,V:0,W:0,X:0,Y:0,Z:0,size:.1,sizeMix:1,strain:0,lambda:1.540598,lambda2:1.544426,ratio:.5,minFwhm:1e-6};

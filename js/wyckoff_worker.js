@@ -1315,22 +1315,6 @@ if (constraintBreak) {
             refinement = { skipped: (err && err.message) || String(err) };
         }
 
-        // Minimum image over the 27 neighbouring translations. The delta is
-        // wrapped to the nearest cell first, which is enough on its own for a
-        // near-orthogonal cell; the shell search covers the oblique ones,
-        // where the nearest image is not always the wrapped one.
-        const minImage = (dx, dy, dz) => {
-            dx -= Math.round(dx); dy -= Math.round(dy); dz -= Math.round(dz);
-            let best = Infinity;
-            for (let i = -1; i <= 1; i++)
-                for (let j = -1; j <= 1; j++)
-                    for (let k = -1; k <= 1; k++) {
-                        const d = fracDistance(G, dx + i, dy + j, dz + k);
-                        if (d < best) best = d;
-                    }
-            return best;
-        };
-
         // Expand the asymmetric unit to the whole cell once, then measure
         // every unique site against it.
         const expanded = [];
@@ -1338,7 +1322,7 @@ if (constraintBreak) {
             const imgs = [];
             for (const op of symops) {
                 const q = applyOp(op, [s.x, s.y, s.z]).map(v => ((v % 1) + 1) % 1);
-                if (!imgs.some(im => minImage(im[0] - q[0], im[1] - q[1], im[2] - q[2]) < 1e-3)) {
+                if (!imgs.some(im => fracDistance(G, im[0] - q[0], im[1] - q[1], im[2] - q[2]) < 1e-3)) {
                     imgs.push(q);
                 }
             }
@@ -1374,7 +1358,7 @@ if (constraintBreak) {
             const near = [];
             for (const b of expanded) {
                 if (b === self) continue;
-                const d = minImage(self.x - b.x, self.y - b.y, self.z - b.z);
+                const d = fracDistance(G, self.x - b.x, self.y - b.y, self.z - b.z);
                 if (d > 1e-3) near.push({ element: b.element, distance: d });
             }
             near.sort((p, q) => p.distance - q.distance);

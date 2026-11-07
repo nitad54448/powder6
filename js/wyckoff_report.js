@@ -3,7 +3,8 @@
  *  analysis for the Wyckoff results panel.
  *
  *  Self-contained on purpose. It needs nothing from the rest of Powder 5
- *  except the structure object the Wyckoff search already produces:
+ *  except the lattice search of crystal.js and the structure object the
+ *  Wyckoff search already produces:
  *
  *      st.cell          {a,b,c,alpha,beta,gamma}
  *      st.sites         [{rank, element, x, y, z, wyckoff, multiplicity}]
@@ -217,15 +218,16 @@ function expandCell(sites, ops) {
     return { atoms, mult };
 }
 
-/* Neighbours of one fractional position, over the 27 nearest cells. */
+/* Neighbours of one fractional position: every lattice image within the cutoff. */
 function neighboursOf(f0, atoms, M, cutoff, selfTol) {
     const p0 = toCart(M, f0);
+    const col = i => [M[i], M[3 + i], M[6 + i]];
+    const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    const G = [0, 1, 2].map(i => [0, 1, 2].map(j => dot(col(i), col(j))));
     const out = [];
     for (const at of atoms) {
-        for (let i = -1; i <= 1; i++)
-        for (let j = -1; j <= 1; j++)
-        for (let k = -1; k <= 1; k++) {
-            const f = [at.f[0] + i, at.f[1] + j, at.f[2] + k];
+        for (const { n } of fracImages(G, at.f[0] - f0[0], at.f[1] - f0[1], at.f[2] - f0[2], cutoff)) {
+            const f = [at.f[0] + n[0], at.f[1] + n[1], at.f[2] + n[2]];
             const p = toCart(M, f);
             const dx = p[0] - p0[0], dy = p[1] - p0[1], dz = p[2] - p0[2];
             const d = Math.sqrt(dx * dx + dy * dy + dz * dz);

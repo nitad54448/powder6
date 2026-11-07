@@ -11,6 +11,7 @@
 (function (root) {
   'use strict';
   var I3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  var latticeDistance = typeof fracDistance === 'function' ? fracDistance : require('./crystal.js').fracDistance;
 
   function det3(m) { return m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6]); }
   function inv3(m) {
@@ -38,15 +39,7 @@
   }
   function transformCell(cell, P) { return cellFromMetric(mul3(mul3(transpose(P), metric(cell)), P)); }
   // the length of a fractional difference, the nearest lattice image taken
-  function dist(G, a, b) {
-    var d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]].map(function (v) { return v - Math.round(v); });
-    var best = Infinity;
-    for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++) for (var k = -1; k <= 1; k++) {
-      var e = [d[0] + i, d[1] + j, d[2] + k], q = mulv(G, e), s = e[0] * q[0] + e[1] * q[1] + e[2] * q[2];
-      if (s < best) best = s;
-    }
-    return Math.sqrt(Math.max(0, best));
-  }
+  function dist(G, a, b) { return latticeDistance([G.slice(0, 3), G.slice(3, 6), G.slice(6, 9)], a[0] - b[0], a[1] - b[1], a[2] - b[2]); }
 
   // ---------------------------------------------------------------- the transformation as text
   function num(s) {
@@ -363,14 +356,12 @@
       return s || '0';
     }).join(',');
   }
-  // the nearest-image distance, cheaply: for the reduced, nearly orthogonal cells used here one rounding is enough
-  function quickDist(G, a, b) { var d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]].map(function (v) { return v - Math.round(v); }), q = mulv(G, d); return Math.sqrt(Math.max(0, d[0] * q[0] + d[1] * q[1] + d[2] * q[2])); }
   // keys: the species of each atom (speciesKeys)
   function expandFull(atoms, ops, G, keys) {
     var pts = [];
     atoms.forEach(function (a, ai) {
       var s = keys[ai], mine = [];
-      ops.forEach(function (o) { var y = apply(o, [a.x, a.y, a.z]).map(wrap); if (!mine.some(function (q) { return quickDist(G, q, y) < 0.01; })) mine.push(y); });
+      ops.forEach(function (o) { var y = apply(o, [a.x, a.y, a.z]).map(wrap); if (!mine.some(function (q) { return dist(G, q, y) < 0.01; })) mine.push(y); });
       mine.forEach(function (x) { pts.push({ x: x, s: s, label: a.label }); });
     });
     return pts;
@@ -380,7 +371,7 @@
     var worst = 0;
     for (var i = 0; i < pts.length; i++) {
       var y = map(pts[i].x), list = bySpecies[pts[i].s], best = Infinity;
-      for (var j = 0; j < list.length && best > 1e-9; j++) { var d = quickDist(G, y, list[j].x); if (d < best) best = d; }
+      for (var j = 0; j < list.length && best > 1e-9; j++) { var d = dist(G, y, list[j].x); if (d < best) best = d; }
       if (!(best <= tol)) return -1;
       if (best > worst) worst = best;
     }
@@ -404,7 +395,7 @@
     if(!raw.length)throw new Error('Symmetry analysis needs atomic positions.');
     raw.forEach(function(p){
       var hit=null;
-      for(var i=0;i<pts.length && !hit;i++)if(pts[i].parts.indexOf(p.s)<0 && quickDist(G,pts[i].x,p.x)<0.01)hit=pts[i];
+      for(var i=0;i<pts.length && !hit;i++)if(pts[i].parts.indexOf(p.s)<0 && dist(G,pts[i].x,p.x)<0.01)hit=pts[i];
       if(hit){hit.parts.push(p.s);hit.labels.push(p.label);}else pts.push({x:p.x,parts:[p.s],labels:[p.label]});
     });
     pts=pts.map(function(p){var order=p.parts.map(function(s,i){return i;}).sort(function(i,j){return p.parts[i]<p.parts[j]?-1:1;});return {x:p.x,s:order.map(function(i){return p.parts[i];}).join('+'),label:order.map(function(i){return p.labels[i];}).join('+'),mixed:p.parts.length>1};});

@@ -2,7 +2,7 @@
 
 ## Update — 7 November 2026
 
-The minimum-image distance issue below is fixed in `fracDistance`. The fixed ±2 translation shell has been replaced by a metric-bounded search using a triangular factor of the metric. The reported skew-cell example now returns 0.3985367856 Å. Regression coverage includes every axis permutation, integer translations, inversion, and comparison with exhaustive image searches for 60 oblique metrics and a strongly skewed non-reduced cell. The search has a fixed budget for almost singular cells, and a metric with no real cell keeps the rounded image. This update concerns `fracDistance`; separate distance helpers are outside this fix. The historical findings below are not a current list of unresolved defects.
+The minimum-image distance issue below is fixed in `fracDistance`. The fixed ±2 translation shell has been replaced by a metric-bounded search using a triangular factor of the metric. The reported skew-cell example now returns 0.3985367856 Å. Regression coverage includes every axis permutation, integer translations, inversion, and comparison with exhaustive image searches for 60 oblique metrics and a strongly skewed non-reduced cell. The search has a fixed budget for almost singular cells, and a metric with no real cell keeps the rounded image. Version 2.49.3 moves the Fourier, cell-conversion, Wyckoff-worker and contact-report helpers onto the same search. The historical findings below are not a current list of unresolved defects.
 
 
 Review only; application files were not changed. Comparison uses the current GSAS-II Read the Docs developer documentation (69a3d4, 27 October 2026). Formula equivalence was checked by source inspection; no installed GSAS-II executable was used.

@@ -26,6 +26,7 @@
 var FourierMap = (function () {
   'use strict';
   var TWO_PI = 2 * Math.PI, MAX_N = 128;
+  var latticeDistance = typeof fracDistance === 'function' ? fracDistance : require('./crystal.js').fracDistance;
 
   function metric(c) {
     var d = Math.PI / 180, ca = Math.cos((c.alpha == null ? 90 : c.alpha) * d), cb = Math.cos((c.beta == null ? 90 : c.beta) * d), cg = Math.cos((c.gamma == null ? 90 : c.gamma) * d);
@@ -152,7 +153,8 @@ var FourierMap = (function () {
     return { fo: fo, fc: Float64Array.from(amp2, Math.sqrt), known: known, nObs: nObs, scale: rbar };
   }
 
-  function minDist2(G, a, b) { var d0 = [a[0] - b[0], a[1] - b[1], a[2] - b[2]].map(function (v) { return v - Math.round(v); }), best = Infinity; for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++) for (var k = -1; k <= 1; k++) { var x = d0[0] + i, y = d0[1] + j, z = d0[2] + k, s = x * (G[0] * x + G[1] * y + G[2] * z) + y * (G[3] * x + G[4] * y + G[5] * z) + z * (G[6] * x + G[7] * y + G[8] * z); if (s < best) best = s; } return Math.max(0, best); } function nearestAtom(cell, G, orbits, atoms, p) {
+  function minDist2(G, a, b) { var d = latticeDistance([G.slice(0, 3), G.slice(3, 6), G.slice(6, 9)], a[0] - b[0], a[1] - b[1], a[2] - b[2]); return d * d; }
+  function nearestAtom(cell, G, orbits, atoms, p) {
     var best = { atom: null, distance: Infinity };
     orbits.forEach(function (o, j) {
       o.forEach(function (q) {

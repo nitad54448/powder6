@@ -2,6 +2,12 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.49.3 - 7 November 2026
+
+1. **One lattice search.** `crystal.js` now holds the only minimum-image search, behind `fracDistance` and the new `fracImages`. Fourier peak-to-atom matching, cell conversion, ADDSYM preparation and the Wyckoff search use it in place of their fixed shells or plain rounding, so they agree on skewed cells.
+2. **Contact report.** Neighbours are every image within the cutoff, not those of the 27 nearest cells. A short axis or a skewed cell now lists contacts that were missing, so its coordination numbers and bond-valence sums can rise.
+3. **Validation.** Add regressions for all images within a cutoff against an exhaustive search, the contact report in short-axis and skewed cells, and the shared search in each helper. All 265 Node tests pass.
+
 ## 2.49.2 - 7 November 2026
 
 1. **Minimum-image distances.** Replace the fixed translation shell with a metric-bounded lattice search so highly skewed, non-reduced cells retain their closest atomic images. The search has a fixed budget, so an almost singular cell returns the closest image found instead of freezing the page. A metric that describes no real cell keeps the rounded image, so its distances stay finite and site symmetry keeps the identity.
