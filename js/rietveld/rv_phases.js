@@ -101,7 +101,6 @@ RV.phasesTab = (function () {
       return;
     }
     var cps = C.cellParams(ph.sg.system, ph.sg.uniqueAxis);
-    var can = St.canRietveld(ph);
     body.innerHTML =
       '<div class="phase-cols">' +
         '<section class="pblock"><div class="form-grid">' +
@@ -160,7 +159,6 @@ RV.phasesTab = (function () {
       if (el.dataset.tip == null) el.dataset.tip = el.title || '';
       el.title = esd > 0 ? (el.dataset.tip ? el.dataset.tip + '. ' : '') + 'Standard uncertainty ' + ui.fmt(esd, 2) : el.dataset.tip;
     }
-    var held = St.holdersOf(ph), others = list.length - n;
     $('#ph-atom-src').textContent = inactive ? 'Rietveld atomic model of '+ds.name+' · Unused by '+C.METHOD_LABELS[S.calculation]+'. Switch to Rietveld to edit or refine atomic values.' : ds ? 'Rietveld atomic model of '+ds.name+'. Atomic values are used and refined in Rietveld.' : 'Atomic starting model. Rietveld uses the atoms; Le Bail and WPPF use the cell and space group.';
     if (act !== $('#ph-sg')) { $('#ph-sg').value = ph.sg.symbol; $('#ph-sg').classList.remove('invalid'); }
     $('#ph-sg-info').textContent = 'No. ' + ph.sg.number + ', ' + ph.sg.system + (ph.sg.laue ? ', Laue class ' + ph.sg.laue : '') +

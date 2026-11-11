@@ -53,7 +53,9 @@ RV.pool = (function () {
           if (state.cancelled || i >= jobs.length) { resolve(results); return; }
           var k = i++;
           var job=jobAt(k);
-          var result = await RVCore.refineAsync(job, { evaluateOnly: job.type === 'extract', precision: job.precision || null, shouldStop:function(){return state.cancelled;}, onIter: function (p) { onIter(k, p.it, p.maxIter); } });
+          var result;
+          try { result = await RVCore.refineAsync(job, { evaluateOnly: job.type === 'extract', precision: job.precision || null, shouldStop:function(){return state.cancelled;}, onIter: function (p) { onIter(k, p.it, p.maxIter); } }); }
+          catch (x) { result = { ok: false, msg: String(x && x.message || x) }; }
           if (state.cancelled) { resolve(results); return; }
           put(k, result);
           setTimeout(next, 0);

@@ -2,7 +2,7 @@
  * this workspace reuses the existing instrument, background and fit commands. */
 RV.datasets = (function () {
   'use strict';
-  var St=RV.state,S=St.S,ui=RV.ui,esc=ui.esc,dirty=true,lastRender=0,queued=0;
+  var St=RV.state,S=St.S,ui=RV.ui,dirty=true,lastRender=0,queued=0;
   function $(q){return document.querySelector(q);}
   function active(){return RV.app && RV.app.commandTab()==='datasets';}
   function render(force){

@@ -38,7 +38,7 @@ RV.project = (function(){
   // index it belongs to, stored as their own little-endian entries
   var PRECISION_Q='solution/precision.Q.f64',PRECISION_INDEX='solution/precision.index.i32';
   function ints32(array){var out=new Int32Array(array.length);for(var i=0;i<array.length;i++)out[i]=array[i];return new Uint8Array(out.buffer);}
-  function int32s(bytes){if(bytes.byteLength%4)throw new Error('Invalid precision index size.');return new Int32Array(bytes.buffer,bytes.byteOffset,bytes.byteLength/4);}
+  function int32s(bytes){if(bytes.byteLength%4)throw new Error('Invalid precision index size.');if(bytes.byteOffset%4)bytes=bytes.slice();return new Int32Array(bytes.buffer,bytes.byteOffset,bytes.byteLength/4);}
   async function pack(opts){opts=opts || {};if(typeof JSZip==='undefined')throw new Error('Project compression library is unavailable.');var doc=JSON.parse(St.projectJSON(RV.ui.logEntries?RV.ui.logEntries():[],{metadataOnly:true})),pool=RV.fitHistory.observations(),zip=new JSZip(),index=[];
     if(opts.compact && doc.fitHistory){doc.fitHistory.records=doc.fitHistory.records.filter(function(r){return r.pinned || r.id===(RV.fitHistory.latest(r.method)||{}).id;});var used=new Set(doc.fitHistory.records.map(function(r){return r.model;}));Object.keys(doc.fitHistory.models).forEach(function(k){if(!used.has(k))delete doc.fitHistory.models[k];});}
     var needed=new Set(doc.datasets.map(function(d){return d.dataKey;}));if(doc.fitHistory)doc.fitHistory.records.forEach(function(r){r.datasets.concat(r.dependencies || []).forEach(function(d){needed.add(d.dataKey);});});

@@ -210,7 +210,6 @@ function wyRawObservationRows(job) {
 }
 
 function wyObservationsFromHkl(job, symops) {
-    let negative = 0, nonFinite = 0;
     const applyLP = job.applyLP !== false;
     const polModel = (job.polarization !== undefined && job.polarization !== null)
         ? job.polarization : job.monochromatorTth;
@@ -220,13 +219,9 @@ function wyObservationsFromHkl(job, symops) {
         if (!peak) continue;
         const I = Number(peak.intensity);
         const h = peak.h_orig, k = peak.k_orig, l = peak.l_orig;
-        // COUNTED, not just skipped. A negative intensity is a real outcome of
-        // an unconstrained WPPF refinement, and dropping it silently tells
-        // the search the reflection was never measured -- leaving the model
-        // free to put anything there -- while leaving no trace that a
-        // reflection went missing. The count is reported by the caller.
-        if (!Number.isFinite(I)) { nonFinite++; continue; }
-        if (I < 0) { negative++; continue; }
+        // Dropped without a message here: wyRawObservationRows, above, counts
+        // and reports the same reflections when the search starts.
+        if (!Number.isFinite(I) || I < 0) continue;
         if (!Number.isFinite(h) || !Number.isFinite(k) || !Number.isFinite(l)) continue;
         if (h === 0 && k === 0 && l === 0) continue;
 

@@ -561,7 +561,7 @@ function cfEmptyModelMessage(model, N) {
 }
 
 function buildReflectionModel(job, N) {
-    const N2 = N * N, N3 = N2 * N;
+    const N2 = N * N;
     const wrap = v => ((v % N) + N) % N;
 
 

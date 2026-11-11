@@ -124,7 +124,7 @@ function normaliseObservations(reflections, opts = {}) {
     // d and 2theta are interconvertible given the wavelength, so fill whichever
     // is missing before choosing a route. This is what makes a file carrying
     // only d as good as one carrying 2theta.
-    let derivedTth = 0, derivedD = 0;
+    let derivedTth = 0;
     if (Number.isFinite(lambda) && lambda > 0) {
         for (const r of src) {
             if (!Number.isFinite(r.twoTheta) && Number.isFinite(r.d)) {
@@ -133,7 +133,7 @@ function normaliseObservations(reflections, opts = {}) {
             } else if (Number.isFinite(r.twoTheta) && !Number.isFinite(r.d)) {
                 const th = 0.5 * r.twoTheta * Math.PI / 180;
                 const s = Math.sin(th);
-                if (s > 1e-9) { r._d = lambda / (2 * s); derivedD++; }
+                if (s > 1e-9) r._d = lambda / (2 * s);
             }
         }
     }

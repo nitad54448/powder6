@@ -124,7 +124,7 @@ var FourierMap = (function () {
 
   /* The amplitudes of the reflections of the sphere: {fo, fc, known} (known: inside an overlap group of the extraction) */
   function observed(opts, hkl, F, rots) {
-    var cls = {}, rep = {};
+    var cls = {};
     opts.refl.forEach(function (r, i) { if (r.inRange && Number.isFinite(r.area) && r.m > 0 && r.lp > 0) cls[canonical(r.h, r.k, r.l, rots)] = i; });
     var amp2 = new Float64Array(hkl.length), mean2 = 0, nz = 0;
     for (var n = 0; n < hkl.length; n++) { amp2[n] = F.re[n] * F.re[n] + F.im[n] * F.im[n]; mean2 += amp2[n]; nz++; }

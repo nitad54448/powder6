@@ -19,10 +19,15 @@ try { importScripts('pt_gpu.js'); } catch (e) { console.warn('WebGPU PT unavaila
 self.onmessage = async function (e) {
     var m = e.data;
     if (!m || (m.type !== 'refine' && m.type !== 'extract')) return;
-    var result = await RVCore.refineAsync(m.problem, {
-        evaluateOnly: m.type === 'extract',
-        precision: m.precision || null,
-        onIter: function (p) { self.postMessage({ type: 'iter', id: m.id, it: p.it, chi2: p.chi2, maxIter: p.maxIter }); }
-    });
-    self.postMessage({ type: 'done', id: m.id, result: result });
+    // Every job is answered: a rejection in a worker never reaches the page's onerror, so the pool would wait for ever.
+    try {
+        var result = await RVCore.refineAsync(m.problem, {
+            evaluateOnly: m.type === 'extract',
+            precision: m.precision || null,
+            onIter: function (p) { self.postMessage({ type: 'iter', id: m.id, it: p.it, chi2: p.chi2, maxIter: p.maxIter }); }
+        });
+        self.postMessage({ type: 'done', id: m.id, result: result });
+    } catch (x) {
+        self.postMessage({ type: 'done', id: m.id, result: { ok: false, msg: String(x && x.message || x) } });
+    }
 };

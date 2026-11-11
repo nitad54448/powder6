@@ -2397,3 +2397,10 @@ test('result exports distinguish linked, held and unused parameters',()=>{
   assert.match(cif,/# Parameter disp = [^\n]+; Linked to mixture: zero; factor 2, offset 0\.1/);
   a.state.setCalculation('wppf');assert.match(a.context.RV.results.cifText([a.ds],true),/# Parameter p1\.scale = [^\n]+; Unused by WPPF/);
 });
+test('a fit worker answers a job whose core throws, so the pool is never left waiting', async () => {
+  const posted=[],self={postMessage:m=>posted.push(m)};
+  const context=vm.createContext({self,importScripts(){},console:{warn(){}},RVCore:{refineAsync:async()=>{throw new Error('boom');}}});
+  vm.runInContext(read('js/rietveld_worker.js'),context);
+  await self.onmessage({data:{type:'refine',id:7,problem:{}}});
+  assert.deepEqual(JSON.parse(JSON.stringify(posted)),[{type:'done',id:7,result:{ok:false,msg:'boom'}}]);
+});

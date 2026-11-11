@@ -720,7 +720,7 @@ function swFitnessOnCpu(args) {
     }
 
     // --- the same sums the kernel reduces
-    let scc = 0, soo = 0, sco = 0, sw = 0, sic = 0, sio = 0;
+    let scc = 0, soo = 0, sco = 0;
     for (let g = 0; g < nGroups; g++) {
         const gb = g * stride;
         const start = groupMeta[gb] | 0, count = groupMeta[gb + 1] | 0;
@@ -748,9 +748,6 @@ function swFitnessOnCpu(args) {
         scc += wgt * iCalc * iCalc;
         soo += wgt * iObs * iObs;
         sco += wgt * iCalc * iObs;
-        sw  += wgt;
-        sic += wgt * iCalc;
-        sio += wgt * iObs;
     }
     
 const den = scc * soo;
@@ -1751,7 +1748,7 @@ async function runWyckoffSearch(o) {
     // most plausible assignments and scores highest, wave 4 holds the least
     // and starts from nothing, so the chart appeared to show the search
     // getting worse when it was simply starting a new problem.
-    let runBestFit = -Infinity, runBestCC = NaN, runBestAssign = -1;
+    let runBestFit = -Infinity, runBestCC = NaN;
 
     for (let wi = 0; wi < waves.length && !stopped; wi++) {
         const wave = waves[wi], generations = wave.generations, restarts = wave.restarts;
@@ -2345,7 +2342,7 @@ let needCurrentEval = true, firstEval = (wi === 0);
                 let best = -Infinity, bestA = -1;
                 for (const a of ids) if (gBestFit[a] > best) { best = gBestFit[a]; bestA = a; }
                 if (best > runBestFit) {
-                    runBestFit = best; runBestCC = gBestCC[bestA]; runBestAssign = bestA;
+                    runBestFit = best; runBestCC = gBestCC[bestA];
                 }
 
                 // Hand out the running best as sites, so the caller can rebuild

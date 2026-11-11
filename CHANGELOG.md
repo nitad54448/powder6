@@ -2,6 +2,13 @@
 
 Versions follow semantic versioning (MAJOR.MINOR.PATCH): a new feature or a change of behaviour raises MINOR, a correction raises PATCH, and a change that older projects or files cannot follow raises MAJOR.
 
+## 2.49.4 - 12 November 2026
+
+1. **Fit workers always answer.** An unexpected error in a fit worker, or in the in-window fallback, now ends that job with its message. Before, such an error never reached the page and the calculation waited until Stop was pressed.
+2. **Project reading.** The WPPF precision index is copied when its bytes are not aligned to four, instead of depending on how the unzip library allocates them.
+3. **Housekeeping.** Remove the counters of dropped reflections that the Wyckoff coordinate refinement kept but never reported (the search reports them at its start), thirteen unused variables, and the leftover `audit_refinement_repro.cjs`. No calculated result changes.
+4. **Validation.** Add a regression for a fit worker whose core throws. All 266 Node tests pass.
+
 ## 2.49.3 - 7 November 2026
 
 1. **One lattice search.** `crystal.js` now holds the only minimum-image search, behind `fracDistance` and the new `fracImages`. Fourier peak-to-atom matching, cell conversion, ADDSYM preparation and the Wyckoff search use it in place of their fixed shells or plain rounding, so they agree on skewed cells.

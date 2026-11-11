@@ -678,7 +678,7 @@ function Model(problem) {
 }
 
 Model.prototype.refreshReflections = function(di,v) {
-    var D=this.datasets[di],self=this;
+    var D=this.datasets[di];
     var key=[v.zero || 0,v.disp || 0,v.transp || 0].join(',')+';'+this.phases.map(function(P){return P.cellNames.map(function(c){return v[P.prefix+c];}).join(',');}).join(';');
     if(D.reflectionCellKey===key)return;
     var dmin=reflectionDmin(D.def,v);
