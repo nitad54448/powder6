@@ -207,7 +207,7 @@ function expandCell(sites, ops) {
                 wrap01(r[3] * s.x + r[4] * s.y + r[5] * s.z + t[1]),
                 wrap01(r[6] * s.x + r[7] * s.y + r[8] * s.z + t[2])
             ];
-            const key = f.map(v => Math.round(v * 2000)).join(',');
+            const key = f.map(v => ((Math.round(v * 2000) % 2000) + 2000) % 2000).join(',');
             if (seen.has(key)) continue;
             seen.add(key);
             const occupancy=Number.isFinite(s.occupancy)?s.occupancy:1;
